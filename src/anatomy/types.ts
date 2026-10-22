@@ -36,6 +36,7 @@ export type CameraSnapshot = {
 };
 export interface SceneState {
   lang: Lang; mode: Mode; selectedId: StructureId | null;
+  relatedIds?: StructureId[];
   layers: Record<StructureId, LayerMode>; isolateId: StructureId | null;
   clip: { enabled: boolean; axis: ClipAxis; offset: number; keepSide: KeepSide };
   presetId: ScenePreset | null;

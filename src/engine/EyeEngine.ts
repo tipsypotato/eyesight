@@ -10,7 +10,7 @@ import { messages } from '../content/messages';
 import { visibleSurface } from './visibility';
 
 type Drawable = THREE.Mesh | THREE.Line;
-type Label = { button: HTMLButtonElement; dot: HTMLSpanElement; leader: HTMLSpanElement };
+type Label = { button: HTMLButtonElement; dot: HTMLSpanElement; leader: HTMLSpanElement; outline: HTMLSpanElement };
 type SectionCallbacks = { begin: () => void; change: (offset: number) => void; end: () => void };
 const SELECTED_COLOR = new THREE.Color('#4169e1');
 const HOVER_COLOR = new THREE.Color('#93b1ff');
@@ -116,8 +116,11 @@ export class EyeEngine {
       Object.assign(dot.style, { width: '5px', height: '5px', borderRadius: '50%', position: 'absolute', transform: 'translate(-50%,-50%)', background: structure.color, display: 'none' });
       const leader = document.createElement('span');
       Object.assign(leader.style, { position: 'absolute', height: '1px', background: '#557443', transformOrigin: '0 0', display: 'none' });
-      this.overlay.append(leader, dot, button);
-      this.labels.set(structure.id, { button, dot, leader });
+      const outline = document.createElement('span');
+      outline.setAttribute('aria-hidden', 'true');
+      Object.assign(outline.style, { position: 'absolute', display: 'none', border: '1px dotted #7b8588', borderRadius: '50%', pointerEvents: 'none' });
+      this.overlay.append(outline, leader, dot, button);
+      this.labels.set(structure.id, { button, dot, leader, outline });
     }
     this.neural.name = 'neural-signal';
     this.scene.add(this.eye.root, this.rays, this.neural, this.section.guide);
@@ -291,6 +294,21 @@ export class EyeEngine {
     const fundus = ['macula', 'fovea', 'optic-disc', 'retinal-vessels', 'retina'].includes(id);
     const direction = fundus ? new THREE.Vector3(0, 0, 1) : id === 'optic-nerve' ? new THREE.Vector3(0, 0, -1) : undefined;
     this.rig.focus(sphere.center, Math.max(0.06, sphere.radius / 0.34), direction);
+    this.notifyCamera();
+    this.invalidate();
+  }
+
+  focusStructures(ids: StructureId[]) {
+    if (this.state?.mode === 'quiz' || this.disposed) return;
+    const bounds = new THREE.Box3();
+    for (const id of new Set(ids)) {
+      const part = this.eye.parts.get(id);
+      if (part?.group.visible) bounds.union(this.boundsFor(part));
+    }
+    if (bounds.isEmpty()) return;
+    const sphere = bounds.getBoundingSphere(new THREE.Sphere());
+    const fundus = ids.every(id => ['retina', 'macula', 'fovea', 'optic-disc', 'optic-nerve', 'retinal-vessels'].includes(id));
+    this.rig.preset(fundus ? 'front' : this.state?.view ?? 'oblique', Math.max(0.06, sphere.radius / 0.72), sphere.center);
     this.notifyCamera();
     this.invalidate();
   }
@@ -498,14 +516,15 @@ export class EyeEngine {
     if (!state) return;
     const enabled = state.mode !== 'quiz';
     const references = state.selectedId && FUNDUS_REFERENCES.includes(state.selectedId) ? FUNDUS_REFERENCES : [];
-    const priority = (id: StructureId) => id === state.selectedId ? 2 : references.includes(id) ? 1 : 0;
+    const related = enabled ? state.relatedIds ?? [] : [];
+    const priority = (id: StructureId) => id === state.selectedId ? 3 : related.includes(id) ? 2 : references.includes(id) ? 1 : 0;
     const occupied: { x: number; y: number; w: number; h: number }[] = [];
     const ids = [...this.labels.keys()].sort((a, b) => priority(b) - priority(a));
     this.locateButton.style.display = this.outline.style.display = 'none';
     const area = this.usableRect;
     for (const id of ids) {
-      const { button, dot, leader } = this.labels.get(id)!;
-      button.style.display = dot.style.display = leader.style.display = 'none';
+      const { button, dot, leader, outline: secondaryOutline } = this.labels.get(id)!;
+      button.style.display = dot.style.display = leader.style.display = secondaryOutline.style.display = 'none';
       const part = this.eye.parts.get(id)!;
       if (!enabled || (!state.labels && !priority(id))) continue;
       const world = visibleSurface(part, this.eye.parts, state, this.camera, this.posteriorScale);
@@ -516,6 +535,17 @@ export class EyeEngine {
       const point = world.clone().project(this.camera);
       const x = (point.x + 1) * this.width / 2;
       const y = (1 - point.y) * this.height / 2;
+      if (id === state.selectedId || related.includes(id)) {
+        const outline = id === state.selectedId ? this.outline : secondaryOutline;
+        const bounds = this.boundsFor(part);
+        const projected = new THREE.Box2();
+        for (const bx of [bounds.min.x, bounds.max.x]) for (const by of [bounds.min.y, bounds.max.y]) for (const bz of [bounds.min.z, bounds.max.z]) {
+          const p = new THREE.Vector3(bx, by, bz).project(this.camera);
+          projected.expandByPoint(new THREE.Vector2((p.x + 1) * this.width / 2, (1 - p.y) * this.height / 2));
+        }
+        const size = projected.getSize(new THREE.Vector2());
+        Object.assign(outline.style, { display: 'block', left: `${projected.min.x - 5}px`, top: `${projected.min.y - 5}px`, width: `${size.x + 10}px`, height: `${size.y + 10}px` });
+      }
       button.style.display = 'block';
       const w = button.offsetWidth, h = button.offsetHeight;
       const position = [[0, -32], [w / 2 + 24, 0], [-w / 2 - 24, 0], [0, 34], [w / 2 + 24, -48], [-w / 2 - 24, 48]]
@@ -529,16 +559,6 @@ export class EyeEngine {
       dot.style.top = `${y}px`;
       dot.style.display = 'block';
       Object.assign(leader.style, { display: 'block', left: `${x}px`, top: `${y}px`, width: `${Math.hypot(position.x - x, position.y - y)}px`, transform: `rotate(${Math.atan2(position.y - y, position.x - x)}rad)` });
-      if (id === state.selectedId) {
-        const bounds = this.boundsFor(part);
-        const projected = new THREE.Box2();
-        for (const bx of [bounds.min.x, bounds.max.x]) for (const by of [bounds.min.y, bounds.max.y]) for (const bz of [bounds.min.z, bounds.max.z]) {
-          const p = new THREE.Vector3(bx, by, bz).project(this.camera);
-          projected.expandByPoint(new THREE.Vector2((p.x + 1) * this.width / 2, (1 - p.y) * this.height / 2));
-        }
-        const size = projected.getSize(new THREE.Vector2());
-        Object.assign(this.outline.style, { display: 'block', left: `${projected.min.x - 5}px`, top: `${projected.min.y - 5}px`, width: `${size.x + 10}px`, height: `${size.y + 10}px` });
-      }
     }
     this.renderCompass();
   }

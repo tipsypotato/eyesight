@@ -108,7 +108,7 @@ describe('learning state', () => {
     store.getState().setClip({ enabled: true, offset: -0.3 });
     const layers = store.getState().layers;
     store.getState().resetCamera();
-    expect(store.getState()).toMatchObject({ lessonId: 'anatomy', step: 3, view: 'back', explode: 0.5, clip: { enabled: true, offset: -0.3 }, camera: null });
+    expect(store.getState()).toMatchObject({ lessonId: 'anatomy', step: 3, view: 'front', explode: 0.5, clip: { enabled: true, offset: -0.3 }, camera: null });
     expect(store.getState().layers).toBe(layers);
     store.getState().startLesson('anatomy');
     expect(store.getState().step).toBe(3);
@@ -340,20 +340,24 @@ describe('optics experiments', () => {
     expect(store.getState()).toMatchObject({ lang: 'en', opticsExperiment: 'pupil', opticsInput: { ...normal, pupil: 'large' } });
   });
 
-  it('loads complete tour benchmarks and keeps optical drafts outside the lesson', () => {
+  it('starts tour actions before their target and keeps optical drafts outside the lesson', () => {
     const store = createEyeStore();
     store.getState().setMode('optics');
     store.getState().setOpticsExperiment('free');
     store.getState().setOpticsInput(combined);
     store.getState().startLesson('myopia');
     store.getState().goToStep(1);
-    expect(store.getState()).toMatchObject({ opticsPreset: 'myopia', opticsExperiment: 'baseline', opticsInput: { ...normal, axialIncrement: 1 } });
+    expect(store.getState()).toMatchObject({ opticsPreset: 'myopia', opticsExperiment: 'axialIncrement', opticsInput: normal });
+    store.getState().setOpticsInput({ axialIncrement: 1 });
+    expect(store.getState().opticsInput).toEqual({ ...normal, axialIncrement: 1 });
     store.getState().setOpticsExperiment('pupil');
     store.getState().setOpticsInput({ pupil: 'small' });
     store.getState().resetScene();
-    expect(store.getState()).toMatchObject({ step: 1, opticsExperiment: 'baseline', opticsInput: { ...normal, axialIncrement: 1 } });
+    expect(store.getState()).toMatchObject({ step: 1, opticsExperiment: 'axialIncrement', opticsInput: normal });
     store.getState().goToStep(2);
-    expect(store.getState()).toMatchObject({ opticsPreset: 'corrected', opticsExperiment: 'baseline', opticsInput: { ...normal, axialIncrement: 1, externalLens: 'myopia' }, undoCount: 0 });
+    expect(store.getState()).toMatchObject({ opticsPreset: 'corrected', opticsExperiment: 'externalLens', opticsInput: { ...normal, axialIncrement: 1, externalLens: 'off' }, undoCount: 0 });
+    store.getState().setOpticsInput({ externalLens: 'myopia' });
+    expect(store.getState().opticsInput).toEqual({ ...normal, axialIncrement: 1, externalLens: 'myopia' });
     store.getState().restartLesson();
     expect(store.getState()).toMatchObject({ step: 0, opticsPreset: 'normal', opticsExperiment: 'baseline', opticsInput: normal });
     store.getState().setMode('optics');

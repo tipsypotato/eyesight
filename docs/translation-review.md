@@ -4,6 +4,31 @@
 
 审校角色：独立于解剖内容初稿编写者的 LLM 审校员。本文记录语言一致性与基础术语核对，不构成眼科专家审核、临床认证或患者个体判断。
 
+## T07 追加批次（2026-10-22）
+
+- Batch：`T07-related-guided-practice-2026-10-22`；内容版本 `2026-10-22-t07`。独立审校员为 Codex LLM 上下文 `t07_quiz_sessions`，未参与本批题目、关联说明或 UI 文案起稿；后端型号无可核验证据，不作推测。
+- 范围：新增 **156 对，全部通过**；两处英文歧义已修正并复核，0 遗漏、0 未解决项，状态 `llm-checked`。累计有效双语 **481 对**（325 + 156）。复用的结构名称、问题模板及 12 项成员角色说明不重复计数。
+- 结合题库、操作任务、关联观察及测验界面核对医学关系、选项反馈、暂停/单步、错题规则、未完成重开确认、本地保存降级与医生按需讲解定位。未将可选导览或理解确认表述为必须完成的课程。
+
+| 来源与范围 | 新增对数 | 审校重点 | 文本批次 SHA-256 |
+| --- | ---: | --- | --- |
+| `questions.ts` | 99 | 九道新题各 1 题干、3 选项、3 反馈共 63 对；六道既有结构题各 6 项反馈共 36 对；不重复计既有名称/题干 | `6879b53bfd129f671778e5f4be80aa246c871bf88c988c1ed0461bdc63bed450` |
+| `relationships.ts` | 6 | 三组名称及说明；房水组合止于前房、未覆盖完整流出，区域与组织关系区分 | `db3734ba6cb145e65778384f523546846725e355ae7813aca22166c0b3a9edb3` |
+| `tourTasks.ts` | 11 | 显式观察动作、层次顺序、鼻颞关系、光/神经区别、示意阈值 | `599b99f6e21188b91fa5c6b6a073e19c6255be501d7b7b01e93f78238abd557c` |
+| `messages.ts` | 21 | 从 `relatedObservation` 至 `dismissNotice` 的关联、可选操作及本地记录提示 | `22e896623ae4602cf641099a45fc41098dadc37251dbe4598c4aee9882979545` |
+| `LearningPanels.tsx` / `LEARNING_TEXT` | 19 | 主题选择、可选性、三类结果、误选解释、回结构、错题、历史与重开确认 | `467e82e39e7b8ead3f5cb203909f4ba98b58724a310b5b4a15552e08658fdafa` |
+
+批次按上表文件顺序、各文件源顺序提取 `[{key,zh,en},…]` 并序列化为紧凑 UTF-8 JSON。题库使用 `questionId.prompt`、`questionId.optionId.label/feedback`；新概念题计题干和选项，既有结构题只计新增反馈。合计 156 对 SHA-256：`1932592804715e2a616fc29ff356f7c4b3b39e4305d7847fccb65ae56e1c50dd`。这是文本批次指纹，不是整个源码文件指纹。
+
+| 修正位置 | 问题与最终处理 |
+| --- | --- |
+| `myopia-limit-03` / `illustration-only` 英文选项 | 补全“示意参数不是个人处方”及“不涵盖所有近视原因”，与中文限制等价 |
+| `tourTasks.myopia:1` 英文 | 明确从 0 增加的是 `illustrative axial increment`，避免误读为眼轴长度从 0 开始；0.8 仅为操作检测条件，不是临床阈值 |
+
+来源核对沿用 [NEI — How the Eyes Work](https://www.nei.nih.gov/eye-health-information/healthy-vision/how-eyes-work)、[NEI — Myopia](https://www.nei.nih.gov/eye-health-information/eye-conditions-and-diseases/nearsightedness-myopia)、[NEI — Refractive Errors](https://www.nei.nih.gov/eye-health-information/eye-conditions-and-diseases/refractive-errors)、[Webvision — Simple Anatomy of the Retina](https://www.webvision.pitt.edu/book/part-i-foundations/simple-anatomy-of-the-retina/)、[AAO EyeWiki — Reflexes and the Eye](https://eyewiki.aao.org/Reflexes_and_the_Eye) 及 [UTHealth — Gross Anatomy of the Eye](https://nba.uth.tmc.edu/neuroanatomy/L8/Lab08p01_index.html)。这些资料支持基础概念，未用于标定模型参数。
+
+证据限制：M11 NCBI 正文受验证页限制，未独立重读；AAO 眼组织学页本轮只取得索引摘要，未声称读取完整正文。眼房关系以其他可访问的一手资料交叉核对。医学专家审核仍 pending；LLM 校对不等于临床认证。本地生产浏览器已检查中英文切换、390×844 及 320×568 英文长题/确认与固定动作区，均无整页横向溢出；五个双语源文件的整文件 SHA-256 与审校时一致。历史文案未全部重审，真实读屏未验证。
+
 ## T06 追加批次（2026-10-22）
 
 - Batch / contentVersion：`T06-comparison-physiology-2026-10-22`；审校员为 Codex 独立 LLM 上下文 `t06_mechanism_check`，与实现及文案起稿上下文分离；未取得可核验的后端型号，不作推测。

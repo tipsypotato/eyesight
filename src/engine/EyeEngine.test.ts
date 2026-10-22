@@ -12,14 +12,14 @@ import { opticsInputForPreset, traceOptics, type TraceOpticsResult } from './opt
 class EngineElementStub extends EventTarget {
   style: Record<string, string> = {};
   classList = { add() {} };
-  clientWidth = 480; clientHeight = 600;
+  clientWidth = 480; clientHeight = 600; offsetWidth = 80; offsetHeight = 28;
   parentElement: EngineElementStub | null = null;
   children: EngineElementStub[] = [];
   get ownerDocument() { return document; }
   getRootNode() { return document; }
   append(...children: EngineElementStub[]) { children.forEach(child => this.appendChild(child)); }
   appendChild(child: EngineElementStub) { child.parentElement = this; this.children.push(child); }
-  setAttribute() {} remove() {} querySelectorAll() { return []; }
+  setAttribute() {} remove() { if (this.parentElement) this.parentElement.children = this.parentElement.children.filter(child => child !== this); } querySelectorAll() { return []; }
   getBoundingClientRect() { return { left: 0, top: 0, width: this.clientWidth, height: this.clientHeight, right: this.clientWidth, bottom: this.clientHeight }; }
   setPointerCapture() {} hasPointerCapture() { return false; } releasePointerCapture() {}
 }
@@ -796,4 +796,75 @@ it('synchronizes real engine focus and orbit frames, settles when paused and uns
     current.syncCamera(b); flush();
     expect(changes).toHaveLength(last);
   } finally { instances.forEach(engine => engine.dispose()); vi.unstubAllGlobals(); }
+});
+
+it('fits the union of visible related anatomy without changing selection or focusing quiz answers', () => {
+  const { eye, store, engine, rig, camera, sync, cleanup } = comparisonFixture();
+  try {
+    store.getState().applyPreset('anterior'); store.getState().select('lens', true); sync();
+    const ids = ['ciliary-body', 'zonules', 'lens'] as const;
+    const bounds = new THREE.Box3();
+    for (const id of ids) bounds.union(new THREE.Box3().setFromObject(eye.parts.get(id)!.group));
+    expect(typeof engine.focusStructures).toBe('function');
+    engine.setView('side');
+    engine.focusStructures([...ids]); rig.controls.update(); camera.updateMatrixWorld();
+    const direction = camera.position.clone().sub(rig.controls.target).normalize();
+    expect(direction.z).toBeGreaterThan(0.5);
+    expect(direction.y).toBeGreaterThan(0.1);
+    expect(rig.controls.target.distanceTo(bounds.getCenter(new THREE.Vector3()))).toBeLessThan(1e-6);
+    for (const x of [bounds.min.x, bounds.max.x]) for (const y of [bounds.min.y, bounds.max.y]) for (const z of [bounds.min.z, bounds.max.z]) {
+      const p = new THREE.Vector3(x, y, z).project(camera);
+      expect(Math.abs(p.x)).toBeLessThan(1); expect(Math.abs(p.y)).toBeLessThan(1);
+    }
+    expect(store.getState().selectedId).toBe('lens');
+    const pose = engine.captureCamera();
+    engine.focusStructures([]); expect(engine.captureCamera()).toEqual(pose);
+    store.setState({ mode: 'quiz', quizRevealed: true }); sync();
+    const quizPose = engine.captureCamera();
+    engine.focusStructures(['cornea']); expect(engine.captureCamera()).toEqual(quizPose);
+  } finally { cleanup(); }
+});
+
+it('renders related labels and secondary outlines only for visible anatomy, with no quiz leakage or retained overlays', () => {
+  const documentStub = Object.assign(new EventTarget(), { createElement: () => new EngineElementStub(), createElementNS: () => new EngineElementStub() });
+  const media = Object.assign(new EventTarget(), { matches: true });
+  vi.stubGlobal('document', documentStub);
+  vi.stubGlobal('window', Object.assign(new EventTarget(), { devicePixelRatio: 1, matchMedia: () => media }));
+  vi.stubGlobal('getComputedStyle', () => ({ position: 'relative' }));
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+  vi.stubGlobal('requestAnimationFrame', () => 1); vi.stubGlobal('cancelAnimationFrame', () => {});
+  const host = new EngineElementStub(); host.parentElement = new EngineElementStub();
+  let engine: EyeEngine | undefined;
+  try {
+    const store = createEyeStore();
+    engine = new EyeEngine(host as unknown as HTMLElement, () => {});
+    Object.assign(engine, { renderCompass() {} });
+    const internal = engine as unknown as { labels: Map<string, { button: EngineElementStub; outline?: EngineElementStub }>; outline: EngineElementStub; overlay: EngineElementStub; renderLabels(): void };
+    const sync = () => { engine!.setState(store.getState()); internal.renderLabels(); };
+    store.getState().applyPreset('fundus');
+    store.setState({ selectedId: 'macula', relatedIds: ['macula', 'fovea', 'optic-disc'] }); sync();
+    engine.focusStructures(['macula', 'optic-disc']); internal.renderLabels();
+    expect(internal.labels.get('optic-disc')!.button.style.display).toBe('block');
+    expect(internal.labels.get('optic-disc')!.outline?.style.display).toBe('block');
+    expect(internal.labels.get('macula')!.outline?.style.display).toBe('none');
+    expect(internal.outline.style.display).toBe('block');
+    const overlayCount = internal.overlay.children.length;
+    store.setState({ lang: 'en' }); sync();
+    expect(internal.overlay.children).toHaveLength(overlayCount);
+    store.getState().applyPreset('intact');
+    store.setState({ selectedId: 'sclera', relatedIds: ['lens'] }); sync();
+    engine.setView('back'); internal.renderLabels();
+    expect(engine.isStructureVisible('lens')).toBe(false);
+    expect(internal.labels.get('lens')!.button.style.display).toBe('none');
+    expect(internal.labels.get('lens')!.outline?.style.display).toBe('none');
+    store.getState().applyPreset('fundus');
+    store.setState({ selectedId: 'macula', relatedIds: ['optic-disc'] }); sync();
+    store.setState({ mode: 'quiz', quizRevealed: true }); sync();
+    expect(internal.labels.get('optic-disc')!.button.style.display).toBe('none');
+    expect(internal.labels.get('optic-disc')!.outline?.style.display).toBe('none');
+    store.setState({ mode: 'explore', relatedIds: [] }); sync();
+    expect(internal.labels.get('optic-disc')!.outline?.style.display).toBe('none');
+    engine.dispose();
+    expect(host.children).not.toContain(internal.overlay);
+  } finally { engine?.dispose(); vi.unstubAllGlobals(); }
 });
