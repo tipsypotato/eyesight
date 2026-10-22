@@ -125,7 +125,7 @@ describe('anatomical section planes', () => {
     expect(intersectionSurvives(hit)).toBe(false);
   });
 
-  it('removes the camera-facing half and keeps slider axes stable when orbiting', () => {
+  it('keeps the explicitly retained half and slider axes stable when orbiting', () => {
     const section = new SectionTool();
     for (const [axis, direction] of [
       ['sagittal', new THREE.Vector3(1, 0, 0)],
@@ -134,13 +134,13 @@ describe('anatomical section planes', () => {
     ] as const) {
       const camera = new THREE.PerspectiveCamera();
       camera.position.copy(direction).multiplyScalar(4);
-      section.update({ enabled: true, axis, offset: 0.2 }, camera);
+      section.update({ enabled: true, axis, offset: 0.2, keepSide: 'negative' }, camera);
       expect(section.keeps(direction.clone().multiplyScalar(0.5))).toBe(false);
       expect(section.keeps(direction.clone().multiplyScalar(-0.5))).toBe(true);
       expect(section.plane.distanceToPoint(direction.clone().multiplyScalar(0.2))).toBeCloseTo(0);
       camera.position.negate();
-      section.update({ enabled: true, axis, offset: 0.2 }, camera);
-      expect(section.keeps(direction.clone().multiplyScalar(0.5))).toBe(true);
+      section.update({ enabled: true, axis, offset: 0.2, keepSide: 'negative' }, camera);
+      expect(section.keeps(direction.clone().multiplyScalar(0.5))).toBe(false);
       expect(section.plane.distanceToPoint(direction.clone().multiplyScalar(0.2))).toBeCloseTo(0);
     }
   });

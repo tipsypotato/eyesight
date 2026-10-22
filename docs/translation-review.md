@@ -4,6 +4,30 @@
 
 审校角色：独立于解剖内容初稿编写者的 LLM 审校员。本文记录语言一致性与基础术语核对，不构成眼科专家审核、临床认证或患者个体判断。
 
+## T03 追加批次（2026-10-22）
+
+- Batch / contentVersion：`T03-scene-interaction-2026-10-22`；模型：Codex 独立 LLM 上下文，审校员 `t03_i18n_review`（运行环境未提供可核验的后端型号，不作推测）。
+- 输入：`src/content/messages.ts` 新增 12 对文案，结合 `App.tsx`、`store.ts`、`section.ts` 及归档术语表检查实际操作语义；没有新增医学事实或运行时翻译接口。
+- 输入 SHA-256：`29c0e938bfdfea8e91c02911dcee1edb988229aeffd68228c52f50aea742e2f5`。按下表源文件顺序提取 `[{key,zh,en},…]`，对无缩进 `JSON.stringify` UTF-8 字节计算。
+- 独立结论：**12 对通过、0 问题、0 遗漏、0 未解决项**；无需修改复核，状态 `llm-checked`。当前有效配对 **241 对**（229 + 12），历史批次保持原样。
+
+| key | 中文 | English | 结论 |
+| --- | --- | --- | --- |
+| scenePresets | 观察预设 | Observation presets | pass |
+| presetIntact | 完整眼球 | Whole eye | pass |
+| presetWall | 眼球壁剖面 | Eye wall section | pass |
+| presetAnterior | 前段观察 | Anterior segment | pass |
+| presetFundus | 眼底观察 | Fundus view | pass |
+| presetChambers | 眼内空间 | Intraocular spaces | pass |
+| presetOptical | 光路观察 | Optical path | pass |
+| undoScene | 撤销场景操作 | Undo scene change | pass |
+| flipSection | 翻转保留侧 | Flip retained side | pass |
+| sectionLocked | 切面固定于眼球坐标 · 拖动蓝色框调整位置 | Section fixed in eye coordinates · Drag the blue frame to move it | pass |
+| retainedSide | 保留侧 | Retained side | pass |
+| enterOptics | 进入光学实验 | Open optical experiments | pass |
+
+复核覆盖结构/空间名词、剖切坐标与保留侧、撤销范围、进入光学工作区动作，以及医生科普使用语境。非空/占位词/插值检查通过；本批没有插值。主代理已查看桌面及 390px 英文控制区，语言切换不重置位置与历史。未进行医学专家审核或屏幕阅读器测试。
+
 ## 界面来源文案移除（2026-10-22）
 
 本轮删除页脚来源链接及其 `derived` 中英文文案，没有新增或改译其他双语内容，因此没有新的翻译审校批次。当前有效双语配对为 **229 对**（此前 230 对减去 `derived` 1 对）；下方首版、T01、T02 审校记录及指纹保持历史原样。

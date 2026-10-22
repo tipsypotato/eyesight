@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createEyeStore } from './store';
-import type { CameraSnapshot } from '../anatomy/types';
+import { SCENE_PRESETS, STRUCTURE_IDS, type CameraSnapshot, type LayerMode } from '../anatomy/types';
 
 describe('learning state', () => {
   it('keeps a canvas fundus selection in the current section without changing other layers', () => {
@@ -8,7 +8,7 @@ describe('learning state', () => {
     store.getState().setClip({ enabled: true, axis: 'axial', offset: 0.2 });
     const layers = { ...store.getState().layers };
     store.getState().select('fovea', true);
-    expect(store.getState().clip).toEqual({ enabled: true, axis: 'axial', offset: 0.2 });
+    expect(store.getState().clip).toEqual({ enabled: true, axis: 'axial', offset: 0.2, keepSide: 'negative' });
     expect(store.getState().layers).toEqual(layers);
   });
   it('restores the entry layers after selecting another hidden structure while isolated', () => {
@@ -148,10 +148,10 @@ describe('learning state', () => {
     const store = createEyeStore();
     store.getState().setClip({ enabled: true, axis: 'coronal', offset: -0.9 });
     store.getState().select('cornea');
-    expect(store.getState().clip).toEqual({ enabled: true, axis: 'sagittal', offset: 0 });
+    expect(store.getState().clip).toEqual({ enabled: true, axis: 'sagittal', offset: 0, keepSide: 'negative' });
     store.getState().setClip({ axis: 'axial', offset: 0.2 });
     store.getState().select('lens', true);
-    expect(store.getState().clip).toEqual({ enabled: true, axis: 'axial', offset: 0.2 });
+    expect(store.getState().clip).toEqual({ enabled: true, axis: 'axial', offset: 0.2, keepSide: 'negative' });
   });
   it('preserves tour progress on language changes and removes optical rays when leaving', () => {
     const store = createEyeStore();
@@ -172,5 +172,114 @@ describe('learning state', () => {
     store.getState().advanceQuiz();
     expect(store.getState().quizRevealed).toBe(false);
     expect(store.getState().quiz!.index).toBe(1);
+  });
+});
+
+
+describe('observation presets and scene undo', () => {
+  const camera: CameraSnapshot = { position: [3, 2, 4], target: [0.1, 0, -0.2], zoom: 1.3 };
+  it.each(SCENE_PRESETS)('rebuilds %s from a complete baseline regardless of hidden layers', preset => {
+    const clean = createEyeStore(), dirty = createEyeStore();
+    dirty.setState({ layers: Object.fromEntries(STRUCTURE_IDS.map(id => [id, 'off'])) as Record<typeof STRUCTURE_IDS[number], LayerMode> });
+    dirty.getState().select('lens', true); dirty.getState().toggleIsolate();
+    dirty.getState().setExplode(1); dirty.getState().setLabels(true);
+    dirty.getState().setClip({ axis: 'axial', offset: 0.75, keepSide: 'positive' });
+    clean.getState().applyPreset(preset); dirty.getState().applyPreset(preset);
+    const a = clean.getState(), b = dirty.getState();
+    expect(b.layers).toEqual(a.layers); expect(b.clip).toEqual(a.clip);
+    expect(b).toMatchObject({ presetId: preset, isolateId: null, isolationLayers: null, explode: 0, labels: false, view: a.view, showOptics: a.showOptics });
+    expect(b.selectedId).toBe(preset === 'fundus' ? null : 'lens');
+  });
+  it('uses the specified wall, fundus, chamber and optical displays without resetting optical parameters', () => {
+    const store = createEyeStore();
+    store.getState().setOptics('myopia'); store.getState().applyPreset('optical-path');
+    expect(store.getState()).toMatchObject({ opticsPreset: 'myopia', showOptics: true, view: 'side', clip: { enabled: true, axis: 'sagittal', offset: 0, keepSide: 'negative' } });
+    expect(Object.values(store.getState().layers).every(value => value === 'ghost')).toBe(true);
+    store.getState().applyPreset('fundus');
+    expect(store.getState()).toMatchObject({ showOptics: false, view: 'front', clip: { enabled: false }, layers: { retina: 'ghost', lens: 'off', cornea: 'off', macula: 'on', 'optic-disc': 'on' } });
+    store.getState().applyPreset('chambers');
+    expect(store.getState()).toMatchObject({ layers: { sclera: 'ghost', choroid: 'ghost', retina: 'ghost', 'anterior-chamber': 'ghost', 'posterior-chamber': 'ghost', vitreous: 'ghost' } });
+    store.getState().applyPreset('wall-cut');
+    expect(store.getState().layers.retina).toBe('on');
+  });
+  it('undoes an entire continuous gesture once and restores the actual starting camera', () => {
+    const store = createEyeStore();
+    store.getState().beginSceneChange(camera);
+    for (const offset of [0.1, 0.3, 0.6, 1]) store.getState().setClip({ offset });
+    store.getState().endSceneChange();
+    expect(store.getState().undoCount).toBe(1);
+    store.getState().setLanguage('en'); store.getState().undoScene();
+    expect(store.getState()).toMatchObject({ clip: { offset: 0 }, camera, lang: 'en', undoCount: 0 });
+  });
+  it('does not record unchanged values, a gesture returning to its start, selection, view or language changes', () => {
+    const store = createEyeStore();
+    store.getState().setClip({ offset: 0 }); store.getState().setExplode(0);
+    store.getState().beginSceneChange(camera); store.getState().setExplode(0.7); store.getState().setExplode(0); store.getState().endSceneChange();
+    store.getState().select('lens', true); store.getState().setView('back'); store.getState().setLanguage('en');
+    expect(store.getState().undoCount).toBe(0);
+  });
+  it('keeps only the latest twenty scene changes in each workspace', () => {
+    const store = createEyeStore();
+    for (let i = 1; i <= 25; i++) store.getState().setExplode(i / 25);
+    expect(store.getState().undoCount).toBe(20);
+    store.getState().setMode('optics'); expect(store.getState().undoCount).toBe(0);
+    store.getState().setOptics('corrected'); store.getState().setMode('explore');
+    for (let i = 0; i < 20; i++) store.getState().undoScene();
+    expect(store.getState().explode).toBeCloseTo(0.2);
+    store.getState().setMode('optics'); store.getState().undoScene();
+    expect(store.getState().opticsPreset).toBe('normal');
+  });
+  it('restores presets, layers and isolation snapshots without changing tour steps or quiz answers', () => {
+    const store = createEyeStore();
+    store.getState().startLesson('anatomy'); store.getState().goToStep(1);
+    store.getState().applyPreset('fundus'); store.getState().select('fovea', true); store.getState().toggleIsolate();
+    store.getState().cycleLayer('retina');
+    store.getState().undoScene(); store.getState().undoScene(); store.getState().undoScene();
+    expect(store.getState()).toMatchObject({ lessonId: 'anatomy', step: 1, isolateId: null, isolationLayers: null });
+    store.getState().setMode('quiz'); store.getState().revealQuiz();
+    const quiz = store.getState().quiz;
+    store.getState().setExplode(0.5); store.getState().undoScene();
+    expect(store.getState().quiz).toBe(quiz); expect(store.getState().quizRevealed).toBe(true);
+  });
+  it('clears the active undo stack at lesson and quiz step boundaries', () => {
+    const store = createEyeStore();
+    store.getState().startLesson('anatomy'); store.getState().setExplode(0.5);
+    store.getState().goToStep(1); expect(store.getState().undoCount).toBe(0);
+    store.getState().startQuiz(); store.getState().setExplode(0.5); store.getState().revealQuiz();
+    store.getState().advanceQuiz(); expect(store.getState().undoCount).toBe(0);
+    store.getState().undoScene(); expect(store.getState().quiz!.index).toBe(1);
+  });
+  it('finishes a live gesture before switching workspaces without leaking changes', () => {
+    const store = createEyeStore();
+    store.getState().beginSceneChange(camera); store.getState().setExplode(0.4);
+    store.getState().setMode('optics'); store.getState().endSceneChange(); store.getState().setOptics('myopia');
+    store.getState().setMode('explore'); expect(store.getState().undoCount).toBe(1);
+    store.getState().undoScene(); expect(store.getState().explode).toBe(0);
+  });
+  it('retains the observation context during free edits and resets to its own default view', () => {
+    const store = createEyeStore();
+    store.getState().applyPreset('chambers'); store.getState().setClip({ offset: 0.3 }); store.getState().setExplode(0.4);
+    expect(store.getState().presetId).toBe('chambers');
+    store.getState().applyPreset('fundus'); store.getState().setView('back');
+    const undoCount = store.getState().undoCount;
+    store.getState().resetCamera();
+    expect(store.getState()).toMatchObject({ view: 'front', presetId: 'fundus', undoCount });
+  });
+  it('preserves focus and reveal return actions when undoing a later scene edit', () => {
+    const store = createEyeStore();
+    store.getState().rememberFocus(camera); store.getState().setLabels(true); store.getState().undoScene();
+    expect(store.getState().focusReturn).toEqual(camera);
+    store.getState().revealStructure('fovea', camera);
+    const before = store.getState().revealReturn;
+    store.getState().setLabels(true); store.getState().undoScene();
+    expect(store.getState()).toMatchObject({ revealReturn: before, revealPreset: 'fundusView', focusReturn: camera });
+    store.getState().undoReveal(); expect(store.getState().selectedId).toBeNull();
+  });
+  it('rejects nonfinite scene input and clamps section and separation ranges', () => {
+    const store = createEyeStore();
+    store.getState().setClip({ offset: NaN }); store.getState().setExplode(Infinity);
+    expect(store.getState()).toMatchObject({ clip: { offset: 0 }, explode: 0, undoCount: 0 });
+    store.getState().setClip({ offset: -2 }); store.getState().setExplode(3);
+    expect(store.getState()).toMatchObject({ clip: { offset: -1 }, explode: 1 });
   });
 });

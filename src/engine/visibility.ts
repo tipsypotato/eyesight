@@ -54,6 +54,18 @@ export function visibleSurface(part: EyePart, parts: Map<StructureId, EyePart>, 
   const surface = cast(anchor);
   if (surface && unobstructed(surface)) return surface;
 
+  const lines: THREE.Line[] = [];
+  part.group.traverse(object => { if (object instanceof THREE.Line && object.visible) lines.push(object); });
+  for (const line of lines) {
+    const positions = line.geometry.getAttribute('position');
+    if (!positions?.count) continue;
+    for (const fraction of [0.17, 0.5, 0.83]) {
+      const sample = new THREE.Vector3().fromBufferAttribute(positions, Math.floor((positions.count - 1) * fraction)).applyMatrix4(line.matrixWorld);
+      const hit = cast(sample);
+      if (hit && unobstructed(hit)) return hit;
+    }
+  }
+
   // shortcut: sample nine surface points; increase coverage if narrow exposed edges are missed.
   const meshes: THREE.Mesh[] = [];
   part.group.traverse(object => { if (object instanceof THREE.Mesh) meshes.push(object); });

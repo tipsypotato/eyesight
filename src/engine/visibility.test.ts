@@ -7,7 +7,7 @@ import { visibleSurface } from './visibility';
 
 function setup(visible: StructureId[]) {
   const eye = buildEye();
-  const state: SceneState = { ...createEyeStore().getState(), clip: { enabled: false, axis: 'sagittal', offset: 0 } };
+  const state: SceneState = { ...createEyeStore().getState(), clip: { enabled: false, axis: 'sagittal', offset: 0, keepSide: 'negative' } };
   state.layers = Object.fromEntries(STRUCTURE_IDS.map(id => [id, visible.includes(id) ? 'on' : 'off'])) as SceneState['layers'];
   const camera = new THREE.PerspectiveCamera(38, 1.5, 0.02, 50);
   camera.position.set(0, 0, 4);
@@ -64,7 +64,7 @@ describe('visible anatomy surface', () => {
       state.isolateId = 'lens';
       expect(surface('fovea')).toBeNull();
       state.isolateId = null;
-      state.clip = { enabled: true, axis: 'coronal', offset: -1 };
+      state.clip = { enabled: true, axis: 'coronal', offset: -1, keepSide: 'negative' };
       expect(surface('fovea')).toBeNull();
     } finally { eye.dispose(); }
   });
@@ -101,7 +101,7 @@ describe('visible anatomy surface', () => {
       expect(state.isolateId).toBe('cornea');
       expect(state.layers.lens).toBe('off');
       expect(part.group.visible).toBe(false);
-      state.clip = { enabled: true, axis: 'coronal', offset: -1 };
+      state.clip = { enabled: true, axis: 'coronal', offset: -1, keepSide: 'negative' };
       expect(visibleSurface(part, eye.parts, state, camera, 1, true)).toBeNull();
     } finally { eye.dispose(); }
   });
@@ -128,7 +128,7 @@ describe('visible anatomy surface', () => {
       state.layers.cornea = 'on';
       expect(surface('pupil')).toBeNull();
       state.layers.cornea = 'ghost';
-      state.clip = { enabled: true, axis: 'sagittal', offset: -0.1 };
+      state.clip = { enabled: true, axis: 'sagittal', offset: -0.1, keepSide: 'negative' };
       expect(surface('pupil')).toBeNull();
       state.clip.enabled = false;
       camera.lookAt(0, 0, 10);

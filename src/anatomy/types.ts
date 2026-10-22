@@ -12,6 +12,9 @@ export type Mode = 'explore' | 'optics' | 'tour' | 'quiz';
 export type LayerMode = 'on' | 'ghost' | 'off';
 export type ViewPreset = 'oblique' | 'front' | 'side' | 'back';
 export type ClipAxis = 'sagittal' | 'axial' | 'coronal';
+export type KeepSide = 'negative' | 'positive';
+export const SCENE_PRESETS = ['intact', 'wall-cut', 'anterior', 'fundus', 'chambers', 'optical-path'] as const;
+export type ScenePreset = typeof SCENE_PRESETS[number];
 export type OpticsPreset = 'normal' | 'myopia' | 'corrected';
 export type CameraSnapshot = {
   position: [number, number, number]; target: [number, number, number]; zoom: number;
@@ -20,7 +23,8 @@ export type CameraSnapshot = {
 export interface SceneState {
   lang: Lang; mode: Mode; selectedId: StructureId | null;
   layers: Record<StructureId, LayerMode>; isolateId: StructureId | null;
-  clip: { enabled: boolean; axis: ClipAxis; offset: number };
+  clip: { enabled: boolean; axis: ClipAxis; offset: number; keepSide: KeepSide };
+  presetId: ScenePreset | null;
   explode: number; labels: boolean; view: ViewPreset;
   opticsPreset: OpticsPreset; quizRevealed: boolean;
   showOptics?: boolean;

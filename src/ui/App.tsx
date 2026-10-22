@@ -2,7 +2,7 @@ import { Component, useEffect, useRef, useState, type ReactNode, type RefObject 
 import { useStore } from 'zustand';
 import { GROUPS, LESSONS, STRUCTURES } from '../anatomy/data';
 import { searchStructures } from '../anatomy/search';
-import type { ClipAxis, Mode, OpticsPreset, StructureId, ViewPreset } from '../anatomy/types';
+import { SCENE_PRESETS, type ScenePreset, type ClipAxis, type Mode, type OpticsPreset, type StructureId, type ViewPreset } from '../anatomy/types';
 import { messages, type MessageKey } from '../content/messages';
 import { EyeEngine } from '../engine/EyeEngine';
 import { computeOptics } from '../engine/optics';
@@ -17,6 +17,12 @@ function EyeIcon({ small = false }: { small?: boolean }) {
 }
 function useText() { const lang = useStore(eyeStore, s => s.lang); return (key: MessageKey) => messages[key][lang]; }
 
+function editScene(engine: EyeEngine | null, action: () => void) {
+  const s = eyeStore.getState();
+  s.endSceneChange(); s.beginSceneChange(engine?.captureCamera());
+  try { action(); } finally { s.endSceneChange(); }
+}
+
 function observeStructure(engine: EyeEngine | null, id: StructureId, focus = false) {
   const state = eyeStore.getState();
   if (state.mode === 'quiz') return;
@@ -26,7 +32,7 @@ function observeStructure(engine: EyeEngine | null, id: StructureId, focus = fal
   if (visible) {
     state.select(id, true);
     if (focus) state.rememberFocus(camera);
-  } else state.revealStructure(id, camera);
+  } else editScene(engine, () => state.revealStructure(id, camera));
   if (focus || !visible) engine.focus(id);
 }
 
@@ -38,7 +44,11 @@ function Viewport({ engine }: { engine: EngineRef }) {
     if (!host.current) return;
     let instance: EyeEngine;
     try {
-      instance = new EyeEngine(host.current, id => eyeStore.getState().select(id, true), id => observeStructure(instance, id, true));
+      instance = new EyeEngine(host.current, id => eyeStore.getState().select(id, true), id => observeStructure(instance, id, true), {
+        begin: () => eyeStore.getState().beginSceneChange(instance.captureCamera()),
+        change: offset => eyeStore.getState().setClip({ offset }),
+        end: () => eyeStore.getState().endSceneChange(),
+      });
       engine.current = instance;
       instance.setState(eyeStore.getState());
     } catch (error) { console.error('3D initialization failed', error); setFailed(true); return; }
@@ -62,7 +72,7 @@ function StructuresPanel({ engine }: { engine: EngineRef }) {
       const items = matching.filter(item => item.group === group.id);
       return items.length > 0 && <section key={group.id} className="structure-group"><h3>{group.name[s.lang]}</h3>{items.map(item => <div className={`structure-row ${s.selectedId === item.id ? 'selected' : ''}`} key={item.id}>
         <button className="structure-name" aria-pressed={s.selectedId === item.id} onClick={() => observeStructure(engine.current, item.id)}><span className="color-dot" style={{ background: item.color }}/><span>{item.name[s.lang]}</span></button>
-        <button className={`layer-dot ${s.layers[item.id]}`} aria-label={`${item.name[s.lang]} · ${t(s.layers[item.id])}`} title={`${item.name[s.lang]} · ${t(s.layers[item.id])}`} onClick={() => s.cycleLayer(item.id)}><span/></button>
+        <button className={`layer-dot ${s.layers[item.id]}`} aria-label={`${item.name[s.lang]} · ${t(s.layers[item.id])}`} title={`${item.name[s.lang]} · ${t(s.layers[item.id])}`} onClick={() => editScene(engine.current, () => s.cycleLayer(item.id))}><span/></button>
       </div>)}</section>;
     })}{matching.length === 0 && <p>{t('noResults')}</p>}</div>
   </>;
@@ -73,7 +83,7 @@ function Details({ engine }: { engine: EngineRef }) {
   if (!item) return <div className="welcome-card"><div className="welcome-icon"><EyeIcon/></div><span className="eyebrow">{t('explore')}</span><h2>{t('pickTitle')}</h2><p>{t('pickBody')}</p><button className="primary" onClick={() => observeStructure(engine.current, 'cornea')}>{t('startExplore')} <span>↗</span></button><div className="welcome-stat"><b>17</b><span>{t('structures')}</span></div></div>;
   return <article className="details" key={item.id}><div className="detail-title"><span className="type-tag" style={{ borderColor: item.color }}>{t(item.kind)}</span><h2>{item.name[s.lang]}</h2><p className="latin">{item.latin}</p></div>
     <p className="summary">{item.summary[s.lang]}</p>
-    <div className="detail-actions"><button onClick={() => observeStructure(engine.current, item.id, true)}>{t('focus')} ↗</button><button className={s.isolateId ? 'active' : ''} onClick={s.toggleIsolate}>{t(s.isolateId ? 'showAll' : 'isolate')}</button></div>
+    <div className="detail-actions"><button onClick={() => observeStructure(engine.current, item.id, true)}>{t('focus')} ↗</button><button className={s.isolateId ? 'active' : ''} onClick={() => editScene(engine.current, s.toggleIsolate)}>{t(s.isolateId ? 'showAll' : 'isolate')}</button></div>
     <section><h3>{t('position')}</h3><p>{item.position[s.lang]}</p></section>
     {['retina', 'macula', 'fovea', 'optic-disc'].includes(item.id) && <section className="reference-structures"><h3>{t('referenceStructures')}</h3>{(['macula', 'fovea', 'optic-disc'] as StructureId[]).filter(id => id !== item.id).map(id => <button key={id} onClick={() => observeStructure(engine.current, id)}>{structure(id)!.name[s.lang]} ↗</button>)}</section>}
     <section><h3>{t('function')}</h3><p>{item.function[s.lang]}</p></section>
@@ -100,9 +110,9 @@ function OpticsDiagram() {
   </svg><div className="diagram-legend"><span><i className="ray-key"/>{t('rays')}</span><span><i className="focus-key"/>{t('focalPoint')}</span></div></div>;
 }
 
-function OpticsPanel() {
+function OpticsPanel({ engine }: { engine: EngineRef }) {
   const s = useEye(); const t = useText();
-  return <div className="mode-content"><span className="eyebrow">{t('optics')}</span><h2>{t('opticsTitle')}</h2><div className="preset-list">{(['normal', 'myopia', 'corrected'] as OpticsPreset[]).map((preset, i) => <button key={preset} className={s.opticsPreset === preset ? 'selected' : ''} aria-pressed={s.opticsPreset === preset} onClick={() => s.setOptics(preset)}><span>0{i+1}</span>{t(preset)}<b>{s.opticsPreset === preset ? '●' : '○'}</b></button>)}</div><p className="summary">{t(`${s.opticsPreset}Body` as MessageKey)}</p><OpticsDiagram/><p className="micro note">{t('opticsNote')}</p></div>;
+  return <div className="mode-content"><span className="eyebrow">{t('optics')}</span><h2>{t('opticsTitle')}</h2><div className="preset-list">{(['normal', 'myopia', 'corrected'] as OpticsPreset[]).map((preset, i) => <button key={preset} className={s.opticsPreset === preset ? 'selected' : ''} aria-pressed={s.opticsPreset === preset} onClick={() => editScene(engine.current, () => s.setOptics(preset))}><span>0{i+1}</span>{t(preset)}<b>{s.opticsPreset === preset ? '●' : '○'}</b></button>)}</div><p className="summary">{t(`${s.opticsPreset}Body` as MessageKey)}</p><OpticsDiagram/><p className="micro note">{t('opticsNote')}</p></div>;
 }
 
 function TourList() {
@@ -128,10 +138,39 @@ function QuizPanel({ engine }: { engine: EngineRef }) {
   </div>;
 }
 
+const presetMessages: Record<ScenePreset, MessageKey> = {
+  intact: 'presetIntact', 'wall-cut': 'presetWall', anterior: 'presetAnterior', fundus: 'presetFundus', chambers: 'presetChambers', 'optical-path': 'presetOptical',
+};
+const rangeKeys = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown']);
 function SceneControls({ engine }: { engine: EngineRef }) {
   const s = useEye(); const t = useText();
-  return <div className="scene-controls"><div className="view-controls" role="group" aria-label={t('view')}>{(['oblique','front','side','back'] as ViewPreset[]).map(view => <button key={view} className={s.view === view ? 'active' : ''} onClick={() => s.setView(view)}>{t(view)}</button>)}<span className="spacer"/><button className="square" aria-label={t('zoomOut')} onClick={() => engine.current?.zoom(0.15)}>−</button><button className="square" aria-label={t('zoomIn')} onClick={() => engine.current?.zoom(-0.15)}>+</button></div>
-    {s.mode !== 'quiz' && <div className="section-controls"><label className="check"><input type="checkbox" checked={s.clip.enabled} onChange={e => s.setClip({ enabled: e.target.checked })}/>{t('clip')}</label><select aria-label={t('clip')} value={s.clip.axis} onChange={e => s.setClip({ axis: e.target.value as ClipAxis })}>{(['sagittal','axial','coronal'] as ClipAxis[]).map(axis => <option value={axis} key={axis}>{t(axis)}</option>)}</select><input className="section-range" aria-label={t('sectionPosition')} type="range" min="-0.9" max="0.9" step="0.01" value={s.clip.offset} disabled={!s.clip.enabled} onChange={e => s.setClip({ offset: Number(e.target.value) })}/><label className="explode-control">{t('explode')}<input type="range" min="0" max="1" step="0.01" value={s.explode} onChange={e => s.setExplode(Number(e.target.value))}/></label></div>}
+  const begin = () => eyeStore.getState().beginSceneChange(engine.current?.captureCamera());
+  const end = () => eyeStore.getState().endSceneChange();
+  useEffect(() => {
+    window.addEventListener('pointerup', end); window.addEventListener('pointercancel', end); window.addEventListener('blur', end);
+    return () => { window.removeEventListener('pointerup', end); window.removeEventListener('pointercancel', end); window.removeEventListener('blur', end); end(); };
+  }, []);
+  const rangeGesture = {
+    onPointerDown: begin, onPointerUp: end, onPointerCancel: end, onLostPointerCapture: end, onBlur: end,
+    onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => { if (rangeKeys.has(e.key)) begin(); },
+    onKeyUp: (e: React.KeyboardEvent<HTMLInputElement>) => { if (rangeKeys.has(e.key)) end(); },
+  };
+  const edit = (action: () => void) => editScene(engine.current, action);
+  const axis = { sagittal: 'x', axial: 'y', coronal: 'z' }[s.clip.axis];
+  return <div className="scene-controls">
+    {s.mode !== 'quiz' && <>
+      <div className="scene-presets" role="group" aria-label={t('scenePresets')}>{SCENE_PRESETS.map(preset => <button key={preset} className={s.presetId === preset ? 'active' : ''} aria-pressed={s.presetId === preset} onClick={() => edit(() => s.applyPreset(preset))}>{t(presetMessages[preset])}</button>)}</div>
+      <div className="section-controls">
+        <label className="check"><input type="checkbox" checked={s.clip.enabled} onChange={e => edit(() => s.setClip({ enabled: e.target.checked }))}/>{t('clip')}</label>
+        <select aria-label={t('clip')} value={s.clip.axis} onChange={e => edit(() => s.setClip({ axis: e.target.value as ClipAxis }))}>{(['sagittal','axial','coronal'] as ClipAxis[]).map(axis => <option value={axis} key={axis}>{t(axis)}</option>)}</select>
+        <input className="section-range" aria-label={t('sectionPosition')} type="range" min="-1" max="1" step="0.01" value={s.clip.offset} disabled={!s.clip.enabled} {...rangeGesture} onChange={e => s.setClip({ offset: Number(e.target.value) })}/>
+        <button className="flip-section" disabled={!s.clip.enabled} onClick={() => edit(() => s.setClip({ keepSide: s.clip.keepSide === 'negative' ? 'positive' : 'negative' }))}>{t('flipSection')}</button>
+        <label className="explode-control">{t('explode')}<input aria-label={t('explode')} type="range" min="0" max="1" step="0.01" value={s.explode} {...rangeGesture} onChange={e => s.setExplode(Number(e.target.value))}/></label>
+      </div>
+      {s.clip.enabled && <p className="section-status"><span>{t('retainedSide')}: {axis} {s.clip.keepSide === 'negative' ? '≤' : '≥'} {s.clip.offset.toFixed(2)}</span><span>{t('sectionLocked')}</span></p>}
+      <div className="scene-history"><button disabled={s.undoCount === 0} onClick={s.undoScene}>↶ {t('undoScene')}{s.undoCount > 0 && ` (${s.undoCount})`}</button>{s.mode === 'explore' && s.showOptics && <button onClick={() => s.setMode('optics', engine.current?.captureCamera())}>{t('enterOptics')} →</button>}</div>
+    </>}
+    <div className="view-controls" role="group" aria-label={t('view')}>{(['oblique','front','side','back'] as ViewPreset[]).map(view => <button key={view} className={s.view === view ? 'active' : ''} onClick={() => s.setView(view)}>{t(view)}</button>)}<span className="spacer"/><button className="square" aria-label={t('zoomOut')} onClick={() => engine.current?.zoom(0.15)}>−</button><button className="square" aria-label={t('zoomIn')} onClick={() => engine.current?.zoom(-0.15)}>+</button></div>
   </div>;
 }
 
@@ -140,8 +179,8 @@ export default function App() {
   useEffect(() => { document.documentElement.lang = s.lang === 'zh' ? 'zh-CN' : 'en'; document.title = `eyesight · ${t('rightEye')}`; }, [s.lang]);
   return <div className="app"><header className="header"><a className="brand" href="#" onClick={e => { e.preventDefault(); s.setMode('explore', engine.current?.captureCamera()); }} aria-label="eyesight"><span className="brand-icon"><EyeIcon small/></span><b>eyesight</b><span className="brand-tagline">{t('tagline')}</span></a><nav aria-label={s.lang === 'zh' ? '学习模式' : 'Learning modes'}>{(['explore','optics','tour','quiz'] as Mode[]).map(mode => <button key={mode} className={s.mode === mode ? 'active' : ''} aria-current={s.mode === mode ? 'page' : undefined} onClick={() => s.setMode(mode, engine.current?.captureCamera())}>{t(mode)}</button>)}</nav><div className="language-switch" role="group" aria-label="Language / 语言"><button lang="zh-CN" aria-pressed={s.lang === 'zh'} onClick={() => s.setLanguage('zh')}>中</button><span>/</span><button lang="en" aria-pressed={s.lang === 'en'} onClick={() => s.setLanguage('en')}>EN</button></div></header>
     <main className={`workspace mode-${s.mode}`}><aside className="left-panel">{s.mode === 'explore' ? <StructuresPanel engine={engine}/> : s.mode === 'tour' ? <TourList/> : <div className="mode-content"><span className="eyebrow">{t(s.mode === 'quiz' ? 'quiz' : 'optics')}</span><h2>{t(s.mode === 'quiz' ? 'quizPanel' : 'opticsTitle')}</h2><p>{t(s.mode === 'quiz' ? 'quizHint' : `${s.opticsPreset}Body` as MessageKey)}</p><div className="sidebar-illustration"><EyeIcon/></div><p className="micro">{s.mode === 'quiz' ? `${t('score')} · ${s.quiz ? quizScore(s.quiz) : 0} / ${QUIZ_POOL.length}` : t('opticsNote')}</p></div>}</aside>
-      <section className="scene-column"><div className="scene-heading"><div><span className="eyebrow">OCULUS DEXTER · OD</span><h1>{t('rightEye')}<span>{t('schematic')}</span></h1></div><div className="scene-actions">{s.mode !== 'quiz' && <button className={s.labels ? 'active' : ''} aria-pressed={s.labels} onClick={() => s.setLabels(!s.labels)}>{t('labels')}</button>}<button onClick={s.resetCamera}>{t('resetCamera')}</button><button title={t('resetSceneHint')} onClick={s.resetScene}>{t('reset')}</button></div></div><div className="stage"><div className="stage-grid"/><Viewport engine={engine}/><div className="scene-corner" data-viewport-overlay>01 <span>/ {t(s.mode)}</span></div><p className="interaction-hint" data-viewport-overlay>{t(s.mode === 'quiz' ? 'dragQuiz' : 'drag')}</p></div><div className="observation-actions">{s.revealPreset && <span role="status">{t(s.revealPreset)} <button onClick={s.undoReveal}>{t('undoReveal')}</button></span>}{s.focusReturn && <button onClick={s.returnFocus}>{t('returnFocus')}</button>}</div><SceneControls engine={engine}/></section>
-      <aside className="right-panel">{s.mode === 'explore' ? <Details engine={engine}/> : s.mode === 'optics' ? <OpticsPanel/> : s.mode === 'tour' ? <TourStepPanel engine={engine}/> : <QuizPanel engine={engine}/>}</aside>
+      <section className="scene-column"><div className="scene-heading"><div><span className="eyebrow">OCULUS DEXTER · OD</span><h1>{t('rightEye')}<span>{t('schematic')}</span></h1></div><div className="scene-actions">{s.mode !== 'quiz' && <button className={s.labels ? 'active' : ''} aria-pressed={s.labels} onClick={() => editScene(engine.current, () => s.setLabels(!s.labels))}>{t('labels')}</button>}<button onClick={s.resetCamera}>{t('resetCamera')}</button><button title={t('resetSceneHint')} onClick={() => editScene(engine.current, s.resetScene)}>{t('reset')}</button></div></div><div className="stage"><div className="stage-grid"/><Viewport engine={engine}/><div className="scene-corner" data-viewport-overlay>01 <span>/ {t(s.mode)}</span></div><p className="interaction-hint" data-viewport-overlay>{t(s.mode === 'quiz' ? 'dragQuiz' : 'drag')}</p></div><div className="observation-actions">{s.revealPreset && <span role="status">{t(s.revealPreset)} <button onClick={() => editScene(engine.current, s.undoReveal)}>{t('undoReveal')}</button></span>}{s.focusReturn && <button onClick={s.returnFocus}>{t('returnFocus')}</button>}</div><SceneControls engine={engine}/></section>
+      <aside className="right-panel">{s.mode === 'explore' ? <Details engine={engine}/> : s.mode === 'optics' ? <OpticsPanel engine={engine}/> : s.mode === 'tour' ? <TourStepPanel engine={engine}/> : <QuizPanel engine={engine}/>}</aside>
     </main><footer><span><i/>{t('anatomyCount')}</span><details><summary>{t('info')} ↗</summary><div><p>{t('modelNote')}</p><p>{t('opticsNote')}</p></div></details><span className="footer-version">eyesight / 0.1</span></footer>
   </div>;
 }

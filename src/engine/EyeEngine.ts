@@ -5,12 +5,13 @@ import { Animator } from './animator';
 import { CameraRig } from './camera';
 import { buildEye, createShellSection, setPosteriorStretch, type EyePart } from './geometry';
 import { computeOptics } from './optics';
-import { intersectionSurvives, SECTION_AXES, SectionTool } from './section';
+import { createSectionContour, intersectionSurvives, SECTION_AXES, SectionTool } from './section';
 import { messages } from '../content/messages';
 import { visibleSurface } from './visibility';
 
 type Drawable = THREE.Mesh | THREE.Line;
 type Label = { button: HTMLButtonElement; dot: HTMLSpanElement; leader: HTMLSpanElement };
+type SectionCallbacks = { begin: () => void; change: (offset: number) => void; end: () => void };
 const SELECTED_COLOR = new THREE.Color('#4169e1');
 const HOVER_COLOR = new THREE.Color('#93b1ff');
 const FUNDUS_REFERENCES: StructureId[] = ['macula', 'fovea', 'optic-disc'];
@@ -44,6 +45,8 @@ export class EyeEngine {
   private pointerActive = false;
   private pointerDragged = false;
   private hoveredId: StructureId | null = null;
+  private sectionPointerId: number | null = null;
+  private sectionControlsEnabled = true;
   private frame = 0;
   private lastFrame = 0;
   private width = 1;
@@ -56,7 +59,7 @@ export class EyeEngine {
   private capKey = '';
   private posteriorScale = 1;
 
-  constructor(private host: HTMLElement, private onSelect: (id: StructureId) => void, private onLocate = onSelect) {
+  constructor(private host: HTMLElement, private onSelect: (id: StructureId) => void, private onLocate = onSelect, private sectionCallbacks?: SectionCallbacks) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.localClippingEnabled = true;
@@ -106,7 +109,7 @@ export class EyeEngine {
       this.overlay.append(leader, dot, button);
       this.labels.set(structure.id, { button, dot, leader });
     }
-    this.scene.add(this.eye.root, this.rays);
+    this.scene.add(this.eye.root, this.rays, this.section.guide);
     this.scene.add(new THREE.HemisphereLight('#fff9e8', '#596e79', 1.7));
     const key = new THREE.DirectionalLight('#fff8e6', 2.4);
     key.position.set(3, 5, 6);
@@ -137,11 +140,13 @@ export class EyeEngine {
     this.camera.position.set(3.5, 1.4, 3.5);
     this.rig = new CameraRig(this.camera, this.canvas, this.animator);
     this.rig.controls.addEventListener('change', this.invalidate);
-    this.canvas.addEventListener('pointerdown', this.handlePointerDown);
-    this.canvas.addEventListener('pointerup', this.handlePointerUp);
-    this.canvas.addEventListener('pointermove', this.handlePointerMove);
+    this.canvas.addEventListener('pointerdown', this.handlePointerDown, true);
+    this.canvas.addEventListener('pointerup', this.handlePointerUp, true);
+    this.canvas.addEventListener('pointermove', this.handlePointerMove, true);
     this.canvas.addEventListener('pointerleave', this.handlePointerLeave);
-    this.canvas.addEventListener('pointercancel', this.handlePointerCancel);
+    this.canvas.addEventListener('pointercancel', this.handlePointerCancel, true);
+    this.canvas.addEventListener('lostpointercapture', this.handlePointerCancel);
+    window.addEventListener('blur', this.handlePointerCancel);
     this.canvas.addEventListener('keydown', this.handleKeyDown);
     this.canvas.addEventListener('webglcontextrestored', this.invalidate);
     this.media.addEventListener('change', this.handleMotion);
@@ -157,6 +162,7 @@ export class EyeEngine {
     if (this.disposed) return;
     const previous = this.state;
     const sceneChanged = !previous || state.mode !== previous.mode || state.sceneRevision !== previous.sceneRevision;
+    if (sceneChanged || !state.clip.enabled || state.clip.axis !== previous?.clip.axis || state.clip.keepSide !== previous?.clip.keepSide) this.endSectionDrag();
     if (sceneChanged) this.viewportKey = '';
     if (sceneChanged || state.selectedId !== previous?.selectedId) {
       this.rig.cancel();
@@ -207,19 +213,33 @@ export class EyeEngine {
       const hovered = state.mode !== 'quiz' && this.hoveredId === id && state.layers[id] === 'on';
       const highlight = selected ? 0.48 : hovered ? 0.18 : 0;
       const accent = selected ? SELECTED_COLOR : HOVER_COLOR;
+      const outlineSpace = id === 'anterior-chamber' || id === 'posterior-chamber' || (id === 'vitreous' && state.presetId === 'chambers');
+      let contour = part.group.getObjectByName('space-contour') as THREE.LineSegments | undefined;
+      if (outlineSpace && !contour) {
+        const material = new THREE.LineBasicMaterial({ color: STRUCTURES.find(item => item.id === id)!.color, transparent: true, opacity: 0.75, depthWrite: false });
+        material.userData.baseColor = material.color.clone();
+        material.userData.baseOpacity = 0.75;
+        contour = new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints([]), material);
+        contour.name = 'space-contour';
+        contour.userData.structureId = id;
+        part.group.add(contour);
+      }
+      if (contour) contour.visible = outlineSpace;
       part.group.traverse(object => {
         if (!(object instanceof THREE.Mesh || object instanceof THREE.Line) || object.userData.cap) return;
         for (const material of this.materials(object)) {
           const baseOpacity = material.userData.baseOpacity ?? 1;
           material.opacity = state.layers[id] === 'ghost' ? Math.min(baseOpacity, 0.10)
             : selected ? Math.max(baseOpacity, 0.62) : hovered ? Math.max(baseOpacity, 0.32) : baseOpacity;
+          if (outlineSpace) material.opacity = object instanceof THREE.Mesh ? 0 : state.layers[id] === 'ghost' ? 0.38 : selected ? 0.95 : 0.75;
           // shortcut: approximate occlusion inside a closed globe; photometric rendering needs tissue-aware shadows.
           if (enclosed && !selected && ['lens', 'anterior-chamber', 'posterior-chamber', 'vitreous'].includes(id)) material.opacity *= 0.18;
           const transparent = material.opacity < 0.999;
-          if (material.transparent !== transparent || material.clippingPlanes?.length !== (state.clip.enabled ? 1 : 0)) material.needsUpdate = true;
+          const clipped = state.clip.enabled && object !== contour;
+          if (material.transparent !== transparent || material.clippingPlanes?.length !== (clipped ? 1 : 0)) material.needsUpdate = true;
           material.transparent = transparent;
           material.depthWrite = !transparent;
-          material.clippingPlanes = state.clip.enabled ? this.section.planes : [];
+          material.clippingPlanes = clipped ? this.section.planes : [];
           if (material instanceof THREE.MeshPhysicalMaterial) {
             material.emissive.copy(accent);
             material.emissiveIntensity = selected ? 0.38 : hovered ? 0.12 : 0;
@@ -316,6 +336,7 @@ export class EyeEngine {
   private updateSections() {
     if (!this.state) return;
     this.section.update(this.state.clip, this.camera);
+    this.section.guide.visible = this.state.clip.enabled && this.state.mode !== 'quiz';
     const key = `${this.state.clip.enabled}|${this.state.clip.axis}|${this.state.clip.offset}|${this.state.explode}|${this.posteriorScale}`;
     for (const [id, cap] of this.caps) {
       const part = this.eye.parts.get(id)!;
@@ -337,6 +358,14 @@ export class EyeEngine {
         }
         cap.material.clippingPlanes![0].constant = part.shell!.front + part.group.position.z;
       }
+    }
+    if (key !== this.capKey) for (const id of ['anterior-chamber', 'posterior-chamber', 'vitreous'] as const) {
+      const part = this.eye.parts.get(id)!;
+      const contour = part.group.getObjectByName('space-contour') as THREE.LineSegments | undefined;
+      if (!contour?.visible) continue;
+      const mesh = part.group.children.find(object => object instanceof THREE.Mesh) as THREE.Mesh;
+      contour.geometry.dispose();
+      contour.geometry = createSectionContour(mesh, this.state.clip.enabled ? this.section.plane : new THREE.Plane(new THREE.Vector3(1, 0, 0), -part.group.position.x));
     }
     this.capKey = key;
   }
@@ -450,22 +479,92 @@ export class EyeEngine {
   }
 
   private updateHover() {
+    const sectionHovered = this.pointerPosition && !this.pointerActive && this.pickSectionFrame(this.pointerPosition.x, this.pointerPosition.y);
     const id = this.pointerPosition && !this.pointerActive
-      ? this.pickStructure(this.pointerPosition.x, this.pointerPosition.y) : null;
+      && !sectionHovered ? this.pickStructure(this.pointerPosition.x, this.pointerPosition.y) : null;
     if (id !== this.hoveredId) {
       this.hoveredId = id;
       this.updateMaterials();
     }
-    this.canvas.style.cursor = this.pointerActive ? 'grabbing' : id ? 'pointer' : 'grab';
+    this.canvas.style.cursor = this.pointerActive ? 'grabbing' : sectionHovered ? 'move' : id ? 'pointer' : 'grab';
+  }
+
+  private setPointerRay(clientX: number, clientY: number) {
+    const rect = this.canvas.getBoundingClientRect();
+    this.camera.updateMatrixWorld();
+    this.pointer.set((clientX - rect.left) / rect.width * 2 - 1, -(clientY - rect.top) / rect.height * 2 + 1);
+    this.raycaster.setFromCamera(this.pointer, this.camera);
+    return rect;
+  }
+
+  private pickSectionFrame(clientX: number, clientY: number) {
+    if (!this.sectionCallbacks || !this.state?.clip.enabled || this.state.mode === 'quiz') return null;
+    const rect = this.setPointerRay(clientX, clientY);
+    this.section.update(this.state.clip);
+    this.section.guide.updateMatrixWorld(true);
+    const threshold = this.raycaster.params.Line.threshold;
+    this.raycaster.params.Line.threshold = 9 * 2 * this.camera.position.distanceTo(this.section.guide.position)
+      * Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2)) / (Math.max(1, rect.height) * this.camera.zoom);
+    const hit = this.raycaster.intersectObject(this.section.frame, false)[0] ?? null;
+    this.raycaster.params.Line.threshold = threshold;
+    return hit;
+  }
+
+  private beginSectionDrag(event: PointerEvent) {
+    if (event.button !== 0 || this.sectionPointerId != null) return false;
+    const hit = this.pickSectionFrame(event.clientX, event.clientY);
+    if (!hit) return false;
+    event.preventDefault(); event.stopImmediatePropagation();
+    this.rig.cancel();
+    this.sectionControlsEnabled = this.rig.controls.enabled;
+    this.rig.controls.enabled = false;
+    this.sectionPointerId = event.pointerId;
+    this.pointerActive = true;
+    this.pointerDragged = true;
+    this.pointerDown.set(Infinity, Infinity);
+    this.canvas.setPointerCapture(event.pointerId);
+    this.section.beginDrag(this.raycaster.ray, hit.point, this.camera, event.clientY, this.canvas.getBoundingClientRect().height);
+    this.sectionCallbacks!.begin();
+    this.updateHover(); this.invalidate();
+    return true;
+  }
+
+  private moveSectionDrag(event: PointerEvent) {
+    if (this.sectionPointerId == null || event.pointerId !== this.sectionPointerId) return false;
+    event.preventDefault(); event.stopImmediatePropagation();
+    this.setPointerRay(event.clientX, event.clientY);
+    const offset = this.section.dragOffset(this.raycaster.ray, event.clientY);
+    if (offset !== null && offset !== this.state?.clip.offset) this.sectionCallbacks!.change(offset);
+    this.invalidate();
+    return true;
+  }
+
+  private endSectionDrag(event?: PointerEvent) {
+    if (this.sectionPointerId == null || (event && event.pointerId !== this.sectionPointerId)) return false;
+    event?.preventDefault(); event?.stopImmediatePropagation();
+    const pointerId = this.sectionPointerId;
+    this.sectionPointerId = null;
+    this.section.endDrag();
+    this.pointerActive = false;
+    this.pointerPosition = null;
+    this.pointerDown.set(Infinity, Infinity);
+    this.rig.controls.enabled = this.sectionControlsEnabled;
+    if (this.canvas.hasPointerCapture(pointerId)) this.canvas.releasePointerCapture(pointerId);
+    this.sectionCallbacks!.end();
+    this.updateHover(); this.invalidate();
+    return true;
   }
 
   private handlePointerMove = (event: PointerEvent) => {
+    if (this.sectionPointerId != null) { this.moveSectionDrag(event); return; }
     if (this.pointerActive && this.pointerDown.distanceTo(new THREE.Vector2(event.clientX, event.clientY)) > 6) this.pointerDragged = true;
     if (event.pointerType !== 'touch') this.pointerPosition = new THREE.Vector2(event.clientX, event.clientY);
     this.invalidate();
   };
 
   private handlePointerDown = (event: PointerEvent) => {
+    if (this.sectionPointerId != null) { event.stopImmediatePropagation(); return; }
+    if (this.beginSectionDrag(event)) return;
     this.pointerDown.set(event.clientX, event.clientY);
     this.pointerActive = true;
     this.pointerDragged = false;
@@ -474,6 +573,7 @@ export class EyeEngine {
   };
 
   private handlePointerUp = (event: PointerEvent) => {
+    if (this.sectionPointerId != null) { this.moveSectionDrag(event); this.endSectionDrag(event); return; }
     const clicked = this.pointerActive && !this.pointerDragged && event.button === 0
       && this.pointerDown.distanceTo(new THREE.Vector2(event.clientX, event.clientY)) <= 6;
     this.pointerActive = false;
@@ -493,13 +593,19 @@ export class EyeEngine {
     this.invalidate();
   };
 
-  private handlePointerCancel = () => {
+  private handlePointerCancel = (event: Event) => {
+    if (this.sectionPointerId != null && 'pointerId' in event && event.pointerId !== this.sectionPointerId) return;
+    this.endSectionDrag();
     this.pointerActive = false;
     this.pointerDown.set(Infinity, Infinity);
     this.handlePointerLeave();
   };
 
   private handleKeyDown = (event: KeyboardEvent) => {
+    if (this.sectionPointerId != null) {
+      if (event.key === 'Escape') { event.preventDefault(); this.endSectionDrag(); }
+      return;
+    }
     const actions: Record<string, () => void> = {
       ArrowLeft: () => this.rig.orbit(-0.15, 0), ArrowRight: () => this.rig.orbit(0.15, 0),
       ArrowUp: () => this.rig.orbit(0, -0.15), ArrowDown: () => this.rig.orbit(0, 0.15),
@@ -557,21 +663,25 @@ export class EyeEngine {
 
   dispose() {
     if (this.disposed) return;
+    this.endSectionDrag();
     this.disposed = true;
     cancelAnimationFrame(this.frame);
     this.resizeObserver.disconnect();
     this.media.removeEventListener('change', this.handleMotion);
     this.rig.controls.removeEventListener('change', this.invalidate);
     this.rig.controls.dispose();
-    this.canvas.removeEventListener('pointerdown', this.handlePointerDown);
-    this.canvas.removeEventListener('pointerup', this.handlePointerUp);
-    this.canvas.removeEventListener('pointermove', this.handlePointerMove);
+    this.canvas.removeEventListener('pointerdown', this.handlePointerDown, true);
+    this.canvas.removeEventListener('pointerup', this.handlePointerUp, true);
+    this.canvas.removeEventListener('pointermove', this.handlePointerMove, true);
     this.canvas.removeEventListener('pointerleave', this.handlePointerLeave);
-    this.canvas.removeEventListener('pointercancel', this.handlePointerCancel);
+    this.canvas.removeEventListener('pointercancel', this.handlePointerCancel, true);
+    this.canvas.removeEventListener('lostpointercapture', this.handlePointerCancel);
+    window.removeEventListener('blur', this.handlePointerCancel);
     this.canvas.removeEventListener('keydown', this.handleKeyDown);
     this.canvas.removeEventListener('webglcontextrestored', this.invalidate);
     this.eye.dispose();
     this.disposeGroup(this.rays);
+    this.disposeGroup(this.section.guide);
     this.renderer.dispose();
     this.renderer.forceContextLoss();
     this.canvas.remove();

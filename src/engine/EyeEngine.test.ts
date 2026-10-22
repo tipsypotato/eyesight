@@ -216,7 +216,7 @@ function pointerFixture() {
   });
   const engine = Object.assign(Object.create(EyeEngine.prototype), {
     eye, state: store.getState(), camera, canvas: { style: {}, setAttribute: vi.fn(), getBoundingClientRect: () => ({ left: 0, top: 0, width: 600, height: 400 }) },
-    rig: { cancel: vi.fn() }, labels: new Map(), caps: new Map(), section: new SectionTool(), rays: new THREE.Group(),
+    rig: { cancel: vi.fn(), controls: { enabled: true } }, labels: new Map(), caps: new Map(), section: new SectionTool(), rays: new THREE.Group(),
     pointer: new THREE.Vector2(), pointerDown: new THREE.Vector2(Infinity, Infinity), raycaster,
     pointerPosition: null, pointerActive: false, hoveredId: null, posteriorScale: 1, setView: vi.fn(), invalidate: vi.fn(),
   }) as EyeEngine;
@@ -247,6 +247,107 @@ it('makes a selected tissue clearly distinct and restores its original appearanc
     expect(mesh.material.color).toEqual(base);
     expect(mesh.material.emissiveIntensity).toBe(0);
     expect(engine.canvas.style.cursor).toBe('grab');
+  } finally { eye.dispose(); }
+});
+
+it('drags a section frame through the shared clip state and releases camera controls on cancellation', () => {
+  const { eye, store, engine, camera, sync } = pointerFixture();
+  camera.position.z = 6; camera.updateMatrixWorld();
+  const capture = new Set<number>(), gestures: string[] = [];
+  Object.assign(engine.canvas, {
+    setPointerCapture: (id: number) => capture.add(id), hasPointerCapture: (id: number) => capture.has(id),
+    releasePointerCapture: (id: number) => capture.delete(id),
+  });
+  Object.assign(engine, { sectionCallbacks: {
+    begin: () => gestures.push('begin'),
+    change: (offset: number) => { store.getState().setClip({ offset }); sync(); },
+    end: () => gestures.push('end'),
+  } });
+  const internal = engine as unknown as {
+    beginSectionDrag(event: PointerEvent): boolean; moveSectionDrag(event: PointerEvent): boolean;
+    endSectionDrag(event?: PointerEvent): boolean; rig: CameraRig;
+  };
+  const eventAt = (x: number, id = 7) => {
+    const point = new THREE.Vector3(x, 1.24, 1.24).project(camera);
+    return { pointerId: id, button: 0, clientX: (point.x + 1) * 300, clientY: (1 - point.y) * 200,
+      preventDefault() {}, stopImmediatePropagation() {} } as PointerEvent;
+  };
+  try {
+    sync();
+    expect(internal.beginSectionDrag(eventAt(0))).toBe(true);
+    expect(capture.has(7)).toBe(true);
+    expect(internal.rig.controls.enabled).toBe(false);
+    expect(internal.moveSectionDrag(eventAt(0.4, 8))).toBe(false);
+    expect(store.getState().clip.offset).toBe(0);
+    expect(internal.moveSectionDrag(eventAt(0.4))).toBe(true);
+    expect(store.getState().clip.offset).toBeCloseTo(0.4);
+    internal.moveSectionDrag(eventAt(0.6));
+    expect(gestures).toEqual(['begin']);
+    expect(internal.endSectionDrag()).toBe(true);
+    expect(internal.endSectionDrag()).toBe(false);
+    expect(internal.rig.controls.enabled).toBe(true);
+    expect(capture.size).toBe(0);
+    expect(gestures).toEqual(['begin', 'end']);
+    expect(store.getState().clip.offset).toBeCloseTo(0.6);
+  } finally { eye.dispose(); }
+});
+
+it('ends a captured section gesture when leaving its scene and hides the guide in quizzes', () => {
+  const { eye, store, engine, camera, sync } = pointerFixture();
+  const ended: boolean[] = [];
+  Object.assign(engine.canvas, { setPointerCapture() {}, hasPointerCapture: () => true, releasePointerCapture() {} });
+  Object.assign(engine, { sectionCallbacks: { begin() {}, change() {}, end: () => ended.push(true) } });
+  const internal = engine as unknown as { section: SectionTool; beginSectionDrag(event: PointerEvent): boolean; rig: CameraRig };
+  const point = new THREE.Vector3(0, 1.24, 0).project(camera);
+  const event = { pointerId: 2, button: 0, clientX: (point.x + 1) * 300, clientY: (1 - point.y) * 200,
+    preventDefault() {}, stopImmediatePropagation() {} } as PointerEvent;
+  try {
+    sync();
+    expect(internal.section.guide.visible).toBe(true);
+    expect(internal.beginSectionDrag(event)).toBe(true);
+    store.getState().setMode('quiz'); sync();
+    expect(ended).toEqual([true]);
+    expect(internal.rig.controls.enabled).toBe(true);
+    expect(internal.section.guide.visible).toBe(false);
+    expect(internal.beginSectionDrag(event)).toBe(false);
+  } finally { eye.dispose(); }
+});
+
+it('shows chambers as boundaries and restores tissue appearance and positions after combined operations', () => {
+  const { eye, store, sync } = pointerFixture();
+  const snapshot = () => [...eye.parts.values()].map(part => ({
+    id: part.id, position: part.group.position.toArray(),
+    materials: part.group.children.filter(object => object instanceof THREE.Mesh).map(object => {
+      const material = (object as THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhysicalMaterial>).material;
+      return { color: material.color.toArray(), opacity: material.opacity, transparent: material.transparent, depthWrite: material.depthWrite };
+    }),
+  }));
+  try {
+    store.setState({ presetId: 'chambers' }); sync();
+    for (const id of ['anterior-chamber', 'posterior-chamber', 'vitreous'] as const) {
+      const part = eye.parts.get(id)!;
+      const mesh = part.group.children.find(child => child instanceof THREE.Mesh) as THREE.Mesh<THREE.BufferGeometry, THREE.Material>;
+      const boundary = part.group.children.find(child => child instanceof THREE.LineSegments) as THREE.LineSegments;
+      expect(mesh.material.opacity).toBe(0);
+      expect(boundary?.geometry.getAttribute('position').count).toBeGreaterThan(6);
+    }
+    store.setState({ presetId: 'wall-cut' }); sync();
+    const before = snapshot();
+    store.getState().setExplode(0.7); store.getState().select('lens', true); store.getState().toggleIsolate(); sync();
+    store.getState().setClip({ enabled: false }); sync();
+    store.getState().toggleIsolate(); store.getState().setExplode(0); store.getState().setClip({ enabled: true });
+    store.setState({ selectedId: null, presetId: 'wall-cut' }); sync();
+    expect(snapshot()).toEqual(before);
+  } finally { eye.dispose(); }
+});
+
+it('recognizes the visible chamber boundary as a selectable surface', () => {
+  const { eye, store, engine, camera, sync } = pointerFixture();
+  try {
+    store.getState().select('anterior-chamber', true); store.getState().toggleIsolate();
+    camera.position.set(4, 0, 0.8); camera.lookAt(0, 0, 0.8); camera.updateMatrixWorld();
+    sync();
+    expect(engine.isStructureVisible('anterior-chamber')).toBe(true);
   } finally { eye.dispose(); }
 });
 
