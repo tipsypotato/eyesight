@@ -1,0 +1,18 @@
+{
+  "name": "eyesight",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Interactive adult right-eye anatomy and optics teaching demo, derived from Dental Scope.",
+  "author": "tipsypotato <huzhihao2016@gmail.com>",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": { "react": "19.3.0", "react-dom": "19.3.0", "three": "0.186.1", "zustand": "5.0.15" },
+  "devDependencies": { "@types/react": "19.3.0", "@types/react-dom": "19.3.0", "@types/three": "0.186.0", "@vitejs/plugin-react": "6.1.1", "typescript": "npm:@typescript/typescript6@6.0.2", "vite": "8.3.1", "vitest": "5.0.2" }
+}

@@ -1,0 +1,231 @@
+import type { GroupId, Lesson, Localized, Structure } from './types';
+
+const howEyesWork = { title: 'NEI · How the Eyes Work', url: 'https://www.nei.nih.gov/eye-health-information/healthy-vision/how-eyes-work' };
+const aboutEye = { title: 'NEI · About the Eye', url: 'https://www.nei.nih.gov/eye-health-information/healthy-vision/nei-for-kids/about-eye' };
+const glossary = { title: 'NEI · Eye Glossary', url: 'https://www.nei.nih.gov/eye-health-information/healthy-vision/nei-for-kids/glossary' };
+const histology = { title: 'AAO EyeWiki · Basic Histology of the Eye', url: 'https://eyewiki.aao.org/Basic_Histology_of_the_Eye_and_Accessory_Structures' };
+const grossAnatomy = { title: 'Webvision · Gross Anatomy of the Eye', url: 'https://www.ncbi.nlm.nih.gov/books/NBK11534/' };
+const retinalAnatomy = { title: 'Webvision · Simple Anatomy of the Retina', url: 'https://www.webvision.pitt.edu/book/part-i-foundations/simple-anatomy-of-the-retina/' };
+const neuroAnatomy = { title: 'UTHealth · Gross Anatomy of the Eye', url: 'https://nba.uth.tmc.edu/neuroanatomy/L8/Lab08p01_index.html' };
+
+export const GROUPS: { id: GroupId; name: Localized }[] = [
+  { id: 'wall', name: { zh: '眼球壁', en: 'Eye wall' } },
+  { id: 'front', name: { zh: '前段结构', en: 'Anterior structures' } },
+  { id: 'inside', name: { zh: '眼房与玻璃体', en: 'Chambers & vitreous' } },
+  { id: 'fundus', name: { zh: '眼底与视神经', en: 'Fundus & optic nerve' } },
+];
+
+export const STRUCTURES: Structure[] = [
+  {
+    id: 'cornea', name: { zh: '角膜', en: 'Cornea' }, latin: 'Cornea', group: 'wall', color: '#9bbfc6', kind: 'tissue',
+    summary: { zh: '眼球前方透明、弯曲的组织，与巩膜连续。', en: 'The transparent, curved front of the eye, continuous with the sclera.' },
+    function: { zh: '折射入眼光线，并保护眼内结构。', en: 'Refracts incoming light and protects the structures inside.' },
+    position: { zh: '虹膜前方，构成前房的前壁。', en: 'In front of the iris, forming the anterior wall of the anterior chamber.' },
+    fact: { zh: '角膜即使透明，仍是一层活的组织。', en: 'Despite its transparency, the cornea is living tissue.' },
+    sources: [howEyesWork, histology],
+  },
+  {
+    id: 'sclera', name: { zh: '巩膜', en: 'Sclera' }, latin: 'Sclera', group: 'wall', color: '#e1ddd3', kind: 'tissue',
+    summary: { zh: '坚韧的白色外层，包围眼球的大部分。', en: 'The tough, white outer coat surrounding most of the eyeball.' },
+    function: { zh: '支撑眼球形状，为眼外肌提供附着处。', en: 'Supports the shape of the eye and anchors the extraocular muscles.' },
+    position: { zh: '脉络膜外侧，前方接续角膜。', en: 'Outside the choroid, joining the cornea at the front.' },
+    fact: { zh: '日常所说的“眼白”主要就是巩膜。', en: 'The sclera forms most of the visible white of the eye.' },
+    sources: [aboutEye, grossAnatomy],
+  },
+  {
+    id: 'iris', name: { zh: '虹膜', en: 'Iris' }, latin: 'Iris', group: 'front', color: '#92755d', kind: 'tissue',
+    summary: { zh: '带有色素的环形组织，中央开口是瞳孔。', en: 'A pigmented ring of tissue with the pupil as its central opening.' },
+    function: { zh: '通过改变瞳孔大小，调节入眼光量。', en: 'Controls how much light enters by changing pupil size.' },
+    position: { zh: '角膜后方、晶状体前方。', en: 'Behind the cornea and in front of the lens.' },
+    fact: { zh: '眼睛的常见颜色主要来自虹膜。', en: 'The iris gives the eye its familiar color.' },
+    sources: [aboutEye],
+  },
+  {
+    id: 'pupil', name: { zh: '瞳孔', en: 'Pupil' }, latin: 'Pupilla', group: 'front', color: '#333c3d', kind: 'space',
+    summary: { zh: '虹膜中央的开口，本身不是一块黑色组织。', en: 'The opening in the iris; it is not a piece of black tissue.' },
+    function: { zh: '让光线通过虹膜中央的开口，继续到达晶状体。', en: 'Lets light pass through the central opening in the iris toward the lens.' },
+    position: { zh: '虹膜中央，位于晶状体前方。', en: 'At the center of the iris, in front of the lens.' },
+    fact: { zh: '瞳孔大小由周围的虹膜肌肉控制。', en: 'Muscles in the surrounding iris control pupil size.' },
+    sources: [howEyesWork, glossary],
+  },
+  {
+    id: 'ciliary-body', name: { zh: '睫状体', en: 'Ciliary body' }, latin: 'Corpus ciliare', group: 'front', color: '#aa7867', kind: 'tissue',
+    summary: { zh: '环绕晶状体的组织，包含睫状肌与睫状突。', en: 'A ring around the lens containing ciliary muscle and ciliary processes.' },
+    function: { zh: '参与调节晶状体形状，并产生房水。', en: 'Helps adjust lens shape and produces aqueous humor.' },
+    position: { zh: '虹膜后方、脉络膜前方，围绕晶状体周边。', en: 'Behind the iris and in front of the choroid, around the lens periphery.' },
+    fact: { zh: '看近时，睫状肌收缩使悬韧带张力减小。', en: 'During near focusing, ciliary muscle contraction reduces zonular tension.' },
+    sources: [histology],
+  },
+  {
+    id: 'zonules', name: { zh: '晶状体悬韧带', en: 'Zonular fibers' }, latin: 'Zonula ciliaris', group: 'front', color: '#d6c5a8', kind: 'tissue',
+    summary: { zh: '连接睫状体与晶状体囊的细纤维。', en: 'Fine fibers connecting the ciliary body to the lens capsule.' },
+    function: { zh: '悬持晶状体，并传递改变其形状的张力。', en: 'Suspend the lens and transmit tension that changes its shape.' },
+    position: { zh: '从睫状体伸向晶状体赤道部附近。', en: 'Extend from the ciliary body toward the lens near its equator.' },
+    fact: { zh: '它们传递拉力，本身不是收缩的肌肉。', en: 'They transmit pulling forces; they are not contracting muscles.' },
+    sources: [grossAnatomy, histology],
+  },
+  {
+    id: 'lens', name: { zh: '晶状体', en: 'Lens' }, latin: 'Lens crystallina', group: 'front', color: '#bdd8d0', kind: 'tissue',
+    summary: { zh: '透明的双凸结构，可通过形状变化调整焦点。', en: 'A transparent, biconvex structure that adjusts focus by changing shape.' },
+    function: { zh: '与角膜共同将光线聚焦到视网膜。', en: 'Works with the cornea to focus light on the retina.' },
+    position: { zh: '虹膜与瞳孔后方、玻璃体前方。', en: 'Behind the iris and pupil, in front of the vitreous.' },
+    fact: { zh: '改变晶状体形状以看清近物的过程称为调节。', en: 'Changing lens shape to focus on nearby objects is called accommodation.' },
+    sources: [howEyesWork, aboutEye, grossAnatomy],
+  },
+  {
+    id: 'anterior-chamber', name: { zh: '前房', en: 'Anterior chamber' }, latin: 'Camera anterior bulbi', group: 'inside', color: '#b1d3d3', kind: 'space',
+    summary: { zh: '角膜后方充满房水的空间。', en: 'An aqueous-filled space directly behind the cornea.' },
+    function: { zh: '容纳循环的房水，支持角膜和晶状体的营养交换。', en: 'Contains circulating aqueous humor that supports corneal and lens nutrition.' },
+    position: { zh: '角膜与虹膜之间；中央后界邻近瞳孔。', en: 'Between the cornea and iris, with the pupil at its central posterior boundary.' },
+    fact: { zh: '房水经瞳孔从后房进入前房。', en: 'Aqueous humor enters from the posterior chamber through the pupil.' },
+    sources: [histology, grossAnatomy],
+  },
+  {
+    id: 'posterior-chamber', name: { zh: '后房', en: 'Posterior chamber' }, latin: 'Camera posterior bulbi', group: 'inside', color: '#8abbbb', kind: 'space',
+    summary: { zh: '虹膜后方的狭窄房水空间，与玻璃体腔不同。', en: 'A narrow aqueous-filled space behind the iris, distinct from the vitreous chamber.' },
+    function: { zh: '接收睫状体产生的房水，使其流向瞳孔。', en: 'Receives aqueous humor from the ciliary body and channels it toward the pupil.' },
+    position: { zh: '虹膜后面与晶状体、悬韧带之间，外周邻近睫状体。', en: 'Between the back of the iris and the lens and zonules, bordered peripherally by the ciliary body.' },
+    fact: { zh: '后房仍位于眼球前段，并非眼球后部的大腔隙。', en: 'Despite its name, the posterior chamber belongs to the anterior segment, not the large cavity at the back of the eye.' },
+    sources: [grossAnatomy, histology],
+  },
+  {
+    id: 'vitreous', name: { zh: '玻璃体', en: 'Vitreous body' }, latin: 'Corpus vitreum', group: 'inside', color: '#b6cbd0', kind: 'tissue',
+    summary: { zh: '填充玻璃体腔的透明凝胶。', en: 'The transparent gel filling the vitreous chamber.' },
+    function: { zh: '形成透光的内部介质，并提供机械支撑。', en: 'Provides a clear internal optical medium and mechanical support.' },
+    position: { zh: '晶状体后方、视网膜内侧的大部分空间。', en: 'Occupies most of the space behind the lens and inside the retina.' },
+    fact: { zh: '玻璃体呈凝胶状，房水则更接近水样液体。', en: 'The vitreous is gel-like, while aqueous humor is watery.' },
+    sources: [aboutEye, grossAnatomy],
+  },
+  {
+    id: 'choroid', name: { zh: '脉络膜', en: 'Choroid' }, latin: 'Choroidea', group: 'wall', color: '#825f59', kind: 'tissue',
+    summary: { zh: '眼球壁中富含血管与色素的一层组织。', en: 'A vascular, pigmented layer within the eye wall.' },
+    function: { zh: '营养视网膜外层，并吸收部分散射光。', en: 'Nourishes the outer retina and absorbs some scattered light.' },
+    position: { zh: '巩膜内侧、视网膜外侧。', en: 'Inside the sclera and outside the retina.' },
+    fact: { zh: '视网膜外层与内层依靠不同的血液供应。', en: 'The outer and inner retina have different blood supplies.' },
+    sources: [histology, neuroAnatomy, retinalAnatomy],
+  },
+  {
+    id: 'retina', name: { zh: '视网膜', en: 'Retina' }, latin: 'Retina', group: 'wall', color: '#c78b7c', kind: 'tissue',
+    summary: { zh: '眼球后部内面的感光组织，包含视杆和视锥细胞。', en: 'Light-sensitive tissue lining the back of the eye, containing rods and cones.' },
+    function: { zh: '将光转为神经信号，并进行初步视觉处理。', en: 'Converts light into neural signals and begins visual processing.' },
+    position: { zh: '玻璃体外侧、脉络膜内侧。', en: 'Outside the vitreous and inside the choroid.' },
+    fact: { zh: '离开眼球的视觉信息是神经信号。', en: 'Visual information leaves the eye as neural signals.' },
+    sources: [howEyesWork, glossary, retinalAnatomy],
+  },
+  {
+    id: 'macula', name: { zh: '黄斑', en: 'Macula' }, latin: 'Macula lutea', group: 'fundus', color: '#c8a266', kind: 'region',
+    summary: { zh: '负责精细中央视觉的视网膜区域。', en: 'A retinal region specialized for detailed central vision.' },
+    function: { zh: '帮助分辨细节与颜色。', en: 'Supports fine detail and color perception.' },
+    position: { zh: '后部视网膜上，位于视盘颞侧，即靠近太阳穴的一侧。', en: 'On the posterior retina, temporal to the optic disc: toward the temple.' },
+    fact: { zh: '中央凹位于黄斑中央。', en: 'The fovea lies at the center of the macula.' },
+    sources: [aboutEye, neuroAnatomy],
+  },
+  {
+    id: 'fovea', name: { zh: '中央凹', en: 'Fovea' }, latin: 'Fovea centralis', group: 'fundus', color: '#af825d', kind: 'region',
+    summary: { zh: '黄斑中央的小凹，视锥细胞高度密集。', en: 'A small central depression in the macula with densely packed cones.' },
+    function: { zh: '提供最精细的中央视觉。', en: 'Provides the finest central visual detail.' },
+    position: { zh: '黄斑中央，位于视盘颞侧。', en: 'At the macular center, temporal to the optic disc.' },
+    fact: { zh: '中央凹中心没有视网膜血管穿行。', en: 'The foveal center is free of retinal blood vessels.' },
+    sources: [aboutEye, retinalAnatomy],
+  },
+  {
+    id: 'optic-disc', name: { zh: '视盘', en: 'Optic disc' }, latin: 'Discus nervi optici', group: 'fundus', color: '#d8ba94', kind: 'region',
+    summary: { zh: '视网膜神经纤维汇集并离开眼球的区域。', en: 'The region where retinal nerve fibers converge and leave the eye.' },
+    function: { zh: '连接视网膜与视神经，也是主要视网膜血管的出入口。', en: 'Connects the retina to the optic nerve and carries the main retinal vessels.' },
+    position: { zh: '眼底后部，位于黄斑鼻侧，即靠近鼻子的一侧。', en: 'In the posterior fundus, nasal to the macula: toward the nose.' },
+    fact: { zh: '这里没有视杆或视锥细胞，对应生理盲点。', en: 'It has no rods or cones and corresponds to the physiological blind spot.' },
+    sources: [neuroAnatomy, glossary],
+  },
+  {
+    id: 'optic-nerve', name: { zh: '视神经', en: 'Optic nerve' }, latin: 'Nervus opticus', group: 'fundus', color: '#c7b79a', kind: 'tissue',
+    summary: { zh: '由视网膜神经节细胞的轴突组成的神经束。', en: 'A bundle formed by the axons of retinal ganglion cells.' },
+    function: { zh: '将视觉神经信号从视网膜传向大脑。', en: 'Carries visual neural signals from the retina toward the brain.' },
+    position: { zh: '从黄斑鼻侧的视盘处穿出眼球后壁。', en: 'Exits the posterior eye wall at the optic disc, nasal to the macula.' },
+    fact: { zh: '视神经传递电信号，不是让光穿过的管道。', en: 'The optic nerve transmits electrical signals, not light.' },
+    sources: [howEyesWork, neuroAnatomy, retinalAnatomy],
+  },
+  {
+    id: 'retinal-vessels', name: { zh: '视网膜血管', en: 'Retinal vessels' }, latin: 'Vasa sanguinea retinae', group: 'fundus', color: '#a96761', kind: 'tissue',
+    summary: { zh: '沿视网膜内侧分布的动脉、静脉及其分支。', en: 'Arteries, veins and their branches along the inner retina.' },
+    function: { zh: '为视网膜内层供血，并回流静脉血。', en: 'Supply the inner retina and drain its venous blood.' },
+    position: { zh: '主要血管在视盘处进出，较大的血管弓绕行黄斑周围。', en: 'The main vessels pass through the optic disc, with major vascular arcades curving around the macula.' },
+    fact: { zh: '血管分支图案存在个体差异，本模型采用示意分布。', en: 'Branching patterns vary between people; this model uses a schematic pattern.' },
+    sources: [retinalAnatomy, neuroAnatomy],
+  },
+];
+
+export const LESSONS: Lesson[] = [
+  {
+    id: 'anatomy', title: { zh: '从外到内认识眼球', en: 'Explore the eye, outside in' },
+    description: { zh: '以成人右眼为例。形状与组织分布为教学示意，不是个体测量。', en: 'An adult right eye with schematic geometry and tissue layout, not measurements of an individual.' },
+    steps: [
+      {
+        title: { zh: '一层坚韧的外壳', en: 'A protective outer coat' },
+        body: { zh: '白色巩膜支撑眼球，前方与透明角膜相连。旋转模型，建立眼球前后方位。', en: 'The white sclera supports the eye and joins the transparent cornea at the front. Rotate the model to establish front and back.' },
+        target: 'sclera', view: 'oblique', clip: false,
+      },
+      {
+        title: { zh: '观察眼球壁的层次', en: 'Look through the eye wall' },
+        body: { zh: '剖面由外向内依次显示巩膜、脉络膜与视网膜。它们分别提供支撑、血液供应与感光处理。', en: 'From outside inward, the section shows sclera, choroid and retina: support, blood supply and light sensing.' },
+        target: 'retina', view: 'side', clip: true,
+      },
+      {
+        title: { zh: '分清三个空间', en: 'Distinguish the three chambers' },
+        body: { zh: '前房在角膜与虹膜之间；后房紧邻虹膜后面。两者含房水，晶状体后方更大的玻璃体腔则含凝胶状玻璃体。', en: 'The anterior chamber lies between cornea and iris; the posterior chamber is just behind the iris. Both contain aqueous humor. Behind the lens, the larger vitreous chamber contains gel.' },
+        target: 'posterior-chamber', view: 'side', clip: true,
+      },
+      {
+        title: { zh: '找到眼底的两个地标', en: 'Find two fundus landmarks' },
+        body: { zh: '黄斑与中央凹位于视盘颞侧。视盘位于鼻侧，是视神经离开眼球的位置；鼻侧和颞侧随眼球方向，不随屏幕左右改变。', en: 'The macula and fovea lie temporal to the optic disc. The disc is the nasal exit of the optic nerve. Nasal and temporal follow eye anatomy, not screen left and right.' },
+        target: 'macula', view: 'back', clip: true,
+      },
+    ],
+  },
+  {
+    id: 'vision', title: { zh: '跟随光与神经信号', en: 'Follow light and neural signals' },
+    description: { zh: '观察远处光线如何聚焦，以及视觉信息如何离开眼球。', en: 'See how distant light is focused and how visual information leaves the eye.' },
+    steps: [
+      {
+        title: { zh: '光从角膜进入', en: 'Light enters at the cornea' },
+        body: { zh: '示意光线代表远处物体发来的近似平行光。角膜折射光线，虹膜中央的瞳孔让光通过。', en: 'The rays represent nearly parallel light from a distant object. The cornea refracts it, and the pupil opening lets it pass through the iris.' },
+        target: 'cornea', view: 'side', clip: true, optics: 'normal',
+      },
+      {
+        title: { zh: '晶状体参与聚焦', en: 'The lens helps focus' },
+        body: { zh: '晶状体与角膜共同提供屈光力。这里用简化光路展示整体聚焦，未模拟调节或所有光学像差。', en: 'The lens and cornea work together to focus. These simplified rays show overall focusing without simulating accommodation or every optical aberration.' },
+        target: 'lens', view: 'side', clip: true, optics: 'normal',
+      },
+      {
+        title: { zh: '光到达视网膜', en: 'Light reaches the retina' },
+        body: { zh: '正常聚焦示例中，远处光线会聚在视网膜。感光细胞将光转换为电信号；光线轨迹在这里结束。', en: 'In this normal-focus example, distant light converges on the retina. Photoreceptors convert light into electrical signals; the optical ray paths end here.' },
+        target: 'retina', view: 'side', clip: true, optics: 'normal',
+      },
+      {
+        title: { zh: '接下来传递的是神经信号', en: 'Neural signals continue onward' },
+        body: { zh: '视网膜处理信息后，神经节细胞的轴突汇成视神经，将神经信号传向大脑。光本身不会沿视神经传播。', en: 'After retinal processing, ganglion-cell axons form the optic nerve and carry neural signals toward the brain. Light itself does not travel along the optic nerve.' },
+        target: 'optic-nerve', view: 'oblique', clip: true, optics: 'normal',
+      },
+    ],
+  },
+  {
+    id: 'myopia', title: { zh: '理解轴性近视的焦点', en: 'Understand focus in axial myopia' },
+    description: { zh: '以眼轴偏长的轴性近视为例，比较焦点位置；这不涵盖所有近视成因。', en: 'Compare focus in an elongated-eye example of axial myopia. This does not cover every cause of myopia.' },
+    steps: [
+      {
+        title: { zh: '先看正常聚焦', en: 'Start with normal focus' },
+        body: { zh: '示意的正常眼中，远处光线在视网膜处会聚。比较时关注焦点和视网膜的相对位置。', en: 'In the schematic normal eye, distant rays converge at the retina. Compare the focus with the retinal position.' },
+        target: 'retina', view: 'side', clip: true, optics: 'normal',
+      },
+      {
+        title: { zh: '眼轴偏长，焦点在前', en: 'A longer eye places the focus in front' },
+        body: { zh: '这个轴性近视示例保持屈光系统不变，增加眼球前后长度。远处光线在视网膜前会聚，到达视网膜时已再次分散。', en: 'This axial-myopia example keeps optical power fixed and increases eye length. Distant rays meet in front of the retina, then spread again before reaching it.' },
+        target: 'retina', view: 'side', clip: true, optics: 'myopia',
+      },
+      {
+        title: { zh: '用示意镜片调整光路', en: 'Adjust the rays with an illustrative lens' },
+        body: { zh: '眼前的发散镜片改变入射光线，使这个模型的焦点落回视网膜。镜片仅演示光学原理，不代表个人验光处方。', en: 'A diverging lens in front of the eye changes the incoming rays so this model focuses on the retina. The lens illustrates optics and is not an individual prescription.' },
+        target: 'lens', view: 'side', clip: true, optics: 'corrected',
+      },
+    ],
+  },
+];
