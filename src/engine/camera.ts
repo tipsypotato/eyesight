@@ -16,6 +16,8 @@ const DIRECTIONS: Record<ViewPreset, THREE.Vector3> = {
 export class CameraRig {
   readonly controls: OrbitControls;
   private usableFraction = new THREE.Vector2(1, 1);
+  private interacting = false;
+  private pendingViewportScale = 1;
   constructor(readonly camera: THREE.PerspectiveCamera, canvas: HTMLElement, private animator: Animator) {
     const controls = new OrbitControls(camera, canvas);
     controls.enableDamping = true;
@@ -26,18 +28,25 @@ export class CameraRig {
     controls.minDistance = 0.18;
     controls.maxDistance = 12;
     controls.screenSpacePanning = true;
-    controls.addEventListener('start', () => animator.cancel('camera'));
+    controls.addEventListener('start', () => { this.interacting = true; animator.cancel('camera'); });
+    controls.addEventListener('end', () => { this.interacting = false; this.applyViewportScale(); });
     this.controls = controls;
   }
   capture(): CameraSnapshot {
+    this.applyViewportScale();
     const view = this.camera.view;
     return { position: this.camera.position.toArray(), target: this.controls.target.toArray(), zoom: this.camera.zoom,
+      viewport: { aspect: this.camera.aspect, usableFraction: [this.usableFraction.x, this.usableFraction.y] },
       ...(view?.enabled ? { viewOffset: { fullWidth: view.fullWidth, fullHeight: view.fullHeight, offsetX: view.offsetX, offsetY: view.offsetY, width: view.width, height: view.height } } : {}) };
   }
   private apply(snapshot: CameraSnapshot) {
     this.camera.position.fromArray(snapshot.position);
     this.controls.target.fromArray(snapshot.target);
     this.camera.zoom = snapshot.zoom;
+    if (snapshot.viewport) {
+      this.camera.aspect = snapshot.viewport.aspect;
+      this.usableFraction.fromArray(snapshot.viewport.usableFraction);
+    } else this.usableFraction.set(1, 1);
     const view = snapshot.viewOffset;
     if (view) this.camera.setViewOffset(view.fullWidth, view.fullHeight, view.offsetX, view.offsetY, view.width, view.height);
     else this.camera.clearViewOffset();
@@ -45,6 +54,7 @@ export class CameraRig {
     this.controls.update();
   }
   cancel() {
+    this.interacting = false;
     const snapshot = this.capture();
     const damping = this.controls.enableDamping;
     const element = this.controls.domElement!;
@@ -64,6 +74,7 @@ export class CameraRig {
     this.apply(snapshot);
   }
   setViewport(width: number, height: number, available = { x: 0, y: 0, width, height }) {
+    const previousFit = this.distanceFor(1);
     width = Math.max(1, width);
     height = Math.max(1, height);
     const x = THREE.MathUtils.clamp(available.x, 0, width - 1);
@@ -74,6 +85,15 @@ export class CameraRig {
     this.camera.aspect = width / height;
     if (x === 0 && y === 0 && usableWidth === width && usableHeight === height) this.camera.clearViewOffset();
     else this.camera.setViewOffset(width, height, width / 2 - x - usableWidth / 2, height / 2 - y - usableHeight / 2, width, height);
+    this.pendingViewportScale *= this.distanceFor(1) / previousFit;
+    if (!this.interacting) this.applyViewportScale();
+  }
+  private applyViewportScale() {
+    const scale = this.pendingViewportScale;
+    this.pendingViewportScale = 1;
+    if (Math.abs(scale - 1) < 1e-10) return;
+    this.camera.position.sub(this.controls.target).multiplyScalar(scale).add(this.controls.target);
+    this.controls.dispatchEvent({ type: 'change' });
   }
   distanceFor(radius: number) {
     const tangent = Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2) / this.camera.zoom;
@@ -83,6 +103,7 @@ export class CameraRig {
     this.cancel();
     const startTarget = this.controls.target.clone();
     const start = new THREE.Spherical().setFromVector3(this.camera.position.clone().sub(startTarget));
+    const initialFit = this.distanceFor(1);
     const endDirection = direction?.clone() ?? this.camera.position.clone().sub(startTarget);
     const end = new THREE.Spherical().setFromVector3(endDirection.normalize().multiplyScalar(this.distanceFor(radius)));
     let theta = end.theta - start.theta;
@@ -91,7 +112,7 @@ export class CameraRig {
     const sphere = new THREE.Spherical();
     this.animator.run('camera', duration, k => {
       this.controls.target.lerpVectors(startTarget, center, k);
-      sphere.set(THREE.MathUtils.lerp(start.radius, end.radius, k), THREE.MathUtils.lerp(start.phi, end.phi, k), start.theta + theta * k);
+      sphere.set(THREE.MathUtils.lerp(start.radius, end.radius, k) * this.distanceFor(1) / initialFit, THREE.MathUtils.lerp(start.phi, end.phi, k), start.theta + theta * k);
       this.camera.position.setFromSpherical(sphere).add(this.controls.target);
       this.camera.lookAt(this.controls.target);
     });
@@ -105,8 +126,9 @@ export class CameraRig {
     const from = offset.length();
     const to = THREE.MathUtils.clamp(from * Math.exp(delta), this.controls.minDistance, this.controls.maxDistance);
     const target = this.controls.target.clone();
+    const initialFit = this.distanceFor(1);
     this.animator.run('camera', 0.22, k => {
-      this.camera.position.copy(target).add(offset.setLength(THREE.MathUtils.lerp(from, to, k)));
+      this.camera.position.copy(target).add(offset.setLength(THREE.MathUtils.lerp(from, to, k) * this.distanceFor(1) / initialFit));
     });
   }
   orbit(azimuth: number, polar: number) {

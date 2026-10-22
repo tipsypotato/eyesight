@@ -19,6 +19,7 @@ export type OpticsPreset = 'normal' | 'myopia' | 'corrected';
 export type CameraSnapshot = {
   position: [number, number, number]; target: [number, number, number]; zoom: number;
   viewOffset?: { fullWidth: number; fullHeight: number; offsetX: number; offsetY: number; width: number; height: number };
+  viewport?: { aspect: number; usableFraction: [number, number] };
 };
 export interface SceneState {
   lang: Lang; mode: Mode; selectedId: StructureId | null;

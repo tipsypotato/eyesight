@@ -44,8 +44,11 @@ export class EyeEngine {
   private pointerPosition: THREE.Vector2 | null = null;
   private pointerActive = false;
   private pointerDragged = false;
+  private activePointers = new Set<number>();
+  private tapPointerId: number | null = null;
   private hoveredId: StructureId | null = null;
   private sectionPointerId: number | null = null;
+  private sectionGesture = false;
   private sectionControlsEnabled = true;
   private frame = 0;
   private lastFrame = 0;
@@ -146,6 +149,8 @@ export class EyeEngine {
     this.canvas.addEventListener('pointerleave', this.handlePointerLeave);
     this.canvas.addEventListener('pointercancel', this.handlePointerCancel, true);
     this.canvas.addEventListener('lostpointercapture', this.handlePointerCancel);
+    window.addEventListener('pointerup', this.handlePointerUp, true);
+    window.addEventListener('pointercancel', this.handlePointerCancel, true);
     window.addEventListener('blur', this.handlePointerCancel);
     this.canvas.addEventListener('keydown', this.handleKeyDown);
     this.canvas.addEventListener('webglcontextrestored', this.invalidate);
@@ -167,6 +172,8 @@ export class EyeEngine {
     if (sceneChanged || state.selectedId !== previous?.selectedId) {
       this.rig.cancel();
       this.pointerDown.set(Infinity, Infinity);
+      this.tapPointerId = null;
+      this.pointerDragged = true;
     }
     this.state = state;
     const quizHidden = state.mode === 'quiz' && !state.quizRevealed;
@@ -440,14 +447,23 @@ export class EyeEngine {
 
   private measureViewport() {
     const rect = this.host.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
     let top = 8, bottom = this.height - 8;
+    let corner: DOMRect | null = null;
     for (const overlay of this.host.parentElement!.querySelectorAll('[data-viewport-overlay]')) {
       const box = overlay.getBoundingClientRect();
       if (box.height === 0 || box.bottom <= rect.top || box.top >= rect.bottom) continue;
+      if (overlay === this.compass) { corner = box; continue; }
       if (box.top + box.height / 2 < rect.top + this.height / 2) top = Math.max(top, box.bottom - rect.top + 8);
       else bottom = Math.min(bottom, box.top - rect.top - 8);
     }
     this.usableRect = { x: 8, y: Math.min(top, this.height - 32), width: Math.max(1, this.width - 16), height: Math.max(24, bottom - top) };
+    if (corner && corner.bottom - rect.top > this.usableRect.y && corner.left - rect.left < this.usableRect.x + this.usableRect.width) {
+      const below = { ...this.usableRect, y: Math.max(this.usableRect.y, corner.bottom - rect.top + 8) };
+      below.height = Math.max(1, this.usableRect.y + this.usableRect.height - below.y);
+      const beside = { ...this.usableRect, width: Math.max(1, corner.left - rect.left - 8 - this.usableRect.x) };
+      this.usableRect = Math.min(beside.width, beside.height) > Math.min(below.width, below.height) ? beside : below;
+    }
     const key = JSON.stringify([this.width, this.height, this.usableRect]);
     if (key !== this.viewportKey) { this.viewportKey = key; this.rig.setViewport(this.width, this.height, this.usableRect); }
   }
@@ -519,6 +535,8 @@ export class EyeEngine {
     this.sectionControlsEnabled = this.rig.controls.enabled;
     this.rig.controls.enabled = false;
     this.sectionPointerId = event.pointerId;
+    this.sectionGesture = true;
+    this.tapPointerId = null;
     this.pointerActive = true;
     this.pointerDragged = true;
     this.pointerDown.set(Infinity, Infinity);
@@ -556,27 +574,50 @@ export class EyeEngine {
   }
 
   private handlePointerMove = (event: PointerEvent) => {
-    if (this.sectionPointerId != null) { this.moveSectionDrag(event); return; }
-    if (this.pointerActive && this.pointerDown.distanceTo(new THREE.Vector2(event.clientX, event.clientY)) > 6) this.pointerDragged = true;
+    if (this.sectionGesture) {
+      event.preventDefault(); event.stopImmediatePropagation();
+      this.moveSectionDrag(event); return;
+    }
+    if (event.pointerId === this.tapPointerId) {
+      const samples = [...(event.getCoalescedEvents?.() ?? []), event];
+      const tolerance = event.pointerType === 'touch' ? 12 : 6;
+      if (samples.some(sample => Math.hypot(sample.clientX - this.pointerDown.x, sample.clientY - this.pointerDown.y) > tolerance)) this.pointerDragged = true;
+    }
     if (event.pointerType !== 'touch') this.pointerPosition = new THREE.Vector2(event.clientX, event.clientY);
     this.invalidate();
   };
 
   private handlePointerDown = (event: PointerEvent) => {
-    if (this.sectionPointerId != null) { event.stopImmediatePropagation(); return; }
+    if (this.activePointers.has(event.pointerId)) return;
+    this.activePointers.add(event.pointerId);
+    this.pointerActive = true;
+    if (this.sectionGesture) { event.preventDefault(); event.stopImmediatePropagation(); return; }
+    if (this.activePointers.size > 1) {
+      this.tapPointerId = null;
+      this.pointerDragged = true;
+      this.updateHover(); this.invalidate(); return;
+    }
+    this.tapPointerId = event.button === 0 ? event.pointerId : null;
+    this.pointerDragged = false;
     if (this.beginSectionDrag(event)) return;
     this.pointerDown.set(event.clientX, event.clientY);
-    this.pointerActive = true;
-    this.pointerDragged = false;
     this.updateHover();
     this.invalidate();
   };
 
   private handlePointerUp = (event: PointerEvent) => {
-    if (this.sectionPointerId != null) { this.moveSectionDrag(event); this.endSectionDrag(event); return; }
-    const clicked = this.pointerActive && !this.pointerDragged && event.button === 0
-      && this.pointerDown.distanceTo(new THREE.Vector2(event.clientX, event.clientY)) <= 6;
-    this.pointerActive = false;
+    if (!this.activePointers.delete(event.pointerId)) return;
+    if (this.sectionGesture) {
+      event.preventDefault(); event.stopImmediatePropagation();
+      this.moveSectionDrag(event); this.endSectionDrag(event);
+      this.pointerActive = this.activePointers.size > 0;
+      this.sectionGesture = this.pointerActive;
+      this.updateHover(); this.invalidate(); return;
+    }
+    const clicked = event.pointerId === this.tapPointerId && !this.pointerDragged && event.button === 0
+      && this.pointerDown.distanceTo(new THREE.Vector2(event.clientX, event.clientY)) <= (event.pointerType === 'touch' ? 12 : 6);
+    this.pointerActive = this.activePointers.size > 0;
+    this.tapPointerId = null;
     this.pointerDown.set(Infinity, Infinity);
     this.pointerPosition = event.pointerType === 'touch' ? null : new THREE.Vector2(event.clientX, event.clientY);
     if (clicked) {
@@ -588,15 +629,30 @@ export class EyeEngine {
   };
 
   private handlePointerLeave = () => {
+    this.tapPointerId = null;
+    this.pointerDragged = true;
     this.pointerPosition = null;
     this.updateHover();
     this.invalidate();
   };
 
   private handlePointerCancel = (event: Event) => {
-    if (this.sectionPointerId != null && 'pointerId' in event && event.pointerId !== this.sectionPointerId) return;
-    this.endSectionDrag();
-    this.pointerActive = false;
+    if ('pointerId' in event) {
+      const id = (event as PointerEvent).pointerId;
+      if (!this.activePointers.has(id)) return;
+      if (this.sectionGesture) { event.preventDefault(); event.stopImmediatePropagation(); }
+      // Losing capture does not end contact; keep suppressing taps until its eventual release.
+      if (event.type !== 'lostpointercapture') this.activePointers.delete(id);
+      if (id === this.sectionPointerId) this.endSectionDrag();
+    } else {
+      this.activePointers.clear();
+      this.endSectionDrag();
+    }
+    if (event.type === 'blur' || event.type === 'lostpointercapture') this.rig.cancel();
+    this.pointerActive = this.activePointers.size > 0;
+    this.sectionGesture = this.sectionGesture && this.pointerActive;
+    this.tapPointerId = null;
+    this.pointerDragged = true;
     this.pointerDown.set(Infinity, Infinity);
     this.handlePointerLeave();
   };
@@ -622,11 +678,10 @@ export class EyeEngine {
   };
 
   private resize = () => {
+    if (this.host.clientWidth === 0 || this.host.clientHeight === 0) return;
     this.width = Math.max(1, this.host.clientWidth);
     this.height = Math.max(1, this.host.clientHeight);
     this.renderer.setSize(this.width, this.height, false);
-    this.camera.aspect = this.width / this.height;
-    this.camera.updateProjectionMatrix();
     this.measureViewport();
     this.invalidate();
   };
@@ -676,6 +731,8 @@ export class EyeEngine {
     this.canvas.removeEventListener('pointerleave', this.handlePointerLeave);
     this.canvas.removeEventListener('pointercancel', this.handlePointerCancel, true);
     this.canvas.removeEventListener('lostpointercapture', this.handlePointerCancel);
+    window.removeEventListener('pointerup', this.handlePointerUp, true);
+    window.removeEventListener('pointercancel', this.handlePointerCancel, true);
     window.removeEventListener('blur', this.handlePointerCancel);
     this.canvas.removeEventListener('keydown', this.handleKeyDown);
     this.canvas.removeEventListener('webglcontextrestored', this.invalidate);

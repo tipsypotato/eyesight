@@ -24,6 +24,91 @@ function setup() {
 const expectVector = (actual: THREE.Vector3, expected: number[]) => actual.toArray().forEach((value, i) => expect(value).toBeCloseTo(expected[i], 12));
 
 describe('workspace camera lifecycle', () => {
+  it.each([['fovea', 0.06], ['lens', 0.55]] as const)('preserves the %s focus and user zoom through panel resizing', (_name, radius) => {
+    const { camera, animator, rig } = setup();
+    animator.reducedMotion = true;
+    const center = new THREE.Vector3(0.2, -0.1, 0.3);
+    try {
+      rig.setViewport(390, 300, { x: 8, y: 110, width: 374, height: 174 });
+      rig.focus(center, radius, new THREE.Vector3(0, 0, 1));
+      rig.zoom(0.25);
+      const relativeZoom = camera.position.distanceTo(center) / rig.distanceFor(radius);
+      const direction = camera.position.clone().sub(center).normalize();
+      for (const [width, height, available] of [
+        [320, 568, { x: 150, y: 100, width: 150, height: 450 }],
+        [844, 390, { x: 8, y: 80, width: 828, height: 280 }],
+        [390, 300, { x: 8, y: 110, width: 374, height: 174 }],
+      ] as const) {
+        rig.setViewport(width, height, available);
+        camera.updateMatrixWorld(true);
+        expect(camera.position.distanceTo(center) / rig.distanceFor(radius)).toBeCloseTo(relativeZoom);
+        expect(camera.position.clone().sub(center).normalize().dot(direction)).toBeCloseTo(1);
+        expectVector(rig.controls.target, center.toArray());
+        for (let latitude = 0; latitude <= 12; latitude++) for (let longitude = 0; longitude < 24; longitude++) {
+          const point = new THREE.Vector3().setFromSphericalCoords(radius, latitude * Math.PI / 12, longitude * Math.PI / 12).add(center).project(camera);
+          const x = (point.x + 1) * width / 2, y = (1 - point.y) * height / 2;
+          expect(x).toBeGreaterThan(available.x); expect(x).toBeLessThan(available.x + available.width);
+          expect(y).toBeGreaterThan(available.y); expect(y).toBeLessThan(available.y + available.height);
+        }
+      }
+      rig.setViewport(390, 300);
+      camera.updateMatrixWorld(true);
+      expect(camera.view?.enabled ?? false).toBe(false);
+      const projected = center.clone().project(camera);
+      expect(projected.x).toBeCloseTo(0); expect(projected.y).toBeCloseTo(0);
+      expect(camera.position.distanceTo(center) / rig.distanceFor(radius)).toBeCloseTo(relativeZoom);
+    } finally { rig.controls.dispose(); }
+  });
+
+  it('defers repeated resize fitting until an orbit gesture ends and applies it once', () => {
+    const { camera, animator, rig, canvas, document, pointer } = setup();
+    animator.reducedMotion = true;
+    try {
+      rig.setViewport(600, 400); rig.focus(new THREE.Vector3(), 0.4);
+      const distance = camera.position.length(), fit = rig.distanceFor(0.4);
+      pointer(canvas, 'pointerdown', 100, 100);
+      rig.setViewport(400, 600, { x: 10, y: 100, width: 180, height: 450 });
+      rig.setViewport(320, 568, { x: 10, y: 100, width: 150, height: 400 });
+      expect(camera.position.length()).toBeCloseTo(distance);
+      pointer(document, 'pointerup', 100, 100);
+      const resized = camera.position.length();
+      expect(resized).toBeCloseTo(distance * rig.distanceFor(0.4) / fit);
+      pointer(document, 'pointerup', 100, 100);
+      expect(camera.position.length()).toBeCloseTo(resized);
+      expect(animator.active).toBe(false);
+    } finally { rig.controls.dispose(); }
+  });
+
+  it('adapts an in-flight focus or zoom to the latest available viewport', () => {
+    const { camera, animator, rig } = setup();
+    const center = new THREE.Vector3(0.2, 0, 0.3);
+    try {
+      rig.setViewport(600, 400); rig.focus(center, 0.4);
+      animator.tick(0.1);
+      rig.setViewport(320, 568, { x: 10, y: 100, width: 150, height: 450 });
+      animator.tick(1);
+      expectVector(rig.controls.target, center.toArray());
+      expect(camera.position.distanceTo(center)).toBeCloseTo(rig.distanceFor(0.4));
+      rig.zoom(0.2); animator.tick(0.05);
+      rig.setViewport(600, 400); animator.tick(1);
+      expect(camera.position.distanceTo(center)).toBeCloseTo(rig.distanceFor(0.4) * Math.exp(0.2));
+    } finally { rig.controls.dispose(); }
+  });
+
+  it('re-fits a restored snapshot using its saved usable viewport', () => {
+    const { camera, animator, rig } = setup();
+    animator.reducedMotion = true;
+    try {
+      rig.setViewport(390, 300, { x: 8, y: 110, width: 374, height: 174 });
+      rig.focus(new THREE.Vector3(), 0.4); rig.zoom(0.25);
+      const saved = rig.capture(), ratio = camera.position.length() / rig.distanceFor(0.4);
+      rig.setViewport(320, 568, { x: 8, y: 110, width: 304, height: 440 });
+      rig.restore(saved);
+      rig.setViewport(320, 568, { x: 8, y: 110, width: 304, height: 440 });
+      expect(camera.position.length() / rig.distanceFor(0.4)).toBeCloseTo(ratio);
+    } finally { rig.controls.dispose(); }
+  });
+
   it('centers and fits the target inside the measured usable viewport', () => {
     const { camera, animator, rig } = setup();
     animator.reducedMotion = true;

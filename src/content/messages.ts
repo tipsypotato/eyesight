@@ -1,6 +1,12 @@
 import type { Localized } from '../anatomy/types';
 
 export const messages = {
+  workspaces: { zh: '演示工作区', en: 'Demo workspaces' },
+  workspacePanel: { zh: '操作面板', en: 'Control panel' },
+  parameters: { zh: '参数', en: 'Parameters' }, explanation: { zh: '说明', en: 'Explanation' },
+  panelSize: { zh: '面板大小', en: 'Panel size' },
+  panelCollapsed: { zh: '收起', en: 'Collapse' }, panelHalf: { zh: '半屏', en: 'Half' }, panelFull: { zh: '全屏', en: 'Full' },
+  returnModel: { zh: '返回模型', en: 'Back to model' },
   tagline: { zh: '看见，如何发生', en: 'See how seeing happens' },
   explore: { zh: '解剖探索', en: 'Anatomy' }, optics: { zh: '基础光路', en: 'Light & focus' },
   tour: { zh: '短导览', en: 'Guided tours' }, quiz: { zh: '结构测验', en: 'Identify structures' },

@@ -197,3 +197,24 @@
 - 本轮没有验证相机朝向、实际网格的左右/鼻颞位置、剖切几何、光线与可视视网膜是否重合，亦没有进行浏览器排版或屏幕阅读器检查。这些属于整体验收。
 - 内容链接中的 NCBI `Gross Anatomy of the Eye` 在本轮返回浏览器验证页，未独立重读该页面；相关概念另参考上列可访问资料。没有把链接可访问性等同于医学正确性。
 - 本模型是成人右眼的教学示意；不表达个体尺寸、完整组织学、全部光学像差或验光处方。本轮未添加这些功能或医学结论。
+
+
+## T04 追加批次（2026-10-22）
+
+批次 `T04-responsive-panel-2026-10-22`：独立审校员 `t04_i18n_review`（Codex 独立 LLM 上下文，不推测后端型号）结合 `App.tsx` 的面板、导航及滑块使用场景核对。9 对全部通过，0 问题、0 遗漏、0 未解决项，状态 `llm-checked`。
+
+| key | 中文 | English |
+| --- | --- | --- |
+| workspaces | 演示工作区 | Demo workspaces |
+| workspacePanel | 操作面板 | Control panel |
+| parameters | 参数 | Parameters |
+| explanation | 说明 | Explanation |
+| panelSize | 面板大小 | Panel size |
+| panelCollapsed | 收起 | Collapse |
+| panelHalf | 半屏 | Half |
+| panelFull | 全屏 | Full |
+| returnModel | 返回模型 | Back to model |
+
+按上述顺序的 `[{key,zh,en},…]` 内容 SHA-256：`91c0ce640cdc6a513f830ea0b7e22797531fbf7136a5968d3169ca8086c50e8a`。新 `workspaces` 替换旧“学习模式 / Learning modes”内联文案；有效总数为 **241 + 9 − 1 = 249 对**，由 117 对解剖/导览、131 对 messages 与 1 对画布说明组成，旧批次计数保留为历史时点。
+
+滑块语义复核通过：剖切复用剖面名称、归一化位置与保留侧坐标关系，分层展开将 0—1 映射为 0—100%；没有新增医学结论或运行时翻译依赖。中英文窄屏浏览器布局已检查；实际读屏的数学符号发音及医学专家审核未完成。

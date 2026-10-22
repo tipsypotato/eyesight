@@ -233,6 +233,51 @@ function pointerFixture() {
   return { eye, store, engine, internal, camera, sync, pointAt };
 }
 
+it.each(['fovea', 'lens'] as const)('keeps the real %s visible when a corner compass and panel change the usable rectangle', id => {
+  const { eye, store, engine, camera, sync } = pointerFixture();
+  let width = 390, height = 228, overlaysVisible = true;
+  const rect = (left: number, top: number, boxWidth: number, boxHeight: number) => ({ left, top, width: boxWidth, height: boxHeight, right: left + boxWidth, bottom: top + boxHeight });
+  const compass = { getBoundingClientRect: () => rect(width - 116, 26, 120, 95) };
+  const overlays = [
+    { getBoundingClientRect: () => rect(28, 40, 170, 18) },
+    { getBoundingClientRect: () => rect(10, height - 5, width, 16) },
+    compass,
+  ];
+  const document = new EventTarget();
+  const canvas = Object.assign(new EventTarget(), { style: {}, setAttribute() {}, clientWidth: width, clientHeight: height,
+    ownerDocument: document, getRootNode: () => document, getBoundingClientRect: () => rect(10, 20, width, height) });
+  const host = { getBoundingClientRect: () => rect(10, 20, width, height), parentElement: { querySelectorAll: () => overlaysVisible ? overlays : [] } };
+  const animator = new Animator(); animator.reducedMotion = true;
+  const rig = new CameraRig(camera, canvas as unknown as HTMLElement, animator);
+  Object.assign(engine, { canvas, host, rig, compass, width, height });
+  const internal = engine as unknown as { measureViewport(): void; usableRect: { x: number; y: number; width: number; height: number } };
+  const assertVisible = () => {
+    camera.updateMatrixWorld(true);
+    const bounds = new THREE.Box3().setFromObject(eye.parts.get(id)!.group), usable = internal.usableRect;
+    for (const x of [bounds.min.x, bounds.max.x]) for (const y of [bounds.min.y, bounds.max.y]) for (const z of [bounds.min.z, bounds.max.z]) {
+      const point = new THREE.Vector3(x, y, z).project(camera);
+      const px = (point.x + 1) * width / 2, py = (1 - point.y) * height / 2;
+      expect(px).toBeGreaterThan(usable.x); expect(px).toBeLessThan(usable.x + usable.width);
+      expect(py).toBeGreaterThan(usable.y); expect(py).toBeLessThan(usable.y + usable.height);
+    }
+  };
+  try {
+    store.getState().select(id, true); store.getState().toggleIsolate(); sync();
+    internal.measureViewport();
+    expect(internal.usableRect).toEqual({ x: 8, y: 46, width: 248, height: 149 });
+    engine.focus(id); assertVisible();
+    const target = rig.controls.target.clone(), direction = camera.position.clone().sub(target).normalize();
+    width = 320; height = 420; Object.assign(engine, { width, height });
+    internal.measureViewport(); assertVisible();
+    expect(internal.usableRect).toEqual({ x: 8, y: 109, width: 304, height: 278 });
+    expect(rig.controls.target.distanceTo(target)).toBeLessThan(1e-10);
+    expect(camera.position.clone().sub(target).normalize().dot(direction)).toBeCloseTo(1);
+    overlaysVisible = false; internal.measureViewport(); assertVisible();
+    expect(camera.view?.offsetX ?? 0).toBeCloseTo(0);
+    expect(camera.view?.offsetY ?? 0).toBeCloseTo(0);
+  } finally { rig.controls.dispose(); eye.dispose(); }
+});
+
 it('makes a selected tissue clearly distinct and restores its original appearance on deselection', () => {
   const { eye, store, engine, sync } = pointerFixture();
   const mesh = eye.parts.get('iris')!.group.getObjectByName('iris-stroma') as THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhysicalMaterial>;
