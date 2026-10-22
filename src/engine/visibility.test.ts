@@ -160,4 +160,16 @@ describe('visible anatomy surface', () => {
       expect(after.z).toBeCloseTo(before.z * 1.2 + part.group.position.z, 3);
     } finally { eye.dispose(); }
   });
+
+  it('keeps a static muscle label on the same surface when the globe lengthens', () => {
+    const { eye, surface } = setup(['superior-rectus']);
+    try {
+      const before = surface('superior-rectus');
+      expect(before).not.toBeNull();
+      setPosteriorStretch(eye.root, 1.4);
+      const after = surface('superior-rectus', 1.4);
+      expect(after).not.toBeNull();
+      expect(after!.distanceTo(before!)).toBeLessThan(1e-8);
+    } finally { eye.dispose(); }
+  });
 });

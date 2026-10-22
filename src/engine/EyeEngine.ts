@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { STRUCTURES } from '../anatomy/data';
-import type { CameraSnapshot, EyeSide, SceneState, StructureId, ViewPreset } from '../anatomy/types';
+import { EXTRAOCULAR_IDS, type CameraSnapshot, type EyeSide, type SceneState, type StructureId, type ViewPreset } from '../anatomy/types';
 import { Animator } from './animator';
 import { CameraRig } from './camera';
 import { buildEye, createShellSection, setOpticalGeometry, setPosteriorStretch, type EyePart } from './geometry';
@@ -353,9 +353,10 @@ export class EyeEngine {
     const bounds = this.boundsFor(part);
     const sphere = bounds.getBoundingSphere(new THREE.Sphere());
     const fundus = ['macula', 'fovea', 'optic-disc', 'retinal-vessels', 'retina'].includes(id);
-    const direction = fundus ? new THREE.Vector3(0, 0, 1) : id === 'optic-nerve' ? new THREE.Vector3(0, 0, -1) : undefined;
+    const extraocular = EXTRAOCULAR_IDS.some(muscle => muscle === id);
+    const direction = extraocular ? new THREE.Vector3(part.anchor.x, part.anchor.y, 0.7) : fundus ? new THREE.Vector3(0, 0, 1) : id === 'optic-nerve' ? new THREE.Vector3(0, 0, -1) : undefined;
     const lensDetail = id === 'lens' && this.state?.mode === 'disease' && this.state.disease?.id === 'cataract' && this.state.disease.view === 'lens-detail';
-    this.rig.focus(sphere.center, Math.max(0.06, sphere.radius / (lensDetail ? 0.72 : 0.34)), direction?.applyQuaternion(this.activeEye().root.quaternion));
+    this.rig.focus(sphere.center, Math.max(0.06, sphere.radius / (lensDetail || extraocular ? 0.72 : 0.34)), direction?.applyQuaternion(this.activeEye().root.quaternion));
     this.notifyCamera();
     this.invalidate();
   }
@@ -397,15 +398,14 @@ export class EyeEngine {
     if (this.state?.mode === 'disease' && this.state.disease?.id === 'cataract' && this.state.disease.view === 'lens-detail') {
       const sphere = this.boundsFor(this.eye.parts.get('lens')!).getBoundingSphere(new THREE.Sphere());
       this.rig.preset(view, sphere.radius / 0.72, sphere.center);
-    } else if (this.leftEye) {
-      const bounds = new THREE.Box3().setFromObject(this.eye.root).union(new THREE.Box3().setFromObject(this.leftEye.root));
-      if (this.diseaseEffects) bounds.union(new THREE.Box3().setFromObject(this.diseaseEffects));
-      const sphere = bounds.getBoundingSphere(new THREE.Sphere());
-      this.rig.preset(view, sphere.radius, sphere.center);
-    } else if (optical) {
-      const bounds = new THREE.Box3().setFromObject(this.eye.root);
-      bounds.expandByPoint(new THREE.Vector3(0, 0, 4));
-      bounds.expandByPoint(new THREE.Vector3(0, 0, -1.77));
+    } else if (this.leftEye || optical || EXTRAOCULAR_IDS.some(id => this.eye.parts.get(id)?.group.visible)) {
+      const bounds = new THREE.Box3();
+      for (const eye of this.eyes()) for (const part of eye.parts.values()) if (part.group.visible) bounds.union(this.boundsFor(part));
+      if (this.leftEye && this.diseaseEffects) bounds.union(new THREE.Box3().setFromObject(this.diseaseEffects));
+      else if (optical) {
+        bounds.expandByPoint(new THREE.Vector3(0, 0, 4));
+        bounds.expandByPoint(new THREE.Vector3(0, 0, -1.77));
+      }
       const sphere = bounds.getBoundingSphere(new THREE.Sphere());
       this.rig.preset(view, sphere.radius, sphere.center);
     } else this.rig.preset(view, 1.38 + (this.state?.explode ?? 0) * 0.60,

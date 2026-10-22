@@ -36,13 +36,32 @@ describe('bilingual anatomy content', () => {
     }
   });
 
-  it('assigns structures to the four named display groups', () => {
-    expect(GROUPS.map(({ id }) => id).sort()).toEqual(['front', 'fundus', 'inside', 'wall']);
+  it('assigns structures to the five named display groups', () => {
+    expect(GROUPS.map(({ id }) => id).sort()).toEqual(['extraocular', 'front', 'fundus', 'inside', 'wall']);
     for (const group of GROUPS) {
       expectBilingual(group.name);
       expect(STRUCTURES.some((structure) => structure.group === group.id)).toBe(true);
     }
     for (const structure of STRUCTURES) expect(GROUPS.map(({ id }) => id)).toContain(structure.group);
+  });
+
+  it('describes the six globe-moving muscles separately from eyelid and intraocular muscles', () => {
+    const muscles = STRUCTURES.filter(({ group }) => group === 'extraocular');
+    expect(muscles.map(({ id }) => id)).toEqual([
+      'superior-rectus', 'inferior-rectus', 'medial-rectus', 'lateral-rectus', 'superior-oblique', 'inferior-oblique',
+    ]);
+    for (const muscle of muscles) {
+      expect(muscle.kind).toBe('tissue');
+      expect(muscle.function.zh).toContain('第一眼位');
+      expect(muscle.function.en).toContain('primary position');
+    }
+    const superiorOblique = muscles.find(({ id }) => id === 'superior-oblique')!;
+    expect(superiorOblique.position.zh).toContain('滑车');
+    expect(superiorOblique.position.en).toContain('trochlea');
+    expect(superiorOblique.function.en).toContain('intorts');
+    const inferiorOblique = muscles.find(({ id }) => id === 'inferior-oblique')!;
+    expect(inferiorOblique.position.en).toContain('anterior nasal orbital floor');
+    expect(inferiorOblique.function.en).toContain('extorts');
   });
 
   it('distinguishes the pupil opening and the two aqueous chambers', () => {

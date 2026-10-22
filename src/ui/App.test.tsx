@@ -36,6 +36,21 @@ function expectDockedAction(html: string, label: string) {
 }
 
 describe('responsive workspace markup', () => {
+  it('exposes the extraocular preset and selected muscle details in both languages', () => {
+    store.getState().applyPreset('extraocular'); store.getState().select('superior-oblique', true);
+    for (const lang of ['zh', 'en'] as const) {
+      store.getState().setLanguage(lang);
+      const html = renderApp(false);
+      expect(html).toContain(messages.presetExtraocular[lang]);
+      expect(html).toContain(lang === 'zh' ? '上斜肌' : 'Superior oblique');
+      expect(html).toContain('Musculus obliquus superior');
+      expect(html).toContain(messages.isolate[lang]);
+      expect(html).toContain(messages.focus[lang]);
+    }
+    expect(store.getState()).toMatchObject({ presetId: 'extraocular', selectedId: 'superior-oblique' });
+    store.getState().setMode('optics');
+    expect(renderApp(false)).not.toContain(messages.presetExtraocular.en);
+  });
   it.each<{ mode: Mode; tabs: string[]; active: string }>([
     { mode: 'explore', tabs: ['structures', 'parameters', 'explanation'], active: 'structures' },
     { mode: 'optics', tabs: ['parameters', 'explanation'], active: 'parameters' },

@@ -46,6 +46,31 @@ describe('structure search', () => {
     }
     expect(searchStructures('lens').relatedDisease).toBe(false);
   });
+
+  it('finds all six extraocular muscles through group names and EOM abbreviations', () => {
+    const members = STRUCTURES.filter(item => item.group === 'extraocular');
+    expect(members).toHaveLength(6);
+    for (const query of ['眼外肌', '眼外肌群', 'Extraocular', 'extraocular muscles', ' EOM ', 'EOMs']) {
+      const result = searchStructures(query);
+      expect(result.group).toBe('extraocular');
+      expect(result.items).toEqual(members);
+      expect(result.ambiguous).toBe(false);
+      expect(result.relatedDisease).toBe(false);
+    }
+  });
+
+  it('resolves muscle abbreviations only as whole queries and keeps their anatomical identity', () => {
+    for (const [id, chinese, abbreviation] of [
+      ['superior-rectus', '上直肌', 'SR'], ['inferior-rectus', '下直肌', 'IR'],
+      ['medial-rectus', '内直肌', 'MR'], ['lateral-rectus', '外直肌', 'LR'],
+      ['superior-oblique', '上斜肌', 'SO'], ['inferior-oblique', '下斜肌', 'IO'],
+    ]) {
+      for (const query of [id, chinese, abbreviation, ` ${abbreviation.toLowerCase()} `]) expect(ids(query)).toEqual([id]);
+    }
+    expect(ids('Musculus obliquus superior')).toEqual(['superior-oblique']);
+    expect(ids('iris')).toEqual(['iris']);
+    expect(ids('anterior chamber')).toEqual(['anterior-chamber']);
+  });
 });
 
 it('finds aqueous outflow anatomy without treating an exact cornea query as an angle query', () => {

@@ -1,5 +1,5 @@
 import { LESSONS } from '../anatomy/data';
-import { SCENE_PRESETS, STRUCTURE_IDS, type CameraSnapshot, type Mode, type OpticsInput, type PhysiologyState, type SceneState } from '../anatomy/types';
+import { EXTRAOCULAR_IDS, SCENE_PRESETS, STRUCTURE_IDS, type CameraSnapshot, type Mode, type OpticsInput, type PhysiologyState, type SceneState } from '../anatomy/types';
 import { CONTENT_VERSION } from '../content/questions';
 import { validateOpticsInput } from '../engine/optics';
 import { PHYSIOLOGY_LENGTHS, physiologyInput } from '../modes/physiology';
@@ -29,9 +29,9 @@ const integer = (value: unknown, min: number, max: number): value is number => f
 const structureOrNull = (value: unknown): value is SceneState['selectedId'] => value === null || member(value, STRUCTURE_IDS);
 
 function layers(value: unknown): SceneState['layers'] | null {
-  const added = ['iridocorneal-angle', 'trabecular-meshwork'];
+  const added = ['iridocorneal-angle', 'trabecular-meshwork', ...EXTRAOCULAR_IDS];
   if (!record(value) || !STRUCTURE_IDS.every(id => member(value[id], ['on', 'ghost', 'off']) || added.includes(id) && value[id] === undefined)) return null;
-  return Object.fromEntries(STRUCTURE_IDS.map(id => [id, value[id] ?? 'on'])) as SceneState['layers'];
+  return Object.fromEntries(STRUCTURE_IDS.map(id => [id, value[id] ?? (EXTRAOCULAR_IDS.some(muscle => muscle === id) ? 'off' : 'on')])) as SceneState['layers'];
 }
 
 function optics(value: unknown): OpticsInput | null {

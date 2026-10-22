@@ -15,6 +15,33 @@ const draft = (): PersistedDraft => ({
   isolationLayers: null, lessonId: null, step: 0,
 });
 const saved = (): SavedProgress => ({ schemaVersion: 2, contentVersion: CONTENT_VERSION, mode: 'explore', drafts: { explore: draft() }, lessonPositions: {}, tourTasks: {}, sessions: {}, activeSessions: {}, activeQuizId: null });
+it('restores pre-muscle drafts and isolation layers without discarding the previous scene or answers', () => {
+  const value = saved(), scene = value.drafts.explore!;
+  scene.isolateId = 'lens'; scene.isolationLayers = { ...scene.layers };
+  const muscles = ['superior-rectus', 'inferior-rectus', 'medial-rectus', 'lateral-rectus', 'superior-oblique', 'inferior-oblique'] as const;
+  for (const id of muscles) { delete (scene.layers as Partial<typeof scene.layers>)[id]; delete (scene.isolationLayers as Partial<typeof scene.layers>)[id]; }
+  const session = createSession('structures', questionsFor('structures'));
+  value.sessions[session.sessionId] = session; value.activeSessions.structures = session.sessionId;
+  const result = parseProgress(JSON.stringify(value));
+  expect(result.discarded).toBe(false);
+  expect(result.value?.drafts.explore).toMatchObject({ selectedId: 'lens', isolateId: 'lens', camera: scene.camera, clip: scene.clip });
+  for (const id of muscles) {
+    expect(result.value?.drafts.explore?.layers[id]).toBe('off');
+    expect(result.value?.drafts.explore?.isolationLayers?.[id]).toBe('off');
+  }
+  expect(result.value?.sessions).toEqual(value.sessions);
+});
+
+it('restores a saved muscle selection and preset while rejecting an invalid muscle layer', () => {
+  const value = saved();
+  Object.assign(value.drafts.explore!, { selectedId: 'superior-oblique', isolateId: 'superior-oblique', presetId: 'extraocular' });
+  const result = parseProgress(JSON.stringify(value));
+  expect(result.discarded).toBe(false);
+  expect(result.value?.drafts.explore).toEqual(value.drafts.explore);
+  const invalid = JSON.parse(JSON.stringify(value));
+  invalid.drafts.explore.layers['superior-oblique'] = 'invalid';
+  expect(parseProgress(JSON.stringify(invalid)).value?.drafts.explore).toBeUndefined();
+});
 const parse = (value: unknown) => parseProgress(JSON.stringify(value));
 
 describe('saved progress boundary', () => {

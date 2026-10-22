@@ -891,6 +891,70 @@ function diseaseEngineFixture() {
   return { engine, internal, store, sync, selected, media, raf, cancel, cleanup() { engine.dispose(); vi.unstubAllGlobals(); } };
 }
 
+it('excludes hidden anatomy from optical and binocular camera fitting', () => {
+  const { engine, internal, store, sync, cleanup } = diseaseEngineFixture();
+  try {
+    for (const mode of ['optics', 'disease'] as const) {
+      if (mode === 'disease') store.getState().openDisease('strabismus');
+      else store.getState().setMode(mode);
+      store.setState(s => ({ layers: { ...s.layers, 'optic-nerve': 'off' } })); sync();
+      engine.setView('front');
+      const before = engine.captureCamera();
+      const nerve = internal.eye.parts.get('optic-nerve')!.group;
+      nerve.position.set(30, 0, -30);
+      engine.setView('front');
+      expect(engine.captureCamera()).toEqual(before);
+      nerve.position.set(0, 0, 0);
+    }
+  } finally { cleanup(); }
+});
+
+it('focuses a long extraocular muscle at a readable scale with its full course in frame', () => {
+  const { engine, internal, store, sync, cleanup } = diseaseEngineFixture();
+  try {
+    store.getState().revealStructure('superior-rectus'); sync();
+    engine.focus('superior-rectus'); internal.camera.updateMatrixWorld();
+    const bounds = new THREE.Box3().setFromObject(internal.eye.parts.get('superior-rectus')!.group);
+    const projected = [];
+    for (const x of [bounds.min.x, bounds.max.x]) for (const y of [bounds.min.y, bounds.max.y]) for (const z of [bounds.min.z, bounds.max.z]) projected.push(new THREE.Vector3(x, y, z).project(internal.camera));
+    expect(Math.max(...projected.map(p => Math.abs(p.x)))).toBeLessThan(1);
+    expect(Math.max(...projected.map(p => Math.abs(p.y)))).toBeLessThan(1);
+    const width = Math.max(...projected.map(p => p.x)) - Math.min(...projected.map(p => p.x));
+    const height = Math.max(...projected.map(p => p.y)) - Math.min(...projected.map(p => p.y));
+    expect(Math.max(width, height)).toBeGreaterThan(0.8);
+    expect(engine.isStructureVisible('superior-rectus')).toBe(true);
+  } finally { cleanup(); }
+});
+
+it('picks and highlights each muscle while respecting isolation, ghost layers and sectioning', () => {
+  const { engine, internal, store, sync, cleanup } = diseaseEngineFixture();
+  try {
+    for (const id of ['superior-rectus', 'inferior-rectus', 'medial-rectus', 'lateral-rectus', 'superior-oblique', 'inferior-oblique'] as const) {
+      store.getState().applyPreset('extraocular'); store.getState().select(id, true); store.getState().toggleIsolate(); sync();
+      engine.focus(id); internal.camera.updateMatrixWorld();
+      const part = internal.eye.parts.get(id)!;
+      const point = part.group.localToWorld(part.anchor.clone()).project(internal.camera);
+      const pick = () => internal.pickStructure((point.x + 1) * 240, (1 - point.y) * 300);
+      expect(pick(), id).toBe(id);
+      const mesh = part.group.getObjectByName('muscle-belly') as THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhysicalMaterial>;
+      expect(mesh.material.emissiveIntensity).toBeGreaterThan(0.3);
+      store.getState().cycleLayer(id); sync();
+      expect(pick(), `${id} ghost`).toBeNull();
+      store.getState().cycleLayer(id); sync();
+      expect(part.group.visible).toBe(false);
+    }
+    store.getState().applyPreset('extraocular'); store.getState().select('medial-rectus', true); store.getState().toggleIsolate(); sync();
+    engine.focus('medial-rectus');
+    for (const axis of ['sagittal', 'axial', 'coronal'] as const) {
+      store.getState().setClip({ enabled: true, axis, offset: 0, keepSide: 'negative' }); sync();
+      const part = internal.eye.parts.get('medial-rectus')!;
+      const mesh = part.group.getObjectByName('muscle-belly') as THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhysicalMaterial>;
+      expect(mesh.material.clippingPlanes).toHaveLength(1);
+      if (axis === 'sagittal') expect(engine.isStructureVisible('medial-rectus')).toBe(false);
+    }
+  } finally { cleanup(); }
+});
+
 it('restores cataract materials on exit and keeps a normal comparison renderer clear', () => {
   const { engine, internal, store, sync, cleanup } = diseaseEngineFixture();
   const lens = internal.eye.root.getObjectByName('lens-capsule') as THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhysicalMaterial>;

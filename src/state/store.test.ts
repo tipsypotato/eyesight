@@ -526,6 +526,55 @@ describe('comparison and physiology', () => {
 });
 
 describe('observation presets and scene undo', () => {
+  const muscles = ['superior-rectus', 'inferior-rectus', 'medial-rectus', 'lateral-rectus', 'superior-oblique', 'inferior-oblique'] as const;
+  it('reveals all six muscles with globe context and restores their layers across workspaces', () => {
+    const store = createEyeStore();
+    store.getState().applyPreset('extraocular');
+    expect(store.getState()).toMatchObject({ presetId: 'extraocular', clip: { enabled: false }, showOptics: false, layers: { sclera: 'on', cornea: 'ghost', retina: 'on', lens: 'off' } });
+    for (const id of muscles) expect(store.getState().layers[id]).toBe('on');
+    store.getState().select('superior-oblique', true);
+    store.getState().toggleIsolate();
+    store.getState().setClip({ enabled: true, axis: 'axial', offset: 0.4 });
+    store.getState().setExplode(0.5);
+    store.getState().setMode('optics');
+    for (const id of muscles) expect(store.getState().layers[id]).toBe('off');
+    store.getState().setLanguage('en');
+    store.getState().setMode('explore');
+    expect(store.getState()).toMatchObject({ selectedId: 'superior-oblique', isolateId: 'superior-oblique', lang: 'en', explode: 0.5, clip: { enabled: true, axis: 'axial', offset: 0.4 } });
+    store.getState().toggleIsolate();
+    for (const id of muscles) expect(store.getState().layers[id]).toBe('on');
+  });
+  it('reveals a clipped medial muscle without clipping it again and can undo the reveal', () => {
+    const store = createEyeStore();
+    store.getState().applyPreset('wall-cut');
+    const before = store.getState();
+    store.getState().revealStructure('medial-rectus');
+    expect(store.getState()).toMatchObject({ selectedId: 'medial-rectus', revealPreset: 'extraocularView', clip: { enabled: false }, layers: { 'medial-rectus': 'on', sclera: 'ghost', retina: 'off' } });
+    store.getState().undoReveal();
+    expect(store.getState()).toMatchObject({ layers: before.layers, clip: before.clip, selectedId: before.selectedId });
+  });
+  it('keeps muscle anatomy out of existing internal, guided and disease scenes', () => {
+    const store = createEyeStore();
+    const hidden = () => { for (const id of muscles) expect(store.getState().layers[id]).toBe('off'); };
+    hidden();
+    for (const preset of ['wall-cut', 'anterior', 'fundus', 'chambers', 'optical-path'] as const) {
+      store.getState().applyPreset('extraocular'); store.getState().applyPreset(preset); hidden();
+    }
+    store.getState().startLesson('anatomy'); hidden();
+    store.getState().startQuiz(); hidden();
+    for (const disease of ['cataract', 'glaucoma', 'strabismus', 'amblyopia'] as const) {
+      store.getState().openDisease(disease); hidden();
+    }
+  });
+  it('does not attach static orbital muscles to an axially stretched optical scene', () => {
+    const store = createEyeStore();
+    store.getState().setMode('optics'); store.getState().setOptics('myopia');
+    store.getState().applyPreset('intact');
+    for (const id of muscles) expect(store.getState().layers[id]).toBe('off');
+    const before = store.getState();
+    store.getState().applyPreset('extraocular');
+    expect(store.getState()).toBe(before);
+  });
   const camera: CameraSnapshot = { position: [3, 2, 4], target: [0.1, 0, -0.2], zoom: 1.3 };
   it.each(SCENE_PRESETS)('rebuilds %s from a complete baseline regardless of hidden layers', preset => {
     const clean = createEyeStore(), dirty = createEyeStore();
@@ -537,13 +586,13 @@ describe('observation presets and scene undo', () => {
     const a = clean.getState(), b = dirty.getState();
     expect(b.layers).toEqual(a.layers); expect(b.clip).toEqual(a.clip);
     expect(b).toMatchObject({ presetId: preset, isolateId: null, isolationLayers: null, explode: 0, labels: false, view: a.view, showOptics: a.showOptics });
-    expect(b.selectedId).toBe(preset === 'fundus' ? null : 'lens');
+    expect(b.selectedId).toBe(preset === 'fundus' || preset === 'extraocular' ? null : 'lens');
   });
   it('uses the specified wall, fundus, chamber and optical displays without resetting optical parameters', () => {
     const store = createEyeStore();
     store.getState().setOptics('myopia'); store.getState().applyPreset('optical-path');
     expect(store.getState()).toMatchObject({ opticsPreset: 'myopia', showOptics: true, view: 'side', clip: { enabled: true, axis: 'sagittal', offset: 0, keepSide: 'negative' } });
-    expect(Object.values(store.getState().layers).every(value => value === 'ghost')).toBe(true);
+    for (const id of STRUCTURE_IDS) expect(store.getState().layers[id]).toBe(muscles.some(muscle => muscle === id) ? 'off' : 'ghost');
     store.getState().applyPreset('fundus');
     expect(store.getState()).toMatchObject({ showOptics: false, view: 'front', clip: { enabled: false }, layers: { retina: 'ghost', lens: 'off', cornea: 'off', macula: 'on', 'optic-disc': 'on' } });
     store.getState().applyPreset('chambers');

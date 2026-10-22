@@ -9,12 +9,17 @@ const retinalAnatomy = { title: 'Webvision · Simple Anatomy of the Retina', url
 const neuroAnatomy = { title: 'UTHealth · Gross Anatomy of the Eye', url: 'https://nba.uth.tmc.edu/neuroanatomy/L8/Lab08p01_index.html' };
 
 const aqueousAnatomy = { title: 'NCBI Webvision · What is glaucoma? · Anterior chamber angle', url: 'https://www.ncbi.nlm.nih.gov/books/NBK543075/figure/diseases_glaucoma.F7A/' };
+const extraocularAnatomy = { title: 'NCBI StatPearls · Eye Extraocular Muscles', url: 'https://www.ncbi.nlm.nih.gov/sites/books/NBK519565/' };
+const extraocularActions = { title: 'NCBI StatPearls · Extraocular muscle actions and innervation', url: 'https://www.ncbi.nlm.nih.gov/sites/books/NBK573075/table/article-133080.table1/?report=objectonly' };
+const superiorObliqueAnatomy = { title: 'NCBI StatPearls · Eye Superior Oblique Muscle', url: 'https://www.ncbi.nlm.nih.gov/sites/books/NBK537152/' };
+const inferiorObliqueAnatomy = { title: 'NCBI StatPearls · Inferior Oblique Muscle', url: 'https://www.ncbi.nlm.nih.gov/sites/books/NBK545253/' };
 
 export const GROUPS: { id: GroupId; name: Localized }[] = [
   { id: 'wall', name: { zh: '眼球壁', en: 'Eye wall' } },
   { id: 'front', name: { zh: '前段结构', en: 'Anterior structures' } },
   { id: 'inside', name: { zh: '眼房与玻璃体', en: 'Chambers & vitreous' } },
   { id: 'fundus', name: { zh: '眼底与视神经', en: 'Fundus & optic nerve' } },
+  { id: 'extraocular', name: { zh: '眼外肌', en: 'Extraocular muscles' } },
 ];
 
 export const STRUCTURES: Structure[] = [
@@ -169,6 +174,54 @@ export const STRUCTURES: Structure[] = [
     position: { zh: '主要血管在视盘处进出，较大的血管弓绕行黄斑周围。', en: 'The main vessels pass through the optic disc, with major vascular arcades curving around the macula.' },
     fact: { zh: '血管分支图案存在个体差异，本模型采用示意分布。', en: 'Branching patterns vary between people; this model uses a schematic pattern.' },
     sources: [retinalAnatomy, neuroAnatomy],
+  },
+  {
+    id: 'superior-rectus', name: { zh: '上直肌', en: 'Superior rectus' }, latin: 'Musculus rectus superior', group: 'extraocular', color: '#b97164', kind: 'tissue',
+    summary: { zh: '沿眼球上方走行的一条眼外肌。', en: 'An extraocular muscle running above the globe.' },
+    function: { zh: '在第一眼位（正前方注视）主要上转眼球，也参与内旋和内收。', en: 'From the primary position (looking straight ahead), mainly elevates the eye, with intorsion and adduction.' },
+    position: { zh: '从眶尖总腱环向前走行，止于赤道前的上方巩膜。', en: 'Runs from the common tendinous ring at the orbital apex to the superior sclera, anterior to the equator.' },
+    fact: { zh: '由动眼神经（第 III 脑神经）支配；提上睑肌主要抬起眼睑，是另一条肌肉。', en: 'Supplied by the oculomotor nerve (CN III). The levator palpebrae superioris is a separate muscle that mainly lifts the eyelid.' },
+    sources: [extraocularAnatomy, extraocularActions],
+  },
+  {
+    id: 'inferior-rectus', name: { zh: '下直肌', en: 'Inferior rectus' }, latin: 'Musculus rectus inferior', group: 'extraocular', color: '#b87868', kind: 'tissue',
+    summary: { zh: '沿眼球下方走行的一条眼外肌。', en: 'An extraocular muscle running below the globe.' },
+    function: { zh: '在第一眼位（正前方注视）主要下转眼球，也参与外旋和内收。', en: 'From the primary position (looking straight ahead), mainly depresses the eye, with extorsion and adduction.' },
+    position: { zh: '从眶尖总腱环向前走行，止于赤道前的下方巩膜。', en: 'Runs from the common tendinous ring at the orbital apex to the inferior sclera, anterior to the equator.' },
+    fact: { zh: '由动眼神经（第 III 脑神经）支配；不同注视方向会改变各肌的作用比例。', en: 'Supplied by the oculomotor nerve (CN III). Each muscle’s contribution varies with gaze direction.' },
+    sources: [extraocularAnatomy, extraocularActions],
+  },
+  {
+    id: 'medial-rectus', name: { zh: '内直肌', en: 'Medial rectus' }, latin: 'Musculus rectus medialis', group: 'extraocular', color: '#ba756a', kind: 'tissue',
+    summary: { zh: '位于眼球鼻侧的一条眼外肌。', en: 'An extraocular muscle on the nasal side of the globe.' },
+    function: { zh: '在第一眼位（正前方注视）使眼球内收，即转向鼻侧。', en: 'From the primary position (looking straight ahead), adducts the eye toward the nose.' },
+    position: { zh: '从眶尖总腱环向前走行，止于赤道前的鼻侧巩膜。', en: 'Runs from the common tendinous ring at the orbital apex to the nasal sclera, anterior to the equator.' },
+    fact: { zh: '由动眼神经（第 III 脑神经）支配；鼻侧指向鼻子，不由屏幕左右决定。', en: 'Supplied by the oculomotor nerve (CN III). Nasal means toward the nose, regardless of screen orientation.' },
+    sources: [extraocularAnatomy, extraocularActions],
+  },
+  {
+    id: 'lateral-rectus', name: { zh: '外直肌', en: 'Lateral rectus' }, latin: 'Musculus rectus lateralis', group: 'extraocular', color: '#af6b60', kind: 'tissue',
+    summary: { zh: '位于眼球颞侧的一条眼外肌。', en: 'An extraocular muscle on the temporal side of the globe.' },
+    function: { zh: '在第一眼位（正前方注视）使眼球外展，即转向颞侧。', en: 'From the primary position (looking straight ahead), abducts the eye toward the temple.' },
+    position: { zh: '从眶尖总腱环向前走行，止于赤道前的颞侧巩膜。', en: 'Runs from the common tendinous ring at the orbital apex to the temporal sclera, anterior to the equator.' },
+    fact: { zh: '由展神经（第 VI 脑神经）支配，与内直肌共同参与水平眼位控制。', en: 'Supplied by the abducens nerve (CN VI); works with the medial rectus in horizontal eye positioning.' },
+    sources: [extraocularAnatomy, extraocularActions],
+  },
+  {
+    id: 'superior-oblique', name: { zh: '上斜肌', en: 'Superior oblique' }, latin: 'Musculus obliquus superior', group: 'extraocular', color: '#bd8473', kind: 'tissue',
+    summary: { zh: '肌腱经滑车转向后附着于眼球的眼外肌。', en: 'An extraocular muscle whose tendon changes direction through the trochlea before reaching the globe.' },
+    function: { zh: '在第一眼位（正前方注视）主要使眼球内旋，也参与下转和外展。', en: 'From the primary position (looking straight ahead), mainly intorts the eye, with depression and abduction.' },
+    position: { zh: '自眶后部沿上鼻侧向前，经滑车折返后向后颞侧走行，止于赤道后的上颞侧巩膜。', en: 'Runs forward along the superonasal orbit, turns through the trochlea, then passes posterotemporally to the superotemporal sclera behind the equator.' },
+    fact: { zh: '由滑车神经（第 IV 脑神经）支配；内旋指眼球上极转向鼻侧。', en: 'Supplied by the trochlear nerve (CN IV). Intorsion rotates the upper pole of the eye toward the nose.' },
+    sources: [superiorObliqueAnatomy, extraocularActions],
+  },
+  {
+    id: 'inferior-oblique', name: { zh: '下斜肌', en: 'Inferior oblique' }, latin: 'Musculus obliquus inferior', group: 'extraocular', color: '#bf8270', kind: 'tissue',
+    summary: { zh: '从眼眶前部起始、斜行绕过眼球下方的眼外肌。', en: 'An extraocular muscle that starts in the anterior orbit and passes obliquely beneath the globe.' },
+    function: { zh: '在第一眼位（正前方注视）主要使眼球外旋，也参与上转和外展。', en: 'From the primary position (looking straight ahead), mainly extorts the eye, with elevation and abduction.' },
+    position: { zh: '从鼻侧前部眶底起始，绕过下直肌下方，向后颞侧走行并止于赤道后的下颞侧巩膜。', en: 'Starts at the anterior nasal orbital floor, passes beneath the inferior rectus, and runs posterotemporally to the inferotemporal sclera behind the equator.' },
+    fact: { zh: '由动眼神经（第 III 脑神经）支配；外旋指眼球上极转向颞侧。', en: 'Supplied by the oculomotor nerve (CN III). Extorsion rotates the upper pole of the eye toward the temple.' },
+    sources: [inferiorObliqueAnatomy, extraocularActions],
   },
 ];
 

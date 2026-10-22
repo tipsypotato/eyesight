@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { SceneState, StructureId } from '../anatomy/types';
+import { EXTRAOCULAR_IDS, type SceneState, type StructureId } from '../anatomy/types';
 import type { EyePart } from './geometry';
 import { intersectionSurvives, SectionTool } from './section';
 
@@ -45,7 +45,7 @@ export function visibleSurface(part: EyePart, parts: Map<StructureId, EyePart>, 
     return ray.intersectObject(part.group, true).find(targetSurvives)?.point ?? null;
   };
   const anchor = part.anchor.clone();
-  if (anchor.z < 0) anchor.z *= posteriorScale;
+  if (anchor.z < 0 && !EXTRAOCULAR_IDS.some(id => id === part.id)) anchor.z *= posteriorScale;
   part.group.localToWorld(anchor);
   if (part.id === 'pupil') {
     ray.set(origin, anchor.clone().sub(origin).normalize());

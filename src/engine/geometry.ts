@@ -3,6 +3,7 @@ import type { EyeSide, StructureId } from '../anatomy/types';
 import { createIrisTextures } from './irisTexture';
 import { createFundusDetails } from './fundus';
 import { BASE_PUPIL_RADIUS } from './optics';
+import { createExtraocularMuscles } from './extraocularMuscles';
 
 export interface EyePart {
   id: StructureId;
@@ -19,6 +20,9 @@ const COLORS: Record<StructureId, string> = {
   choroid: '#96564e', retina: '#e9ac76', macula: '#c79436', fovea: '#a14a32',
   'iridocorneal-angle': '#70b9b3', 'trabecular-meshwork': '#47988e',
   'optic-disc': '#f4d79f', 'optic-nerve': '#d9b477', 'retinal-vessels': '#c14f48',
+  'superior-rectus': '#bb7265', 'inferior-rectus': '#b96d60',
+  'medial-rectus': '#ba7866', 'lateral-rectus': '#ae685e',
+  'superior-oblique': '#c3836c', 'inferior-oblique': '#be8069',
 };
 
 const profile = (points: [number, number][]) => {
@@ -120,7 +124,7 @@ export function setPosteriorStretch(root: THREE.Group, factor: number) {
   root.userData.posteriorScale = factor;
   const vertex = new THREE.Vector3();
   root.traverse(object => {
-    if (!(object instanceof THREE.Mesh || object instanceof THREE.Line) || object.userData.cap) return;
+    if (!(object instanceof THREE.Mesh || object instanceof THREE.Line) || object.userData.cap || object.userData.extraocular) return;
     const geometry = object.geometry;
     const position = geometry.getAttribute('position');
     if (!geometry.userData.originalPositions) geometry.userData.originalPositions = new Float32Array(position.array);
@@ -364,7 +368,10 @@ export function buildEye(colors: Partial<Record<StructureId, string>> = {}, side
     const angle = i * Math.PI * 2 / 8;
     tube('optic-nerve', nervePoints.map(p => p.clone().add(new THREE.Vector3(Math.cos(angle) * 0.088, Math.sin(angle) * 0.088, 0))), 0.008, '#eed4a0');
   }
-
+  for (const item of createExtraocularMuscles({ ...COLORS, ...colors })) {
+    root.add(item.group);
+    parts.set(item.id, item);
+  }
 
   if (side === 'left') {
     // Bake the reflection and reverse winding so normals, picking and optical deformation stay valid.

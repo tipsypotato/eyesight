@@ -2,7 +2,7 @@ import { createStore } from 'zustand/vanilla';
 import { RELATIONSHIPS } from '../anatomy/relationships';
 import { advanceTask, type TaskProgress, type TourAction } from '../modes/tourTasks';
 import { LESSONS } from '../anatomy/data';
-import { SCENE_PRESETS, STRUCTURE_IDS, type ScenePreset, type CameraSnapshot, type EyeSide, type Lang, type LayerMode, type Mode, type OpticsExperiment, type OpticsInput, type OpticsPreset, type PhysiologyKind, type SceneState, type StructureId, type ViewPreset } from '../anatomy/types';
+import { EXTRAOCULAR_IDS, SCENE_PRESETS, STRUCTURE_IDS, type ScenePreset, type CameraSnapshot, type EyeSide, type Lang, type LayerMode, type Mode, type OpticsExperiment, type OpticsInput, type OpticsPreset, type PhysiologyKind, type SceneState, type StructureId, type ViewPreset } from '../anatomy/types';
 import { opticsInputForPreset, validateOpticsInput } from '../engine/optics';
 import { PHYSIOLOGY_LENGTHS, physiologyInput } from '../modes/physiology';
 import { createSession, currentQuestion, nextSessionQuestion, revealSessionAnswer, submitSessionAnswer, wrongQuestionIds, type PracticeSession } from '../modes/quiz';
@@ -11,7 +11,7 @@ import { CONTENT_VERSION, questionsFor, type QuestionContext } from '../content/
 import { createDiseaseDraft, createDiseaseDrafts, isDiseaseId, parseDiseaseDraft, type DiseaseDraft, type DiseaseId, type DiseaseStep } from '../modes/disease';
 
 export const QUIZ_POOL: StructureId[] = ['cornea', 'sclera', 'iris', 'lens', 'retina', 'optic-nerve'];
-const defaultLayers = () => Object.fromEntries(STRUCTURE_IDS.map(id => [id, ['vitreous', 'anterior-chamber', 'posterior-chamber', 'cornea'].includes(id) ? 'ghost' : 'on'])) as Record<StructureId, LayerMode>;
+const defaultLayers = () => Object.fromEntries(STRUCTURE_IDS.map(id => [id, EXTRAOCULAR_IDS.some(muscle => muscle === id) ? 'off' : ['vitreous', 'anterior-chamber', 'posterior-chamber', 'cornea'].includes(id) ? 'ghost' : 'on'])) as Record<StructureId, LayerMode>;
 const initialScene = (): SceneState => ({
   lang: 'zh', mode: 'explore', selectedId: null, selectedEye: 'right', disease: null, diseaseNormal: false, relatedIds: [], layers: defaultLayers(), isolateId: null,
   clip: { enabled: true, axis: 'sagittal', offset: 0, keepSide: 'negative' }, presetId: null, explode: 0, labels: false,
@@ -45,7 +45,7 @@ export interface EyeState extends SceneState {
   isolationLayers: SceneState['layers'] | null;
   focusReturn: CameraSnapshot | null;
   revealReturn: (ObservationScene & Pick<EyeState, 'relatedIds' | 'relationshipId' | 'relationshipReturn'> & { camera: CameraSnapshot | null; isolationLayers: SceneState['layers'] | null }) | null;
-  revealPreset: 'fundusView' | 'nerveView' | 'anteriorView' | 'sectionView' | 'frontView' | null;
+  revealPreset: 'fundusView' | 'nerveView' | 'anteriorView' | 'sectionView' | 'frontView' | 'extraocularView' | null;
   setLanguage: (lang: Lang) => void; setMode: (mode: Mode, camera?: CameraSnapshot) => void;
   select: (id: StructureId, preserveSection?: boolean) => void; cycleLayer: (id: StructureId) => void;
   toggleIsolate: () => void; setClip: (patch: Partial<SceneState['clip']>) => void;
@@ -103,7 +103,7 @@ function questionScene(quiz: PracticeSession) {
   return {
     selectedId: target, quizRevealed: !!(question && quiz.answers[question.id]), labels: false, isolateId: null,
     clip: { enabled: false, axis: 'sagittal' as const, offset: 0, keepSide: 'negative' as const }, explode: 0,
-    layers: Object.fromEntries(STRUCTURE_IDS.map(id => [id, id === target ? 'on' : 'ghost'])) as Record<StructureId, LayerMode>,
+    layers: Object.fromEntries(STRUCTURE_IDS.map(id => [id, id === target ? 'on' : EXTRAOCULAR_IDS.some(muscle => muscle === id) ? 'off' : 'ghost'])) as Record<StructureId, LayerMode>,
     view: (target === 'optic-nerve' ? 'back' : target === 'iris' || target === 'cornea' ? 'front' : 'oblique') as ViewPreset,
   };
 }
@@ -134,16 +134,18 @@ function sameScene(a: SceneSnapshot, b: SceneSnapshot) {
   const sceneA = comparable(a), sceneB = comparable(b);
   return JSON.stringify(sceneA) === JSON.stringify(sceneB);
 }
-function presetScene(presetId: ScenePreset, s: Pick<SceneState, 'selectedId' | 'sceneRevision'>): Partial<EyeState> {
+function presetScene(presetId: ScenePreset, s: Pick<SceneState, 'mode' | 'selectedId' | 'sceneRevision'>): Partial<EyeState> {
   const layers = defaultLayers();
   if (presetId === 'anterior' || presetId === 'chambers') Object.assign(layers, { sclera: 'ghost', choroid: 'ghost', retina: 'ghost' });
   if (presetId === 'anterior') for (const id of ['macula', 'fovea', 'optic-disc', 'retinal-vessels'] as const) layers[id] = 'off';
   if (presetId === 'fundus') for (const id of STRUCTURE_IDS) layers[id] = ['macula', 'fovea', 'optic-disc', 'optic-nerve', 'retinal-vessels'].includes(id) ? 'on' : id === 'retina' ? 'ghost' : 'off';
-  if (presetId === 'optical-path') for (const id of STRUCTURE_IDS) layers[id] = 'ghost';
+  if (presetId === 'optical-path') for (const id of STRUCTURE_IDS) if (!EXTRAOCULAR_IDS.some(muscle => muscle === id)) layers[id] = 'ghost';
+  if (presetId === 'extraocular') for (const id of STRUCTURE_IDS) layers[id] = ['sclera', 'choroid', 'retina', 'iris', 'pupil', 'optic-nerve'].includes(id) ? 'on' : id === 'cornea' ? 'ghost' : 'off';
+  if (s.mode !== 'optics' && (presetId === 'extraocular' || presetId === 'intact')) for (const id of EXTRAOCULAR_IDS) layers[id] = 'on';
   return { presetId, layers, selectedId: s.selectedId && layers[s.selectedId] !== 'off' ? s.selectedId : null,
     isolateId: null, isolationLayers: null, explode: 0, labels: false,
-    clip: { enabled: !['intact', 'fundus'].includes(presetId), axis: 'sagittal', offset: 0, keepSide: 'negative' },
-    view: presetId === 'fundus' ? 'front' : ['intact', 'anterior'].includes(presetId) ? 'oblique' : 'side',
+    clip: { enabled: !['intact', 'fundus', 'extraocular'].includes(presetId), axis: 'sagittal', offset: 0, keepSide: 'negative' },
+    view: presetId === 'fundus' ? 'front' : ['intact', 'anterior', 'extraocular'].includes(presetId) ? 'oblique' : 'side',
     showOptics: presetId === 'optical-path', camera: null, ...clearedObservation, sceneRevision: (s.sceneRevision ?? 0) + 1 };
 }
 
@@ -310,7 +312,7 @@ export function createEyeStore(storage?: StorageLike) {
       set({ ...patch, layers, selectedId: s.selectedId, relatedIds: relationship.members.map(member => member.id), relationshipId: id, relationshipReturn: previous });
     },
     exitRelationship: () => { const s = get(); if (s.relationshipReturn) { clearRelationshipHistory(); set({ ...s.relationshipReturn, ...clearedRelationship, sceneRevision: (s.sceneRevision ?? 0) + 1 }); } },
-    applyPreset: preset => { if (get().mode !== 'quiz' && SCENE_PRESETS.includes(preset)) changeScene({ ...presetScene(preset, get()), ...clearedRelationship }); },
+    applyPreset: preset => { if (get().mode !== 'quiz' && !(get().mode === 'optics' && preset === 'extraocular') && SCENE_PRESETS.includes(preset)) changeScene({ ...presetScene(preset, get()), ...clearedRelationship }); },
     beginSceneChange: camera => { if (!gesture) gesture = { mode: get().mode, before: captureScene(get(), camera), changed: false }; },
     endSceneChange: finishGesture,
     undoScene: () => {
@@ -512,17 +514,19 @@ export function createEyeStore(storage?: StorageLike) {
       const fundus = ['macula', 'fovea', 'optic-disc', 'optic-nerve', 'retinal-vessels', 'retina'].includes(id);
       const anterior = ['lens', 'zonules', 'ciliary-body', 'anterior-chamber', 'posterior-chamber'].includes(id);
       const front = ['cornea', 'iris', 'pupil', 'sclera'].includes(id);
+      const extraocular = EXTRAOCULAR_IDS.some(muscle => muscle === id);
       const revealed = defaultLayers();
       if (fundus) for (const part of STRUCTURE_IDS) revealed[part] = ['macula', 'fovea', 'optic-disc', 'optic-nerve', 'retinal-vessels'].includes(part) ? 'on' : part === 'retina' ? 'ghost' : 'off';
       if (anterior) Object.assign(revealed, { sclera: 'ghost', choroid: 'ghost', retina: 'ghost', iris: 'off', vitreous: 'off', 'anterior-chamber': 'off', 'posterior-chamber': 'off' });
+      if (extraocular) for (const part of STRUCTURE_IDS) revealed[part] = part === 'sclera' ? 'ghost' : part === 'optic-nerve' ? 'on' : 'off';
       revealed[id] = 'on';
       get().recordTourAction({ kind: 'select', id });
       changeScene({ ...clearedRelationship, selectedId: id, presetId: null, showOptics: false, layers: isolateId ? { ...layers, [id]: 'on' } : revealed, isolateId: isolateId ? id : null,
-        clip: { enabled: !(fundus || front || isolateId), axis: 'sagittal', offset: 0, keepSide: 'negative' }, explode: 0,
-        view: fundus ? id === 'optic-nerve' ? 'back' : 'front' : front ? 'front' : 'side',
+        clip: { enabled: !(fundus || front || extraocular || isolateId), axis: 'sagittal', offset: 0, keepSide: 'negative' }, explode: 0,
+        view: fundus ? id === 'optic-nerve' ? 'back' : 'front' : front ? 'front' : extraocular ? 'oblique' : 'side',
         camera: null, sceneRevision: (s.sceneRevision ?? 0) + 1,
         focusReturn: camera ? structuredClone(camera) : null,
-        revealPreset: fundus ? id === 'optic-nerve' ? 'nerveView' : 'fundusView' : anterior ? 'anteriorView' : front ? 'frontView' : 'sectionView',
+        revealPreset: extraocular ? 'extraocularView' : fundus ? id === 'optic-nerve' ? 'nerveView' : 'fundusView' : anterior ? 'anteriorView' : front ? 'frontView' : 'sectionView',
         revealReturn: { selectedId, layers: { ...layers }, isolateId, clip: { ...clip }, explode, labels, view, isolationLayers, presetId, showOptics, relatedIds, relationshipId, relationshipReturn,
           camera: camera ? structuredClone(camera) : null },
       });
