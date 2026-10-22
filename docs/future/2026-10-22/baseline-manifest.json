@@ -1,0 +1,43 @@
+{
+  "captured_date": "2026-10-22",
+  "purpose": "Read-only implementation baseline; not a test report or a future-feature completion claim",
+  "project_root": "outputs/eyesight",
+  "files": {
+    "README.md": "d4ce59659594c1ba5374b9cef0ff8f6a58f6f295cf699429eea9e76dffc4be7d",
+    "package-lock.json": "fe47e92f7cce5b32fda157a5e964b6bc8750a24d51bbf03bf8be934a7b285955",
+    "package.json": "5eef42efc486e0ae6dd86c353bbace6177a3da621fc5fe6bed7a7210c38ba539",
+    "src/anatomy/data.test.ts": "28d1b695bc682d95a04c7181295fee72f7078b67a13fd1605306a4ad8ee8706b",
+    "src/anatomy/data.ts": "999a158ed6d245bfeb014626d855651bf0b43953313f7db8604c31aaeecedd02",
+    "src/anatomy/types.ts": "950557b104c2a103e054dffba3f4f8e6296ac2a7c696132fb5fd6f1b9ccca48a",
+    "src/content/messages.test.ts": "2a3ff9ea5b3d837156fe0005434db1e4445c7a7209a64df6ea4f95118412e8b0",
+    "src/content/messages.ts": "44ebecf8fe7a900f3380c94cae72a014adbd679cd1d0dfe7db7a7c6cbad78a27",
+    "src/engine/EyeEngine.test.ts": "49465a895c25c4b7c71df4be6a8e73203a98c91d9df3def499bcffbe437ab52e",
+    "src/engine/EyeEngine.ts": "ab9b185d931a52ac1fc9fb705f4f4eed0d38d4001dc05f09e094dd68e9cee552",
+    "src/engine/animator.test.ts": "91b90b4d140754774de93070966ee86bb07cd6b41990eee80ddf1f0f589fc40c",
+    "src/engine/animator.ts": "1b1db1949d08ba5d589be65d44bc8989da7926536745aaa45ab5fa4539b189e4",
+    "src/engine/camera.ts": "251a98331729ad203213dd34ad94caf822c565746a6fe17352843fb28f527a4a",
+    "src/engine/fundus.test.ts": "88f0b90141c52e60ab48a08f5c3cc26564a5062dc0cc09b63ca861d1088de05a",
+    "src/engine/fundus.ts": "b46f7f280769a2e455fdacaf9ae33a33d328debad6a9e9bb20e67c7c7c8a7a24",
+    "src/engine/geometry.test.ts": "d1930d6f75aea3d06085534edf7775262004bdcaeac573b0efb01c649b3bbb65",
+    "src/engine/geometry.ts": "e6bb509c99f19d32540b4656ff1866f92191a69f46b34e755b1acd222410ac34",
+    "src/engine/irisTexture.test.ts": "1dbfe4d8d9f2935ac0fd11c46b64b027c8d5bff7332ec16a03b98f5b791e4ee1",
+    "src/engine/irisTexture.ts": "bcd0fa8febcc0f4a452b7c7482151d57c54fba10efbb3c588c5c5eb6ad8fcb34",
+    "src/engine/optics.test.ts": "a1f1a679045d4df04d21bee4d2f484614a74fea936428e3a559995266083d054",
+    "src/engine/optics.ts": "fa59b17cc287b32215254744dbd243aff889cc093e5778944f15a9394e1e0337",
+    "src/engine/section.ts": "3d748ed573a765c815ac54c19f4c62220db512c6895069de9304116f8486b06c",
+    "src/main.tsx": "b173e112583d8205fec4a65c2f249546ac3b88265b2c04dc1c5bd1424ff85a94",
+    "src/modes/quiz.test.ts": "02dcfc841480a81f592fc4edd68c7ed723d2140d9da7dc910df8ec290ac516bb",
+    "src/modes/quiz.ts": "004d251c9447e393e1cc82403782862773e3deba2bff2da04849fc79eccebf5f",
+    "src/state/store.test.ts": "33cee898ffd4c2bc3d8f4baf45816cc7c68b51242f252217f06f3c1345e09710",
+    "src/state/store.ts": "7b12bd95709e43bb007e075f426eb7268ddf34c658251dce2ad70a074a7d62bd",
+    "src/styles/app.css": "1e7f44a1379493d6117dd9118971330ffc2fcc6cfead53ef0418266c6e603c9f",
+    "src/ui/App.tsx": "f61ff691563c40e65bc57c9dad101962d9638e32babfbaf2263efbe03e1d759b",
+    "tsconfig.json": "fb0217a17f1101386021e8fb357ab4907081b4d406ca1f53b49f39c67c2d4705",
+    "vite.config.ts": "48edbc7f1e8110eafe5bf758a71f4f1043d419a7389b0df4d67669f293c74aba"
+  },
+  "captured_at": "2026-10-22T14:27:41+08:00",
+  "notes": [
+    "Application sources and configuration were not edited by this documentation task.",
+    "package.json changed outside this task between the initial snapshot and archival; its current contents were preserved and its fingerprint refreshed. All other initial file fingerprints matched."
+  ]
+}

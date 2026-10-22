@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Interactive adult right-eye anatomy and optics teaching demo, derived from Dental Scope.",
+  "description": "Interactive adult right-eye anatomy and optics teaching demo.",
   "author": "tipsypotato <huzhihao2016@gmail.com>",
   "license": "MIT",
   "scripts": {

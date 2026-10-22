@@ -13,6 +13,10 @@ export type LayerMode = 'on' | 'ghost' | 'off';
 export type ViewPreset = 'oblique' | 'front' | 'side' | 'back';
 export type ClipAxis = 'sagittal' | 'axial' | 'coronal';
 export type OpticsPreset = 'normal' | 'myopia' | 'corrected';
+export type CameraSnapshot = {
+  position: [number, number, number]; target: [number, number, number]; zoom: number;
+  viewOffset?: { fullWidth: number; fullHeight: number; offsetX: number; offsetY: number; width: number; height: number };
+};
 export interface SceneState {
   lang: Lang; mode: Mode; selectedId: StructureId | null;
   layers: Record<StructureId, LayerMode>; isolateId: StructureId | null;
@@ -20,6 +24,8 @@ export interface SceneState {
   explode: number; labels: boolean; view: ViewPreset;
   opticsPreset: OpticsPreset; quizRevealed: boolean;
   showOptics?: boolean;
+  camera?: CameraSnapshot | null;
+  sceneRevision?: number;
 }
 export interface TourStep {
   title: Localized; body: Localized; target: StructureId; view: ViewPreset;

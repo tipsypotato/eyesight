@@ -4,7 +4,43 @@
 
 审校角色：独立于解剖内容初稿编写者的 LLM 审校员。本文记录语言一致性与基础术语核对，不构成眼科专家审核、临床认证或患者个体判断。
 
-## 范围与统计
+## 界面来源文案移除（2026-10-22）
+
+本轮删除页脚来源链接及其 `derived` 中英文文案，没有新增或改译其他双语内容，因此没有新的翻译审校批次。当前有效双语配对为 **229 对**（此前 230 对减去 `derived` 1 对）；下方首版、T01、T02 审校记录及指纹保持历史原样。
+
+## T02 追加批次（2026-10-22）
+
+- Batch / contentVersion：`T02-anatomy-discovery-2026-10-22`；模型：Codex 独立 LLM 上下文（审校员 `t02_i18n_review`；运行环境未提供可核验的具体后端型号，不作推测）。
+- 输入：`src/content/messages.ts` 新增 21 对文字，结合 `App.tsx`、`EyeEngine.ts`、`store.ts` 的实际操作及 `anatomy/search.ts` 的别名映射复核。既有结构内容与医学事实没有改写。
+- 输入 SHA-256：`0dc1c546060aef81ab54a682a89e9ec042361d76275765c5d756af4da5ddc885`。按下列 key 的源文件顺序提取 `[{key,zh,en},…]`，对无缩进 `JSON.stringify` UTF-8 字节计算。
+- 首轮发现两项问题并已关闭：视神经背侧观察误用“眼底观察”提示，新增 `nerveView`；方位图可见标题原为内联双语，移入稳定键 `compassTitle` 后纳入复审。
+- 最终独立复核：**21 对通过，0 问题、0 遗漏、0 未解决项**，状态 `llm-checked`；累计 230 对（首版 206 + T01 3 + T02 21）。历史统计保留原样。
+
+| 范围 | key（全部 21 个） | 复核重点 |
+| --- | --- | --- |
+| 搜索 | clearSearch, ambiguousSearch, relatedDisease, fundusGroup | 清空仅影响查询；俗称不等于解剖结构；疾病章节尚未上线；眼底是分组 |
+| 返回与显露 | returnFocus, undoReveal, fundusView, nerveView, anteriorView, sectionView, frontView | 镜头返回与完整场景撤销含义区分，观察提示与实际目标匹配 |
+| 标签及参照 | occludedTarget, referenceStructures | 遮挡或画外提示与定位动作等价，参照不冒充新器官 |
+| 解剖方向 | compass, compassTitle, nasal, temporal, superior, inferior, anterior, posterior | OD/右眼、鼻颞、上下、前后对应；方向绑定眼球坐标而非屏幕左右 |
+
+本轮新增文案无运行时翻译接口。LLM 审校不等于眼科专家审核；未进行新的专家审校或屏幕阅读器测试。
+
+## T01 追加批次（2026-10-22）
+
+- Batch / contentVersion：`T01-workspace-state-2026-10-22`；模型：Codex 独立 LLM 上下文（审校员 `t01_i18n_review`，运行环境未提供可核验的具体后端型号，不作推测）。
+- 输入：`src/content/messages.ts` 的 `resetCamera`、`resetSceneHint`、`restartLesson`，并对照 `App.tsx`、`store.ts` 中实际操作结果。只新增这 3 对文字，未修改医学数据、题目或原有翻译。
+- 输入指纹：按上述 key 顺序生成 `[{key,zh,en},…]`，以无缩进 `JSON.stringify` 的 UTF-8 字节计算 SHA-256：`fad486b11c1acf40f506e60758d0b9512be9939576465f2260127f569330e71c`。
+- 独立审阅结果：3 对通过、0 对问题、0 项遗漏、0 项未解决/阻断；无需修正或二次复核。批次状态 `llm-checked`。累计中英配对为 209 对（首版 206 + 本批 3），下面的首版统计保持历史原样。
+
+| key | 中文 | 英文 | 结论 |
+| --- | --- | --- | --- |
+| resetCamera | 重置视角 | Reset view | pass：均描述相机恢复，不暗示清除场景或学习记录。 |
+| resetSceneHint | 还原当前模式的场景，保留导览进度和答题记录 | Reset this mode’s scene while keeping tour progress and quiz answers | pass：还原范围、导览进度和答题保留条件对应，符合实现。 |
+| restartLesson | 重新开始本课 | Restart this tour | pass：指当前导览从第一步重开，与课程概念一致。 |
+
+自动检查新增键的中英文完整性、非空、无占位词及插值匹配；浏览器核对桌面与 390 CSS px 英文按钮及提示、切换语言保留模式/步骤/答案。未进行屏幕阅读器测试或新增医学专家审核。本批没有新增医学事实，不将语言校验视为专家审核。
+
+## 首版范围与统计
 
 逐条对照 `src/anatomy/data.ts` 与 `src/content/messages.ts` 中全部 `zh` / `en`。审查名称、完整含义、前后及内外关系、鼻颞方位、左右眼、数量、操作指令与模型局限。追加核对 `src/ui/App.tsx` 与 `src/engine/EyeEngine.ts` 中两对内联无障碍文案，单独记录，不混入下表的主语言包统计。所有文字均保留在本地静态代码中；未接入运行时翻译 API。
 

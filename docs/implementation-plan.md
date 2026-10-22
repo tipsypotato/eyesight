@@ -4,7 +4,7 @@
 
 **Goal:** A runnable bilingual adult right-eye demo with layers, clipping, optics, three short tours and structure identification.
 
-**Architecture:** Adapt Dental Scope's imperative Three.js engine, camera/section helpers, data-driven anatomy, Zustand state and React panels. New eye geometry is procedural schematic educational geometry; no Dental Scope anatomy assets are redistributed. Static Vite application with local preferences.
+**Architecture:** An imperative Three.js engine with camera/section helpers, data-driven anatomy, Zustand state and React panels. Eye geometry is procedural schematic educational geometry. Static Vite application with local preferences; adapted helper provenance is retained in THIRD_PARTY_NOTICES.md.
 
 **Tech Stack:** React, TypeScript, Three.js, Zustand, Vite, Vitest; reuse upstream dependency families.
 

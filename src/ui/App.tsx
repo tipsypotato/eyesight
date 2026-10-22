@@ -1,6 +1,7 @@
 import { Component, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { useStore } from 'zustand';
 import { GROUPS, LESSONS, STRUCTURES } from '../anatomy/data';
+import { searchStructures } from '../anatomy/search';
 import type { ClipAxis, Mode, OpticsPreset, StructureId, ViewPreset } from '../anatomy/types';
 import { messages, type MessageKey } from '../content/messages';
 import { EyeEngine } from '../engine/EyeEngine';
@@ -16,38 +17,51 @@ function EyeIcon({ small = false }: { small?: boolean }) {
 }
 function useText() { const lang = useStore(eyeStore, s => s.lang); return (key: MessageKey) => messages[key][lang]; }
 
+function observeStructure(engine: EyeEngine | null, id: StructureId, focus = false) {
+  const state = eyeStore.getState();
+  if (state.mode === 'quiz') return;
+  if (!engine) { state.select(id); return; }
+  const camera = engine.captureCamera();
+  const visible = engine.isStructureVisible(id, true);
+  if (visible) {
+    state.select(id, true);
+    if (focus) state.rememberFocus(camera);
+  } else state.revealStructure(id, camera);
+  if (focus || !visible) engine.focus(id);
+}
+
 function Viewport({ engine }: { engine: EngineRef }) {
   const host = useRef<HTMLDivElement>(null);
-  const state = useEye();
   const t = useText();
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     if (!host.current) return;
     let instance: EyeEngine;
     try {
-      instance = new EyeEngine(host.current, id => eyeStore.getState().select(id, true));
+      instance = new EyeEngine(host.current, id => eyeStore.getState().select(id, true), id => observeStructure(instance, id, true));
       engine.current = instance;
       instance.setState(eyeStore.getState());
     } catch (error) { console.error('3D initialization failed', error); setFailed(true); return; }
-    return () => { instance.dispose(); engine.current = null; };
+    const unsubscribe = eyeStore.subscribe(next => instance.setState(next));
+    return () => { unsubscribe(); instance.dispose(); engine.current = null; };
   }, [engine]);
-  useEffect(() => { engine.current?.setState(state); }, [state, engine]);
   return <div className="viewport" ref={host} role="group" aria-label={`${t('rightEye')} · ${t('schematic')}`}>
     {failed && <div className="webgl-error" role="alert"><EyeIcon/><p>{t('webglError')}</p></div>}
   </div>;
 }
 
-function StructuresPanel() {
+function StructuresPanel({ engine }: { engine: EngineRef }) {
   const s = useEye(); const t = useText();
   const [query, setQuery] = useState('');
-  const matching = STRUCTURES.filter(item => `${item.name.zh} ${item.name.en} ${item.latin}`.toLowerCase().includes(query.trim().toLowerCase()));
+  const result = searchStructures(query), matching = result.items;
   return <><div className="panel-heading"><span className="eyebrow">{t('structures')}</span><h2>{t('structures')} <span className="count">17</span></h2></div>
-    <label className="search"><span aria-hidden="true">⌕</span><input value={query} onChange={e => setQuery(e.target.value)} placeholder={t('search')} aria-label={t('search')}/></label>
+    <div className="search"><span aria-hidden="true">⌕</span><input value={query} onChange={e => setQuery(e.target.value)} placeholder={t('search')} aria-label={t('search')}/>{query && <button className="clear-search" aria-label={t('clearSearch')} onClick={() => setQuery('')}>×</button>}</div>
+    {(result.ambiguous || result.group || result.relatedDisease) && <p className="search-context" role="status">{t(result.ambiguous ? 'ambiguousSearch' : result.group ? 'fundusGroup' : 'relatedDisease')}</p>}
     <p className="micro layer-hint">{t('layerHint')}</p>
     <div className="structure-list">{GROUPS.map(group => {
       const items = matching.filter(item => item.group === group.id);
       return items.length > 0 && <section key={group.id} className="structure-group"><h3>{group.name[s.lang]}</h3>{items.map(item => <div className={`structure-row ${s.selectedId === item.id ? 'selected' : ''}`} key={item.id}>
-        <button className="structure-name" aria-pressed={s.selectedId === item.id} onClick={() => s.select(item.id)}><span className="color-dot" style={{ background: item.color }}/><span>{item.name[s.lang]}</span></button>
+        <button className="structure-name" aria-pressed={s.selectedId === item.id} onClick={() => observeStructure(engine.current, item.id)}><span className="color-dot" style={{ background: item.color }}/><span>{item.name[s.lang]}</span></button>
         <button className={`layer-dot ${s.layers[item.id]}`} aria-label={`${item.name[s.lang]} · ${t(s.layers[item.id])}`} title={`${item.name[s.lang]} · ${t(s.layers[item.id])}`} onClick={() => s.cycleLayer(item.id)}><span/></button>
       </div>)}</section>;
     })}{matching.length === 0 && <p>{t('noResults')}</p>}</div>
@@ -56,12 +70,13 @@ function StructuresPanel() {
 
 function Details({ engine }: { engine: EngineRef }) {
   const s = useEye(); const t = useText(); const item = structure(s.selectedId);
-  if (!item) return <div className="welcome-card"><div className="welcome-icon"><EyeIcon/></div><span className="eyebrow">{t('explore')}</span><h2>{t('pickTitle')}</h2><p>{t('pickBody')}</p><button className="primary" onClick={() => s.select('cornea')}>{t('startExplore')} <span>↗</span></button><div className="welcome-stat"><b>17</b><span>{t('structures')}</span></div></div>;
+  if (!item) return <div className="welcome-card"><div className="welcome-icon"><EyeIcon/></div><span className="eyebrow">{t('explore')}</span><h2>{t('pickTitle')}</h2><p>{t('pickBody')}</p><button className="primary" onClick={() => observeStructure(engine.current, 'cornea')}>{t('startExplore')} <span>↗</span></button><div className="welcome-stat"><b>17</b><span>{t('structures')}</span></div></div>;
   return <article className="details" key={item.id}><div className="detail-title"><span className="type-tag" style={{ borderColor: item.color }}>{t(item.kind)}</span><h2>{item.name[s.lang]}</h2><p className="latin">{item.latin}</p></div>
     <p className="summary">{item.summary[s.lang]}</p>
-    <div className="detail-actions"><button onClick={() => { s.select(item.id); engine.current?.setState(eyeStore.getState()); engine.current?.focus(item.id); }}>{t('focus')} ↗</button><button className={s.isolateId ? 'active' : ''} onClick={s.toggleIsolate}>{t(s.isolateId ? 'showAll' : 'isolate')}</button></div>
-    <section><h3>{t('function')}</h3><p>{item.function[s.lang]}</p></section>
+    <div className="detail-actions"><button onClick={() => observeStructure(engine.current, item.id, true)}>{t('focus')} ↗</button><button className={s.isolateId ? 'active' : ''} onClick={s.toggleIsolate}>{t(s.isolateId ? 'showAll' : 'isolate')}</button></div>
     <section><h3>{t('position')}</h3><p>{item.position[s.lang]}</p></section>
+    {['retina', 'macula', 'fovea', 'optic-disc'].includes(item.id) && <section className="reference-structures"><h3>{t('referenceStructures')}</h3>{(['macula', 'fovea', 'optic-disc'] as StructureId[]).filter(id => id !== item.id).map(id => <button key={id} onClick={() => observeStructure(engine.current, id)}>{structure(id)!.name[s.lang]} ↗</button>)}</section>}
+    <section><h3>{t('function')}</h3><p>{item.function[s.lang]}</p></section>
     <aside className="fact"><span>↳ {t('fact')}</span><p>{item.fact[s.lang]}</p></aside>
     <details className="sources"><summary>{t('sources')}</summary>{item.sources.map(source => <a key={source.url} href={source.url} target="_blank" rel="noreferrer">{source.title} ↗</a>)}</details>
   </article>;
@@ -100,14 +115,14 @@ function TourStepPanel({ engine }: { engine: EngineRef }) {
   const lesson = LESSONS.find(item => item.id === s.lessonId);
   if (!lesson) return <div className="welcome-card"><EyeIcon/><h2>{t('toursTitle')}</h2><p>{t('toursBody')}</p><button className="primary" onClick={() => s.startLesson(LESSONS[0].id)}>{t('startTour')} →</button></div>;
   const step = lesson.steps[s.step]; const isLast = s.step === lesson.steps.length - 1;
-  return <div className="mode-content"><div className="step-top"><span className="eyebrow">{t('step')} {s.step + 1} / {lesson.steps.length}</span><span className="micro">{lesson.title[s.lang]}</span></div><div className="progress-track">{lesson.steps.map((_, i) => <span key={i} className={i <= s.step ? 'done' : ''}/>)}</div><h2>{step.title[s.lang]}</h2><p className="tour-body">{step.body[s.lang]}</p><button className="target-chip" onClick={() => engine.current?.focus(step.target)}>{structure(step.target)!.name[s.lang]} ↗</button>{step.optics && <OpticsDiagram/>}<div className="step-actions"><button disabled={s.step === 0} onClick={() => s.goToStep(s.step - 1)}>← {t('previous')}</button><button className="primary" onClick={() => isLast ? s.setMode('explore') : s.goToStep(s.step + 1)}>{t(isLast ? 'finishTour' : 'next')} →</button></div>{isLast && <p className="micro note">{t('tourDone')}</p>}</div>;
+  return <div className="mode-content"><div className="step-top"><span className="eyebrow">{t('step')} {s.step + 1} / {lesson.steps.length}</span><span className="micro">{lesson.title[s.lang]}</span></div><div className="progress-track">{lesson.steps.map((_, i) => <span key={i} className={i <= s.step ? 'done' : ''}/>)}</div><h2>{step.title[s.lang]}</h2><p className="tour-body">{step.body[s.lang]}</p><button className="target-chip" onClick={() => observeStructure(engine.current, step.target, true)}>{structure(step.target)!.name[s.lang]} ↗</button>{step.optics && <OpticsDiagram/>}<div className="step-actions"><button disabled={s.step === 0} onClick={() => s.goToStep(s.step - 1)}>← {t('previous')}</button><button className="primary" onClick={() => isLast ? s.setMode('explore', engine.current?.captureCamera()) : s.goToStep(s.step + 1)}>{t(isLast ? 'finishTour' : 'next')} →</button></div><button className="text-button" onClick={s.restartLesson}>{t('restartLesson')}</button>{isLast && <p className="micro note">{t('tourDone')}</p>}</div>;
 }
 
-function QuizPanel() {
+function QuizPanel({ engine }: { engine: EngineRef }) {
   const s = useEye(); const t = useText(); const quiz = s.quiz;
   if (!quiz) return null;
   const target = currentTarget(quiz); const answer = target ? quiz.answers[target] : null;
-  if (!target) return <div className="mode-content quiz-result"><span className="eyebrow">{t('quizComplete')}</span><div className="score-number">{quizScore(quiz)}<span> / {quiz.order.length}</span></div><h2>{t('score')}</h2><button className="primary" onClick={s.startQuiz}>{t('retry')} ↻</button><button onClick={() => s.setMode('explore')}>{t('backExplore')}</button></div>;
+  if (!target) return <div className="mode-content quiz-result"><span className="eyebrow">{t('quizComplete')}</span><div className="score-number">{quizScore(quiz)}<span> / {quiz.order.length}</span></div><h2>{t('score')}</h2><button className="primary" onClick={s.restartQuiz}>{t('retry')} ↻</button><button onClick={() => s.setMode('explore', engine.current?.captureCamera())}>{t('backExplore')}</button></div>;
   return <div className="mode-content"><span className="eyebrow">{t('quiz')} {quiz.index + 1} / {quiz.order.length}</span><div className="progress-track">{quiz.order.map((_, i) => <span key={i} className={i <= quiz.index ? 'done' : ''}/>)}</div><h2>{t('question')}</h2><p>{t('quizBody')}</p><div className="answers">{QUIZ_POOL.map((id, i) => <button key={id} disabled={!!answer} className={answer && id === target ? 'correct-answer' : answer?.selected === id ? 'wrong-answer' : ''} onClick={() => s.answerQuiz(id)}><span>{String.fromCharCode(65+i)}</span>{structure(id)!.name[s.lang]}{answer && id === target && <b>✓</b>}</button>)}</div>
     {answer ? <div className="answer-feedback" aria-live="polite"><strong>{t(answer.revealed ? 'revealed' : answer.correct ? 'correct' : 'incorrect')}</strong><p>{structure(target)!.summary[s.lang]}</p><button className="primary" onClick={s.advanceQuiz}>{t(quiz.index === quiz.order.length - 1 ? 'result' : 'nextQuestion')} →</button></div> : <button className="text-button" onClick={s.revealQuiz}>{t('reveal')}</button>}
   </div>;
@@ -115,7 +130,7 @@ function QuizPanel() {
 
 function SceneControls({ engine }: { engine: EngineRef }) {
   const s = useEye(); const t = useText();
-  return <div className="scene-controls"><div className="view-controls" role="group" aria-label={t('view')}>{(['oblique','front','side','back'] as ViewPreset[]).map(view => <button key={view} className={s.view === view ? 'active' : ''} onClick={() => { s.setView(view); engine.current?.setView(view); }}>{t(view)}</button>)}<span className="spacer"/><button className="square" aria-label={t('zoomOut')} onClick={() => engine.current?.zoom(0.15)}>−</button><button className="square" aria-label={t('zoomIn')} onClick={() => engine.current?.zoom(-0.15)}>+</button></div>
+  return <div className="scene-controls"><div className="view-controls" role="group" aria-label={t('view')}>{(['oblique','front','side','back'] as ViewPreset[]).map(view => <button key={view} className={s.view === view ? 'active' : ''} onClick={() => s.setView(view)}>{t(view)}</button>)}<span className="spacer"/><button className="square" aria-label={t('zoomOut')} onClick={() => engine.current?.zoom(0.15)}>−</button><button className="square" aria-label={t('zoomIn')} onClick={() => engine.current?.zoom(-0.15)}>+</button></div>
     {s.mode !== 'quiz' && <div className="section-controls"><label className="check"><input type="checkbox" checked={s.clip.enabled} onChange={e => s.setClip({ enabled: e.target.checked })}/>{t('clip')}</label><select aria-label={t('clip')} value={s.clip.axis} onChange={e => s.setClip({ axis: e.target.value as ClipAxis })}>{(['sagittal','axial','coronal'] as ClipAxis[]).map(axis => <option value={axis} key={axis}>{t(axis)}</option>)}</select><input className="section-range" aria-label={t('sectionPosition')} type="range" min="-0.9" max="0.9" step="0.01" value={s.clip.offset} disabled={!s.clip.enabled} onChange={e => s.setClip({ offset: Number(e.target.value) })}/><label className="explode-control">{t('explode')}<input type="range" min="0" max="1" step="0.01" value={s.explode} onChange={e => s.setExplode(Number(e.target.value))}/></label></div>}
   </div>;
 }
@@ -123,11 +138,11 @@ function SceneControls({ engine }: { engine: EngineRef }) {
 export default function App() {
   const s = useEye(); const t = useText(); const engine = useRef<EyeEngine | null>(null);
   useEffect(() => { document.documentElement.lang = s.lang === 'zh' ? 'zh-CN' : 'en'; document.title = `eyesight · ${t('rightEye')}`; }, [s.lang]);
-  return <div className="app"><header className="header"><a className="brand" href="#" onClick={e => { e.preventDefault(); s.reset(); engine.current?.resetCamera(); }} aria-label="eyesight"><span className="brand-icon"><EyeIcon small/></span><b>eyesight</b><span className="brand-tagline">{t('tagline')}</span></a><nav aria-label={s.lang === 'zh' ? '学习模式' : 'Learning modes'}>{(['explore','optics','tour','quiz'] as Mode[]).map(mode => <button key={mode} className={s.mode === mode ? 'active' : ''} aria-current={s.mode === mode ? 'page' : undefined} onClick={() => s.setMode(mode)}>{t(mode)}</button>)}</nav><div className="language-switch" role="group" aria-label="Language / 语言"><button lang="zh-CN" aria-pressed={s.lang === 'zh'} onClick={() => s.setLanguage('zh')}>中</button><span>/</span><button lang="en" aria-pressed={s.lang === 'en'} onClick={() => s.setLanguage('en')}>EN</button></div></header>
-    <main className={`workspace mode-${s.mode}`}><aside className="left-panel">{s.mode === 'explore' ? <StructuresPanel/> : s.mode === 'tour' ? <TourList/> : <div className="mode-content"><span className="eyebrow">{t(s.mode === 'quiz' ? 'quiz' : 'optics')}</span><h2>{t(s.mode === 'quiz' ? 'quizPanel' : 'opticsTitle')}</h2><p>{t(s.mode === 'quiz' ? 'quizHint' : `${s.opticsPreset}Body` as MessageKey)}</p><div className="sidebar-illustration"><EyeIcon/></div><p className="micro">{s.mode === 'quiz' ? `${t('score')} · ${s.quiz ? quizScore(s.quiz) : 0} / ${QUIZ_POOL.length}` : t('opticsNote')}</p></div>}</aside>
-      <section className="scene-column"><div className="scene-heading"><div><span className="eyebrow">OCULUS DEXTER · OD</span><h1>{t('rightEye')}<span>{t('schematic')}</span></h1></div><div className="scene-actions">{s.mode !== 'quiz' && <button className={s.labels ? 'active' : ''} aria-pressed={s.labels} onClick={() => s.setLabels(!s.labels)}>{t('labels')}</button>}<button aria-label={t('reset')} title={t('reset')} onClick={() => { s.reset(); engine.current?.resetCamera(); }}>↺</button></div></div><div className="stage"><div className="stage-grid"/><Viewport engine={engine}/><div className="scene-corner">01 <span>/ {t(s.mode)}</span></div><p className="interaction-hint">{t(s.mode === 'quiz' ? 'dragQuiz' : 'drag')}</p></div><SceneControls engine={engine}/></section>
-      <aside className="right-panel">{s.mode === 'explore' ? <Details engine={engine}/> : s.mode === 'optics' ? <OpticsPanel/> : s.mode === 'tour' ? <TourStepPanel engine={engine}/> : <QuizPanel/>}</aside>
-    </main><footer><span><i/>{t('anatomyCount')}</span><details><summary>{t('info')} ↗</summary><div><p>{t('modelNote')}</p><p>{t('opticsNote')}</p><a href="https://github.com/Yoosseph/dental-scope" target="_blank" rel="noreferrer">{t('derived')} ↗</a></div></details><span className="footer-version">eyesight / 0.1</span></footer>
+  return <div className="app"><header className="header"><a className="brand" href="#" onClick={e => { e.preventDefault(); s.setMode('explore', engine.current?.captureCamera()); }} aria-label="eyesight"><span className="brand-icon"><EyeIcon small/></span><b>eyesight</b><span className="brand-tagline">{t('tagline')}</span></a><nav aria-label={s.lang === 'zh' ? '学习模式' : 'Learning modes'}>{(['explore','optics','tour','quiz'] as Mode[]).map(mode => <button key={mode} className={s.mode === mode ? 'active' : ''} aria-current={s.mode === mode ? 'page' : undefined} onClick={() => s.setMode(mode, engine.current?.captureCamera())}>{t(mode)}</button>)}</nav><div className="language-switch" role="group" aria-label="Language / 语言"><button lang="zh-CN" aria-pressed={s.lang === 'zh'} onClick={() => s.setLanguage('zh')}>中</button><span>/</span><button lang="en" aria-pressed={s.lang === 'en'} onClick={() => s.setLanguage('en')}>EN</button></div></header>
+    <main className={`workspace mode-${s.mode}`}><aside className="left-panel">{s.mode === 'explore' ? <StructuresPanel engine={engine}/> : s.mode === 'tour' ? <TourList/> : <div className="mode-content"><span className="eyebrow">{t(s.mode === 'quiz' ? 'quiz' : 'optics')}</span><h2>{t(s.mode === 'quiz' ? 'quizPanel' : 'opticsTitle')}</h2><p>{t(s.mode === 'quiz' ? 'quizHint' : `${s.opticsPreset}Body` as MessageKey)}</p><div className="sidebar-illustration"><EyeIcon/></div><p className="micro">{s.mode === 'quiz' ? `${t('score')} · ${s.quiz ? quizScore(s.quiz) : 0} / ${QUIZ_POOL.length}` : t('opticsNote')}</p></div>}</aside>
+      <section className="scene-column"><div className="scene-heading"><div><span className="eyebrow">OCULUS DEXTER · OD</span><h1>{t('rightEye')}<span>{t('schematic')}</span></h1></div><div className="scene-actions">{s.mode !== 'quiz' && <button className={s.labels ? 'active' : ''} aria-pressed={s.labels} onClick={() => s.setLabels(!s.labels)}>{t('labels')}</button>}<button onClick={s.resetCamera}>{t('resetCamera')}</button><button title={t('resetSceneHint')} onClick={s.resetScene}>{t('reset')}</button></div></div><div className="stage"><div className="stage-grid"/><Viewport engine={engine}/><div className="scene-corner" data-viewport-overlay>01 <span>/ {t(s.mode)}</span></div><p className="interaction-hint" data-viewport-overlay>{t(s.mode === 'quiz' ? 'dragQuiz' : 'drag')}</p></div><div className="observation-actions">{s.revealPreset && <span role="status">{t(s.revealPreset)} <button onClick={s.undoReveal}>{t('undoReveal')}</button></span>}{s.focusReturn && <button onClick={s.returnFocus}>{t('returnFocus')}</button>}</div><SceneControls engine={engine}/></section>
+      <aside className="right-panel">{s.mode === 'explore' ? <Details engine={engine}/> : s.mode === 'optics' ? <OpticsPanel/> : s.mode === 'tour' ? <TourStepPanel engine={engine}/> : <QuizPanel engine={engine}/>}</aside>
+    </main><footer><span><i/>{t('anatomyCount')}</span><details><summary>{t('info')} ↗</summary><div><p>{t('modelNote')}</p><p>{t('opticsNote')}</p></div></details><span className="footer-version">eyesight / 0.1</span></footer>
   </div>;
 }
 
