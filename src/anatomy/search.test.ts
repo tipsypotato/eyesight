@@ -47,3 +47,10 @@ describe('structure search', () => {
     expect(searchStructures('lens').relatedDisease).toBe(false);
   });
 });
+
+it('finds aqueous outflow anatomy without treating an exact cornea query as an angle query', () => {
+  expect(ids('cornea')).toEqual(['cornea']);
+  expect(ids('角膜')).toEqual(['cornea']);
+  for (const query of ['房角', 'iridocorneal-angle', 'anterior chamber angle']) expect(ids(query)).toEqual(['iridocorneal-angle']);
+  for (const query of ['小梁网', 'trabecular meshwork']) expect(ids(query)).toEqual(['trabecular-meshwork']);
+});

@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { createEyeStore } from '../state/store';
 import { EyeEngine } from './EyeEngine';
-import type { CameraSnapshot } from '../anatomy/types';
+import type { CameraSnapshot, SceneState } from '../anatomy/types';
 import { buildEye } from './geometry';
 import { SectionTool } from './section';
 import { Animator } from './animator';
@@ -867,4 +867,267 @@ it('renders related labels and secondary outlines only for visible anatomy, with
     engine.dispose();
     expect(host.children).not.toContain(internal.overlay);
   } finally { engine?.dispose(); vi.unstubAllGlobals(); }
+});
+
+function diseaseEngineFixture() {
+  const documentStub = Object.assign(new EventTarget(), { createElement: () => new EngineElementStub(), createElementNS: () => new EngineElementStub() });
+  const media = Object.assign(new EventTarget(), { matches: true });
+  vi.stubGlobal('document', documentStub);
+  vi.stubGlobal('window', Object.assign(new EventTarget(), { devicePixelRatio: 1, matchMedia: () => media }));
+  vi.stubGlobal('getComputedStyle', () => ({ position: 'relative' }));
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+  const raf = vi.fn(() => 1), cancel = vi.fn();
+  vi.stubGlobal('requestAnimationFrame', raf); vi.stubGlobal('cancelAnimationFrame', cancel);
+  const host = new EngineElementStub(); host.parentElement = new EngineElementStub();
+  const selected = vi.fn(), engine = new EyeEngine(host as unknown as HTMLElement, selected), store = createEyeStore();
+  const internal = engine as unknown as {
+    eye: ReturnType<typeof buildEye>; leftEye: ReturnType<typeof buildEye> | null; scene: THREE.Scene;
+    diseaseEffects: THREE.Group | null; camera: THREE.PerspectiveCamera; rig: CameraRig; posteriorScale: number;
+    pickStructure(x: number, y: number): string | null; pickedSide: string; hoveredId: string | null; hoveredSide: string;
+    updateMaterials(): void; animateAqueous(dt: number): boolean; renderLabels(): void; renderCompass(): void;
+    labels: Map<string, { button: EngineElementStub & { textContent: string } }>; locateButton: EngineElementStub;
+  };
+  const sync = () => engine.setState(store.getState());
+  return { engine, internal, store, sync, selected, media, raf, cancel, cleanup() { engine.dispose(); vi.unstubAllGlobals(); } };
+}
+
+it('restores cataract materials on exit and keeps a normal comparison renderer clear', () => {
+  const { engine, internal, store, sync, cleanup } = diseaseEngineFixture();
+  const lens = internal.eye.root.getObjectByName('lens-capsule') as THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhysicalMaterial>;
+  const baseline = { color: lens.material.color.clone(), roughness: lens.material.roughness, clearcoat: lens.material.clearcoat };
+  const geometry = Array.from(lens.geometry.attributes.position.array);
+  const cornea = internal.eye.root.getObjectByName('corneal-shell') as THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhysicalMaterial>;
+  const corneaColor = cornea.material.color.clone();
+  try {
+    store.getState().openDisease('cataract'); store.getState().setDiseaseStep(1); sync();
+    const cloudy = lens.material.opacity;
+    expect(lens.material.roughness).toBeGreaterThan(0.4);
+    expect(lens.material.emissiveIntensity).toBeGreaterThan(0);
+    expect(lens.material.emissiveIntensity).toBeLessThan(0.2);
+    expect(cornea.material.color).toEqual(corneaColor);
+    expect(Array.from(lens.geometry.attributes.position.array)).toEqual(geometry);
+    engine.setState({ ...store.getState(), diseaseNormal: true });
+    expect(lens.material.opacity).toBeLessThan(cloudy);
+    sync(); expect(lens.material.opacity).toBe(cloudy);
+    store.getState().leaveDisease(); sync();
+    expect(lens.material.roughness).toBe(baseline.roughness);
+    expect(lens.material.clearcoat).toBe(baseline.clearcoat);
+    expect(lens.material.color).toEqual(baseline.color);
+    expect(internal.diseaseEffects).toBeNull();
+  } finally { cleanup(); }
+});
+
+it('creates and frees the left eye on repeated mode transitions while keeping one renderer and restoring the single-eye pose', () => {
+  const { engine, internal, store, sync, cleanup } = diseaseEngineFixture();
+  const renderer = engine.renderer, right = internal.eye;
+  try {
+    for (let i = 0; i < 3; i++) {
+      store.getState().openDisease('strabismus'); sync();
+      const left = internal.leftEye!; expect(left).toBeTruthy(); expect(left).not.toBe(right);
+      const lens = left.root.getObjectByName('lens-capsule') as THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhysicalMaterial>;
+      const disposed = vi.fn(); lens.geometry.addEventListener('dispose', disposed);
+      store.getState().leaveDisease(); sync();
+      expect(disposed).toHaveBeenCalledOnce(); expect(internal.leftEye).toBeNull();
+      expect(internal.eye).toBe(right); expect(engine.renderer).toBe(renderer);
+      expect(right.root.position.toArray()).toEqual([0, 0, 0]); expect(right.root.quaternion.toArray()).toEqual([0, 0, 0, 1]);
+      expect(internal.scene.children).not.toContain(left.root);
+    }
+  } finally { cleanup(); }
+});
+
+it('picks each pupil in transformed binocular coordinates and highlights only the selected eye', () => {
+  const { internal, store, sync, cleanup } = diseaseEngineFixture();
+  try {
+    store.getState().openDisease('strabismus'); sync();
+    store.setState({ layers: Object.fromEntries(Object.keys(store.getState().layers).map(id => [id, id === 'pupil' || id === 'iris' ? 'on' : 'off'])) as SceneState['layers'] }); sync();
+    for (const [side, eye] of [['right', internal.eye], ['left', internal.leftEye!]] as const) {
+      const pupil = eye.parts.get('pupil')!;
+      internal.camera.updateMatrixWorld();
+      const point = pupil.group.localToWorld(pupil.anchor.clone()).project(internal.camera);
+      expect(internal.pickStructure((point.x + 1) * 240, (1 - point.y) * 300)).toBe('pupil');
+      expect(internal.pickedSide).toBe(side);
+    }
+    store.getState().selectEye('left', 'iris'); sync();
+    const right = internal.eye.root.getObjectByName('iris-stroma') as THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhysicalMaterial>;
+    const left = internal.leftEye!.root.getObjectByName('iris-stroma') as THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhysicalMaterial>;
+    expect(left.material.emissiveIntensity).toBeGreaterThan(0.2); expect(right.material.emissiveIntensity).toBe(0);
+    internal.hoveredId = 'iris'; internal.hoveredSide = 'right'; internal.updateMaterials();
+    expect(right.material.emissiveIntensity).toBeGreaterThan(0); expect(left.material.emissiveIntensity).toBeGreaterThan(right.material.emissiveIntensity);
+  } finally { cleanup(); }
+});
+
+it('keeps near and far baseline axes on the target and restores independent amblyopia inputs', () => {
+  const { internal, store, sync, cleanup } = diseaseEngineFixture();
+  try {
+    store.getState().openDisease('strabismus'); sync();
+    for (const distance of ['far', 'near'] as const) {
+      store.getState().updateDisease({ targetDistance: distance }); sync();
+      const target = internal.diseaseEffects!.getObjectByName('fixation-target')!;
+      expect(target.position.z).toBe(distance === 'near' ? 4 : 8);
+      for (const name of ['right-gaze-axis', 'left-gaze-axis']) {
+        const axis = internal.diseaseEffects!.getObjectByName(name) as THREE.Line;
+        const p = axis.geometry.attributes.position;
+        expect(new THREE.Vector3().fromBufferAttribute(p, p.count - 1).distanceTo(target.position)).toBeLessThan(1e-6);
+      }
+      expect(internal.diseaseEffects!.getObjectByName('gaze-miss')).toBeUndefined();
+    }
+    store.getState().openDisease('amblyopia'); store.getState().setDiseaseStep(1); sync();
+    expect(internal.posteriorScale).toBeGreaterThan(1.2);
+    const beforeCorrection = new THREE.Box3().setFromObject(internal.eye.parts.get('retina')!.group);
+    const draft = store.getState().disease!;
+    if (draft.id !== 'amblyopia') throw new Error('Expected amblyopia');
+    store.getState().updateDisease({ caseDrafts: { ...draft.caseDrafts, anisometropia: { ...draft.caseDrafts.anisometropia, inputImproved: true } } }); sync();
+    expect(new THREE.Box3().setFromObject(internal.eye.parts.get('retina')!.group)).toEqual(beforeCorrection);
+    expect(internal.diseaseEffects!.getObjectByName('input-correction-lens')).toBeDefined();
+    store.getState().updateDisease({ causeCase: 'deprivation' }); sync();
+    expect(internal.posteriorScale).toBe(1);
+    const lens = internal.eye.root.getObjectByName('lens-capsule') as THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhysicalMaterial>;
+    expect(lens.material.roughness).toBeGreaterThan(0.4);
+    store.getState().updateDisease({ causeCase: 'strabismic' }); sync();
+    expect(lens.material.roughness).toBeCloseTo(0.1);
+    expect(internal.diseaseEffects!.getObjectByName('gaze-miss')).toBeDefined();
+  } finally { cleanup(); }
+});
+
+it('keeps static aqueous arrows when paused or reduced-motion and releases their resources on exit', () => {
+  const { internal, store, sync, media, cleanup } = diseaseEngineFixture();
+  try {
+    store.getState().openDisease('glaucoma'); store.getState().setDiseaseStep(1); sync();
+    const flow = internal.diseaseEffects!.getObjectByName('aqueous-flow')!;
+    expect(flow.children).toHaveLength(4);
+    const line = flow.children[0].children.find(c => c instanceof THREE.Line) as THREE.Line;
+    const disposed = vi.fn(); line.geometry.addEventListener('dispose', disposed);
+    expect(internal.animateAqueous(0.1)).toBe(false);
+    store.getState().updateDisease({ flowPlaying: true }); sync();
+    expect(internal.animateAqueous(0.1)).toBe(false);
+    media.matches = false; expect(internal.animateAqueous(0.1)).toBe(true);
+    store.getState().updateDisease({ flowPlaying: false }); sync();
+    expect(internal.animateAqueous(0.1)).toBe(false);
+    expect(internal.diseaseEffects!.getObjectByName('aqueous-flow')!.children).toHaveLength(4);
+    store.getState().leaveDisease(); sync();
+    expect(disposed).toHaveBeenCalled(); expect(internal.diseaseEffects).toBeNull(); expect(internal.animateAqueous(0.1)).toBe(false);
+  } finally { cleanup(); }
+});
+
+it('fits both eyes, the target and deviated endpoints in every binocular camera preset', () => {
+  const { engine, internal, store, sync, cleanup } = diseaseEngineFixture();
+  try {
+    store.getState().openDisease('strabismus'); store.getState().setDiseaseStep(1);
+    store.getState().updateDisease({ alignment: 'custom', deviationDeg: -20 }); sync();
+    for (const view of ['front', 'side', 'back', 'oblique'] as const) {
+      engine.setView(view); internal.camera.updateMatrixWorld();
+      const points = [internal.eye.root.position, internal.leftEye!.root.position, internal.diseaseEffects!.getObjectByName('fixation-target')!.position];
+      internal.diseaseEffects!.traverse(o => {
+        if (o instanceof THREE.Line && o.name.includes('gaze-axis')) {
+          const p = o.geometry.attributes.position; points.push(new THREE.Vector3().fromBufferAttribute(p, p.count - 1));
+        }
+      });
+      for (const point of points) {
+        const projected = point.clone().project(internal.camera);
+        expect(Math.abs(projected.x), view).toBeLessThan(1);
+        expect(Math.abs(projected.y), view).toBeLessThan(1);
+        expect(projected.z, view).toBeGreaterThan(-1); expect(projected.z, view).toBeLessThan(1);
+      }
+    }
+  } finally { cleanup(); }
+});
+
+it('returns from lens detail to the actual context camera without changing opacity', () => {
+  const { engine, store, sync, cleanup } = diseaseEngineFixture();
+  try {
+    store.getState().openDisease('cataract'); store.getState().setDiseaseStep(1); sync();
+    engine.setView('side'); engine.zoom(-0.1);
+    const context = engine.captureCamera();
+    store.getState().updateDisease({ view: 'lens-detail' }); sync();
+    expect(engine.captureCamera()).not.toEqual(context);
+    store.getState().updateDisease({ opacity: 0.8 }); sync();
+    store.getState().updateDisease({ view: 'context' }); sync();
+    const restored = engine.captureCamera();
+    restored.position.forEach((p, i) => expect(p).toBeCloseTo(context.position[i], 8));
+    restored.target.forEach((p, i) => expect(p).toBeCloseTo(context.target[i], 8));
+    expect(store.getState().disease).toMatchObject({ id: 'cataract', opacity: 0.8 });
+  } finally { cleanup(); }
+});
+
+it('hides answer-target labels and highlighting in unanswered disease practice and restores observation after revealing', () => {
+  const { internal, store, sync, cleanup } = diseaseEngineFixture();
+  internal.renderCompass = () => {};
+  try {
+    store.getState().openDisease('cataract'); store.getState().setDiseaseStep(3);
+    store.setState({ selectedId: 'lens', quizRevealed: false }); sync(); internal.renderLabels();
+    expect(internal.labels.get('lens')!.button.textContent).toBe('');
+    expect(internal.labels.get('lens')!.button.style.display).toBe('none');
+    expect(internal.locateButton.style.display).toBe('none');
+    expect(internal.pickStructure(240, 300)).toBeNull();
+    store.setState({ quizRevealed: true }); sync(); internal.renderLabels();
+    expect(internal.labels.get('lens')!.button.textContent).toContain('晶状体');
+    store.getState().setDiseaseStep(2); sync();
+    expect(internal.labels.get('lens')!.button.textContent).toContain('晶状体');
+  } finally { cleanup(); }
+});
+
+it('cancels a focus transition when the same structure on the other eye is selected', () => {
+  const { engine, internal, store, sync, media, cleanup } = diseaseEngineFixture();
+  try {
+    store.getState().openDisease('strabismus'); sync();
+    store.getState().selectEye('right', 'iris'); sync();
+    media.matches = false; media.dispatchEvent(new Event('change'));
+    engine.focus('iris');
+    const cancel = vi.spyOn(internal.rig, 'cancel');
+    store.getState().selectEye('left', 'iris'); sync();
+    expect(cancel).toHaveBeenCalled();
+  } finally { cleanup(); }
+});
+
+it('retains interrupted nerve fibers when outflow improves and shows continuous fibers only for normal reference', () => {
+  const { engine, internal, store, sync, cleanup } = diseaseEngineFixture();
+  try {
+    store.getState().openDisease('glaucoma'); store.getState().setDiseaseStep(1);
+    store.getState().updateDisease({ scenario: 'established-damage', view: 'nerve' }); sync();
+    expect(internal.diseaseEffects!.getObjectByName('nerve-damage')).toBeDefined();
+    store.getState().updateDisease({ outflowRelieved: true }); sync();
+    expect(internal.diseaseEffects!.getObjectByName('nerve-damage')).toBeDefined();
+    store.getState().updateDisease({ scenario: 'normal-tension' }); sync();
+    expect(internal.diseaseEffects!.getObjectByName('nerve-damage')).toBeDefined();
+    engine.setState({ ...store.getState(), diseaseNormal: true });
+    expect(internal.diseaseEffects!.getObjectByName('nerve-damage')).toBeUndefined();
+    expect(internal.diseaseEffects!.getObjectByName('nerve-fibers')).toBeDefined();
+  } finally { cleanup(); }
+});
+
+it('keeps cloudy lens selection readable without erasing the normal versus cloudy material difference', () => {
+  const { internal, store, sync, cleanup } = diseaseEngineFixture();
+  try {
+    store.getState().openDisease('cataract'); store.getState().setDiseaseStep(1); store.getState().updateDisease({ opacity: 0.8 });
+    store.setState({ selectedId: null }); sync();
+    const lens = internal.eye.root.getObjectByName('lens-capsule') as THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhysicalMaterial>;
+    const unselected = lens.material.color.clone(), cloudyOpacity = lens.material.opacity, cloudyRoughness = lens.material.roughness;
+    store.getState().selectEye('right', 'lens'); sync();
+    expect(Math.hypot(lens.material.color.r - unselected.r, lens.material.color.g - unselected.g, lens.material.color.b - unselected.b)).toBeGreaterThan(0.02);
+    expect(lens.material.emissiveIntensity).toBeGreaterThan(0);
+    expect(lens.material.opacity).toBe(cloudyOpacity); expect(lens.material.roughness).toBe(cloudyRoughness);
+    store.getState().setDiseaseNormal(true); sync();
+    expect(lens.material.opacity).toBeLessThan(cloudyOpacity); expect(lens.material.roughness).toBeLessThan(cloudyRoughness);
+    expect(lens.material.emissiveIntensity).toBeGreaterThan(0);
+    store.setState({ selectedId: null }); sync(); expect(lens.material.emissiveIntensity).toBe(0);
+  } finally { cleanup(); }
+});
+
+it('magnifies the lens detail and applies explicit camera direction changes within that local view', () => {
+  const { engine, internal, store, sync, cleanup } = diseaseEngineFixture();
+  try {
+    store.getState().openDisease('cataract'); sync();
+    const contextDistance = internal.camera.position.distanceTo(internal.rig.controls.target);
+    store.getState().updateDisease({ view: 'lens-detail' }); sync();
+    expect(internal.camera.position.distanceTo(internal.rig.controls.target)).toBeLessThan(contextDistance * 0.8);
+    const target = internal.rig.controls.target.clone();
+    store.getState().setView('side'); sync();
+    expect(internal.rig.controls.target.distanceTo(target)).toBeLessThan(1e-6);
+    const side = internal.camera.position.clone().sub(target).normalize();
+    expect(side.x).toBeGreaterThan(0.99);
+    store.getState().setView('front'); sync();
+    const front = internal.camera.position.clone().sub(target).normalize();
+    expect(front.z).toBeGreaterThan(0.99);
+    expect(internal.camera.position.distanceTo(target)).toBeLessThan(contextDistance * 0.8);
+  } finally { cleanup(); }
 });

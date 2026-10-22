@@ -2,14 +2,15 @@ import { STRUCTURES } from '../anatomy/data';
 import type { Localized, StructureId } from '../anatomy/types';
 import { messages } from './messages';
 
-export type QuestionContext = 'structures' | 'anatomy' | 'vision' | 'myopia';
+export type QuestionContext = 'structures' | 'anatomy' | 'vision' | 'myopia' | 'cataract' | 'glaucoma' | 'strabismus' | 'amblyopia';
 export type Question = {
   id: string; context: QuestionContext; kind: 'identify' | 'concept'; prompt: Localized;
   target: StructureId | null;
   options: { id: string; label: Localized; feedback: Localized }[];
   correctOptionId: string; sources: string[]; reviewStatus: 'draft' | 'llm-checked';
+  contentVersion?: string; translationStatus?: 'draft' | 'llm-checked'; medicalReviewStatus?: 'pending' | 'expert-reviewed';
 };
-export const CONTENT_VERSION = '2026-10-22-t07';
+export const CONTENT_VERSION = '2026-10-22-diseases';
 const identificationIds: StructureId[] = ['cornea', 'sclera', 'iris', 'lens', 'retina', 'optic-nerve'];
 const identificationQuestions: Question[] = identificationIds.map(id => {
   const target = STRUCTURES.find(structure => structure.id === id)!;
@@ -108,6 +109,760 @@ export const QUESTIONS: Question[] = [
       { id: 'read-prescription', label: { zh: '把镜片参数直接作为验光度数', en: 'Read the lens parameter directly as a prescription power' }, feedback: { zh: '模型数值没有临床单位或个人测量依据，不能当作验光结果。', en: 'The model values have no clinical units or individual measurement basis and cannot be treated as a refraction result.' } },
       { id: 'all-myopia-axial', label: { zh: '所有近视都只有眼轴延长这一种原因', en: 'All myopia has axial elongation as its only cause' }, feedback: { zh: '本例只突出眼轴因素；角膜和晶状体的形态或屈光状态也可能参与近视，不能将一个示例推广为全部成因。', en: 'This example isolates axial length. Corneal and lens shape or refractive properties can also contribute to myopia, so one example does not cover every cause.' } },
     ], correctOptionId: 'illustration-only', sources: ['M09'], reviewStatus: 'llm-checked',
+  },
+  {
+    "id": "cat-location-01",
+    "context": "cataract",
+    "kind": "concept",
+    "target": "lens",
+    "prompt": {
+      "zh": "白内障主要指哪一结构发生混浊？",
+      "en": "Which structure becomes cloudy in cataract?"
+    },
+    "options": [
+      {
+        "id": "lens-clouding",
+        "label": {
+          "zh": "晶状体",
+          "en": "The crystalline lens"
+        },
+        "feedback": {
+          "zh": "白内障指晶状体混浊，晶状体位于虹膜后方。",
+          "en": "Cataract means clouding of the lens, which lies behind the iris."
+        }
+      },
+      {
+        "id": "cornea-clouding",
+        "label": {
+          "zh": "角膜",
+          "en": "The cornea"
+        },
+        "feedback": {
+          "zh": "角膜位于虹膜前方，也可能混浊；但白内障特指后方晶状体的混浊。",
+          "en": "The cornea lies in front of the iris and can also become cloudy, but cataract specifically means lens clouding behind it."
+        }
+      },
+      {
+        "id": "retina-clouding",
+        "label": {
+          "zh": "视网膜",
+          "en": "The retina"
+        },
+        "feedback": {
+          "zh": "视网膜在眼球内壁感受光。白内障的混浊发生在前方晶状体，不是视网膜。",
+          "en": "The retina detects light along the inner eye wall. Cataract clouding occurs in the lens in front, not in the retina."
+        }
+      }
+    ],
+    "correctOptionId": "lens-clouding",
+    "sources": [
+      "M02"
+    ],
+    "reviewStatus": "llm-checked",
+    "contentVersion": "2026-10-22-diseases",
+    "translationStatus": "llm-checked",
+    "medicalReviewStatus": "pending"
+  },
+  {
+    "id": "cat-mechanism-02",
+    "context": "cataract",
+    "kind": "concept",
+    "target": "lens",
+    "prompt": {
+      "zh": "本例焦点位置相同，为什么仍可能出现雾感或眩光？",
+      "en": "Why can this example show haze or glare even with the same focal position?"
+    },
+    "options": [
+      {
+        "id": "transmission-scattering",
+        "label": {
+          "zh": "晶状体混浊改变透光与散射",
+          "en": "Lens clouding changes light transmission and scattering"
+        },
+        "feedback": {
+          "zh": "固定焦点只能排除本例焦点变化，不能消除混浊对视觉质量的影响。",
+          "en": "A fixed focus excludes a focal change in this example; it does not remove the effects of clouding on image quality."
+        }
+      },
+      {
+        "id": "only-defocus",
+        "label": {
+          "zh": "所有视物不清都只因为焦点偏移",
+          "en": "All unclear vision comes only from a shifted focus"
+        },
+        "feedback": {
+          "zh": "散射与离焦是不同机制。本章保持屈光参数不变，仍可单独说明混浊影响。",
+          "en": "Scattering and defocus are different mechanisms. This chapter illustrates clouding while holding refraction fixed."
+        }
+      },
+      {
+        "id": "pupil-tissue",
+        "label": {
+          "zh": "瞳孔变成一块白色组织",
+          "en": "The pupil becomes a solid white structure"
+        },
+        "feedback": {
+          "zh": "瞳孔仍是开口；本例变化在其后方晶状体，不能把开口当成病变实体。",
+          "en": "The pupil remains an opening. The change is in the lens behind it, not in a solid structure replacing the opening."
+        }
+      }
+    ],
+    "correctOptionId": "transmission-scattering",
+    "sources": [
+      "M02"
+    ],
+    "reviewStatus": "llm-checked",
+    "contentVersion": "2026-10-22-diseases",
+    "translationStatus": "llm-checked",
+    "medicalReviewStatus": "pending"
+  },
+  {
+    "id": "cat-distinction-03",
+    "context": "cataract",
+    "kind": "concept",
+    "target": "lens",
+    "prompt": {
+      "zh": "普通外部矫正镜片等价于清除晶状体混浊吗？",
+      "en": "Is an ordinary corrective lens equivalent to removing clouding from the crystalline lens?"
+    },
+    "options": [
+      {
+        "id": "different-mechanism",
+        "label": {
+          "zh": "不等价：改变屈光关系不等于清除混浊",
+          "en": "No: changing refraction does not remove clouding"
+        },
+        "feedback": {
+          "zh": "矫正镜片可改变聚焦关系，但本例混浊不会因此消失；这不用于判断个体治疗。",
+          "en": "A corrective lens can change focusing, but does not remove the clouding shown here. This does not determine individual treatment."
+        }
+      },
+      {
+        "id": "lens-clears-clouding",
+        "label": {
+          "zh": "等价：焦点回到视网膜，混浊就自动消失",
+          "en": "Yes: restoring retinal focus automatically clears the lens"
+        },
+        "feedback": {
+          "zh": "聚焦位置与晶状体透明度不同，不能将光学矫正直接表示为清除混浊。",
+          "en": "Focus location and lens transparency are separate; optical correction cannot be represented as removal of clouding."
+        }
+      },
+      {
+        "id": "no-refractive-change",
+        "label": {
+          "zh": "不等价，因为白内障从不会伴随屈光变化",
+          "en": "No, because cataracts never involve refractive changes"
+        },
+        "feedback": {
+          "zh": "本章固定屈光参数只是为了讲清散射，不能推广成现实白内障从不影响屈光。",
+          "en": "Fixed refraction isolates scattering in this chapter; it does not mean real cataracts never affect refraction."
+        }
+      }
+    ],
+    "correctOptionId": "different-mechanism",
+    "sources": [
+      "M02"
+    ],
+    "reviewStatus": "llm-checked",
+    "contentVersion": "2026-10-22-diseases",
+    "translationStatus": "llm-checked",
+    "medicalReviewStatus": "pending"
+  },
+  {
+    "id": "gla-route-01",
+    "context": "glaucoma",
+    "kind": "concept",
+    "target": "trabecular-meshwork",
+    "prompt": {
+      "zh": "本例房水的小梁网流出路线，顺序是哪一项？",
+      "en": "Which sequence describes the illustrated trabecular outflow route?"
+    },
+    "options": [
+      {
+        "id": "aqueous-route",
+        "label": {
+          "zh": "后房 → 瞳孔 → 前房 → 房角小梁网",
+          "en": "Posterior chamber → pupil → anterior chamber → trabecular meshwork at the angle"
+        },
+        "feedback": {
+          "zh": "睫状突产生房水，房水依次通过这些位置；小梁网路线并非唯一流出途径。",
+          "en": "Aqueous humor produced by the ciliary processes passes through these sites. The trabecular route is not the only outflow pathway."
+        }
+      },
+      {
+        "id": "vitreous-route",
+        "label": {
+          "zh": "玻璃体腔 → 视网膜 → 视神经",
+          "en": "Vitreous chamber → retina → optic nerve"
+        },
+        "feedback": {
+          "zh": "后房是虹膜后的狭窄空间，不是玻璃体腔；视神经传递神经信息，不是房水出口。",
+          "en": "The posterior chamber is the narrow space behind the iris, not the vitreous chamber. The optic nerve carries neural information, not aqueous outflow."
+        }
+      },
+      {
+        "id": "reverse-route",
+        "label": {
+          "zh": "前房 → 瞳孔 → 后房 → 晶状体内部",
+          "en": "Anterior chamber → pupil → posterior chamber → inside the lens"
+        },
+        "feedback": {
+          "zh": "本例路线从后房经瞳孔向前房，不流入晶状体内部。",
+          "en": "The illustrated route goes from the posterior chamber through the pupil to the anterior chamber, not into the lens."
+        }
+      }
+    ],
+    "correctOptionId": "aqueous-route",
+    "sources": [
+      "M04",
+      "M11"
+    ],
+    "reviewStatus": "llm-checked",
+    "contentVersion": "2026-10-22-diseases",
+    "translationStatus": "llm-checked",
+    "medicalReviewStatus": "pending"
+  },
+  {
+    "id": "gla-pressure-02",
+    "context": "glaucoma",
+    "kind": "concept",
+    "target": "optic-nerve",
+    "prompt": {
+      "zh": "怎样理解眼压升高与青光眼的关系？",
+      "en": "How should elevated pressure be related to glaucoma?"
+    },
+    "options": [
+      {
+        "id": "risk-not-diagnosis",
+        "label": {
+          "zh": "眼压升高增加风险，但单凭它不能确定已有青光眼损害",
+          "en": "Elevated pressure increases risk but alone does not establish glaucoma damage"
+        },
+        "feedback": {
+          "zh": "风险因素与已发生的视神经损害不同；本例流出风险不会自动生成损害。",
+          "en": "A risk factor is distinct from established optic nerve damage; this example does not automatically generate damage from outflow risk."
+        }
+      },
+      {
+        "id": "pressure-is-disease",
+        "label": {
+          "zh": "只要眼压升高，就已经有青光眼损害",
+          "en": "Any elevated pressure means glaucoma damage is already present"
+        },
+        "feedback": {
+          "zh": "并非所有高眼压者都有青光眼，不能从一个风险因素直接推出损害。",
+          "en": "Not everyone with elevated pressure has glaucoma; one risk factor cannot directly establish damage."
+        }
+      },
+      {
+        "id": "no-pressure-relation",
+        "label": {
+          "zh": "眼压与青光眼完全无关",
+          "en": "Eye pressure has no relation to glaucoma"
+        },
+        "feedback": {
+          "zh": "眼压是重要风险关系，降低眼压可帮助保护视功能；但它并非单独诊断标准。",
+          "en": "Pressure is an important risk factor, and lowering it can help protect vision, but it is not a diagnosis on its own."
+        }
+      }
+    ],
+    "correctOptionId": "risk-not-diagnosis",
+    "sources": [
+      "M03",
+      "M04"
+    ],
+    "reviewStatus": "llm-checked",
+    "contentVersion": "2026-10-22-diseases",
+    "translationStatus": "llm-checked",
+    "medicalReviewStatus": "pending"
+  },
+  {
+    "id": "gla-normal-tension-03",
+    "context": "glaucoma",
+    "kind": "concept",
+    "target": "optic-nerve",
+    "prompt": {
+      "zh": "眼压在正常范围内，能单独排除青光眼吗？",
+      "en": "Can pressure in the normal range alone rule out glaucoma?"
+    },
+    "options": [
+      {
+        "id": "cannot-rule-out",
+        "label": {
+          "zh": "不能，正常眼压情景也可能存在视神经损害",
+          "en": "No; optic nerve damage can occur with normal-range pressure"
+        },
+        "feedback": {
+          "zh": "本例独立展示正常眼压下的损害，说明压力并非唯一判断依据。",
+          "en": "This independent example shows damage with normal-range pressure, illustrating why pressure is not the only consideration."
+        }
+      },
+      {
+        "id": "always-no-disease",
+        "label": {
+          "zh": "能，正常眼压保证没有青光眼",
+          "en": "Yes; normal pressure guarantees no glaucoma"
+        },
+        "feedback": {
+          "zh": "有些青光眼患者眼压处在通常的正常范围，不能只看压力排除。",
+          "en": "Some people with glaucoma have pressure within the usual normal range, so pressure alone cannot exclude it."
+        }
+      },
+      {
+        "id": "always-symptoms",
+        "label": {
+          "zh": "只要自己感觉视野正常，就能排除",
+          "en": "A subjectively normal field is enough to exclude it"
+        },
+        "feedback": {
+          "zh": "青光眼早期可能没有明显自觉症状，主观感觉正常也不能单独排除。",
+          "en": "Early glaucoma may have no noticeable symptoms, so a normal subjective experience alone cannot exclude it."
+        }
+      }
+    ],
+    "correctOptionId": "cannot-rule-out",
+    "sources": [
+      "M03",
+      "M04"
+    ],
+    "reviewStatus": "llm-checked",
+    "contentVersion": "2026-10-22-diseases",
+    "translationStatus": "llm-checked",
+    "medicalReviewStatus": "pending"
+  },
+  {
+    "id": "gla-irreversible-04",
+    "context": "glaucoma",
+    "kind": "concept",
+    "target": "optic-nerve",
+    "prompt": {
+      "zh": "在已有损害案例中改善流出，应怎样理解？",
+      "en": "What does improved outflow mean in the example with existing damage?"
+    },
+    "options": [
+      {
+        "id": "damage-retained",
+        "label": {
+          "zh": "风险机制可改变，但已有损害不会自动恢复",
+          "en": "The risk mechanism can change, but existing damage does not automatically recover"
+        },
+        "feedback": {
+          "zh": "本例改善流出后保留神经及视野损害；软件重置只是重新演示。",
+          "en": "The example retains nerve and field damage after outflow improves; a software reset merely restarts the illustration."
+        }
+      },
+      {
+        "id": "nerve-regenerated",
+        "label": {
+          "zh": "视神经立刻再生，视野必然全部恢复",
+          "en": "The nerve regenerates immediately and the entire field returns"
+        },
+        "feedback": {
+          "zh": "降低眼压可帮助保护视功能，但不能直接逆转既有损失；本例不承诺恢复。",
+          "en": "Lowering pressure can help protect vision but does not directly reverse established loss; the example promises no recovery."
+        }
+      },
+      {
+        "id": "reset-is-treatment",
+        "label": {
+          "zh": "点击重置就表示真实治疗成功",
+          "en": "Resetting the scene represents successful treatment"
+        },
+        "feedback": {
+          "zh": "重置仅恢复软件默认参数，不能解释成真实损害消失或个体治疗结果。",
+          "en": "Reset restores software defaults, not disappearance of real damage or an individual treatment outcome."
+        }
+      }
+    ],
+    "correctOptionId": "damage-retained",
+    "sources": [
+      "M03",
+      "M04"
+    ],
+    "reviewStatus": "llm-checked",
+    "contentVersion": "2026-10-22-diseases",
+    "translationStatus": "llm-checked",
+    "medicalReviewStatus": "pending"
+  },
+  {
+    "id": "str-alignment-01",
+    "context": "strabismus",
+    "kind": "concept",
+    "target": null,
+    "prompt": {
+      "zh": "本例怎样区分内斜与外斜？",
+      "en": "How does this example distinguish esotropia from exotropia?"
+    },
+    "options": [
+      {
+        "id": "nasal-temporal",
+        "label": {
+          "zh": "偏斜眼相对正常注视方向：向鼻侧为内斜，向颞侧为外斜",
+          "en": "From normal gaze: nasal deviation is esotropia; temporal deviation is exotropia"
+        },
+        "feedback": {
+          "zh": "依据患者鼻颞方位；切换眼侧和镜头不改变这个含义。",
+          "en": "Use the patient’s nasal and temporal directions; changing the eye or camera does not change their meaning."
+        }
+      },
+      {
+        "id": "screen-direction",
+        "label": {
+          "zh": "向屏幕左侧总是内斜，向右侧总是外斜",
+          "en": "Screen-left always means esotropia and screen-right exotropia"
+        },
+        "feedback": {
+          "zh": "屏幕左右随镜头和眼侧变化，不是内斜、外斜的定义。",
+          "en": "Screen left and right change with the camera and eye side; they do not define esotropia and exotropia."
+        }
+      },
+      {
+        "id": "muscle-weakness",
+        "label": {
+          "zh": "内斜一定是所有眼外肌都无力",
+          "en": "Esotropia always means every eye muscle is weak"
+        },
+        "feedback": {
+          "zh": "斜视涉及眼位与运动协调，不能把方向分类直接归为全部肌肉无力。",
+          "en": "Strabismus involves alignment and movement coordination; a directional category does not establish generalized muscle weakness."
+        }
+      }
+    ],
+    "correctOptionId": "nasal-temporal",
+    "sources": [
+      "M06"
+    ],
+    "reviewStatus": "llm-checked",
+    "contentVersion": "2026-10-22-diseases",
+    "translationStatus": "llm-checked",
+    "medicalReviewStatus": "pending"
+  },
+  {
+    "id": "str-convergence-02",
+    "context": "strabismus",
+    "kind": "concept",
+    "target": null,
+    "prompt": {
+      "zh": "正常看近时，两条注视方向线不平行，是否就代表斜视？",
+      "en": "Do nonparallel gaze lines during normal near viewing necessarily mean strabismus?"
+    },
+    "options": [
+      {
+        "id": "normal-convergence",
+        "label": {
+          "zh": "不代表；两眼仍可会聚并共同对准目标",
+          "en": "No; both eyes can converge while remaining aligned to the target"
+        },
+        "feedback": {
+          "zh": "关键是两眼相对同一目标是否协调对准，而不是方向线永远平行。",
+          "en": "What matters is coordinated alignment to the same target, not lines that remain parallel at every distance."
+        }
+      },
+      {
+        "id": "all-convergence-esotropia",
+        "label": {
+          "zh": "代表，所有会聚都是内斜视",
+          "en": "Yes; all convergence is esotropia"
+        },
+        "feedback": {
+          "zh": "正常会聚适应近距离目标；这与一眼在正常注视方向外额外偏斜不同。",
+          "en": "Normal convergence supports near viewing; it differs from an additional deviation away from normal gaze."
+        }
+      },
+      {
+        "id": "only-one-eye-near",
+        "label": {
+          "zh": "看近时本来就只能一眼对准",
+          "en": "Only one eye can normally align to a near target"
+        },
+        "feedback": {
+          "zh": "本例正常状态下，两眼会分别转向同一个近目标，并非只能一眼参与。",
+          "en": "In the normal reference, both eyes turn toward the same near target; participation is not limited to one eye."
+        }
+      }
+    ],
+    "correctOptionId": "normal-convergence",
+    "sources": [
+      "M06",
+      "M14"
+    ],
+    "reviewStatus": "llm-checked",
+    "contentVersion": "2026-10-22-diseases",
+    "translationStatus": "llm-checked",
+    "medicalReviewStatus": "pending"
+  },
+  {
+    "id": "str-amblyopia-03",
+    "context": "strabismus",
+    "kind": "concept",
+    "target": null,
+    "prompt": {
+      "zh": "斜视与弱视是什么关系？",
+      "en": "How are strabismus and amblyopia related?"
+    },
+    "options": [
+      {
+        "id": "related-not-identical",
+        "label": {
+          "zh": "眼位不一致与视觉发育问题不同，可相关但不等同",
+          "en": "Misalignment and a visual-development problem differ; they may be related but are not identical"
+        },
+        "feedback": {
+          "zh": "斜视可能影响儿童视觉发育，但并非每个斜视者都有弱视，眼位整齐也不能单独排除弱视。",
+          "en": "Strabismus may affect childhood visual development, but not everyone with strabismus has amblyopia, and aligned eyes alone do not rule it out."
+        }
+      },
+      {
+        "id": "synonyms",
+        "label": {
+          "zh": "两者只是同一疾病的不同名称",
+          "en": "They are two names for the same condition"
+        },
+        "feedback": {
+          "zh": "两者描述不同层面：斜视是眼位，弱视涉及视觉发育与视功能。",
+          "en": "They describe different aspects: strabismus concerns alignment; amblyopia concerns visual development and function."
+        }
+      },
+      {
+        "id": "inevitable-amblyopia",
+        "label": {
+          "zh": "每个斜视者必然同时有弱视",
+          "en": "Everyone with strabismus necessarily has amblyopia"
+        },
+        "feedback": {
+          "zh": "二者可以关联，也可以分别存在，不能把可能的联系写成必然。",
+          "en": "They may occur together or separately; a possible relationship is not inevitable."
+        }
+      }
+    ],
+    "correctOptionId": "related-not-identical",
+    "sources": [
+      "M05",
+      "M06",
+      "M12"
+    ],
+    "reviewStatus": "llm-checked",
+    "contentVersion": "2026-10-22-diseases",
+    "translationStatus": "llm-checked",
+    "medicalReviewStatus": "pending"
+  },
+  {
+    "id": "amb-cause-01",
+    "context": "amblyopia",
+    "kind": "concept",
+    "target": null,
+    "prompt": {
+      "zh": "哪些输入问题可能与儿童期弱视形成有关？",
+      "en": "Which input problems can contribute to amblyopia during childhood?"
+    },
+    "options": [
+      {
+        "id": "multiple-input-causes",
+        "label": {
+          "zh": "屈光状态差异、斜视或视觉输入受限",
+          "en": "Refractive differences, strabismus or restricted visual input"
+        },
+        "feedback": {
+          "zh": "三者以不同方式影响输入的清晰度或一致性；弱视描述相关的视觉发育结果。",
+          "en": "These affect input clarity or consistency in different ways; amblyopia describes the related developmental outcome."
+        }
+      },
+      {
+        "id": "only-lazy-muscle",
+        "label": {
+          "zh": "只能是某条眼外肌不够努力",
+          "en": "Only an eye muscle failing to make enough effort"
+        },
+        "feedback": {
+          "zh": "弱视不是肌肉懒惰或患者不努力。它与儿童期视觉发育受影响有关。",
+          "en": "Amblyopia is not a lazy muscle or lack of effort; it involves affected visual development during childhood."
+        }
+      },
+      {
+        "id": "only-cloudy-lens",
+        "label": {
+          "zh": "所有弱视都必须有晶状体混浊",
+          "en": "Every case must involve lens clouding"
+        },
+        "feedback": {
+          "zh": "晶状体混浊只是可能的输入受限原因之一；屈光参差与斜视示例可以没有混浊。",
+          "en": "Lens clouding is only one possible source of restricted input; refractive and strabismic examples can have clear lenses."
+        }
+      }
+    ],
+    "correctOptionId": "multiple-input-causes",
+    "sources": [
+      "M05",
+      "M12"
+    ],
+    "reviewStatus": "llm-checked",
+    "contentVersion": "2026-10-22-diseases",
+    "translationStatus": "llm-checked",
+    "medicalReviewStatus": "pending"
+  },
+  {
+    "id": "amb-appearance-02",
+    "context": "amblyopia",
+    "kind": "concept",
+    "target": null,
+    "prompt": {
+      "zh": "双眼看起来整齐，能单独排除弱视吗？",
+      "en": "Can visibly aligned eyes alone rule out amblyopia?"
+    },
+    "options": [
+      {
+        "id": "appearance-insufficient",
+        "label": {
+          "zh": "不能，输入质量与视觉发育问题可能没有明显眼位变化",
+          "en": "No; input quality and visual-development problems may occur without obvious misalignment"
+        },
+        "feedback": {
+          "zh": "屈光参差示例双眼对准，仍可有不同输入；外观不是视功能检查。",
+          "en": "The anisometropia example has aligned eyes but different input; appearance is not a visual-function assessment."
+        }
+      },
+      {
+        "id": "straight-means-normal",
+        "label": {
+          "zh": "能，整齐外观保证视觉发育正常",
+          "en": "Yes; straight-looking eyes guarantee normal visual development"
+        },
+        "feedback": {
+          "zh": "眼位与视功能不同，弱视可能发生在外观正常的眼睛。",
+          "en": "Alignment and visual function differ; amblyopia can occur in eyes that look normal."
+        }
+      },
+      {
+        "id": "cloudiness-required",
+        "label": {
+          "zh": "只有看得见混浊才可能有弱视",
+          "en": "Amblyopia is possible only with visible clouding"
+        },
+        "feedback": {
+          "zh": "混浊不是所有弱视的必要条件；输入异常还有其他原因。",
+          "en": "Clouding is not required in every case; abnormal input has other possible causes."
+        }
+      }
+    ],
+    "correctOptionId": "appearance-insufficient",
+    "sources": [
+      "M05",
+      "M12"
+    ],
+    "reviewStatus": "llm-checked",
+    "contentVersion": "2026-10-22-diseases",
+    "translationStatus": "llm-checked",
+    "medicalReviewStatus": "pending"
+  },
+  {
+    "id": "amb-input-03",
+    "context": "amblyopia",
+    "kind": "concept",
+    "target": null,
+    "prompt": {
+      "zh": "打开本例“改善输入”后，视觉处理框为什么仍保留发育结果？",
+      "en": "Why does the processing box retain the developmental outcome after “improve input” is switched on?"
+    },
+    "options": [
+      {
+        "id": "input-outcome-distinct",
+        "label": {
+          "zh": "改善输入不等于已形成的视觉发育问题瞬间消失",
+          "en": "Improving input does not instantly erase an established visual-development problem"
+        },
+        "feedback": {
+          "zh": "这个开关仅改变输入示意，不是疗效开关；已形成的问题需专业评估。",
+          "en": "The switch changes only the input illustration, not treatment success; an established problem needs professional assessment."
+        }
+      },
+      {
+        "id": "immediate-cure",
+        "label": {
+          "zh": "只要图像清晰，弱视就一定即时消失",
+          "en": "A clear input image guarantees immediate resolution of amblyopia"
+        },
+        "feedback": {
+          "zh": "光学输入与发育结果不能合成同一个开关；不能由模型保证即时恢复。",
+          "en": "Optical input and developmental outcome cannot be combined into one switch; the model cannot guarantee immediate recovery."
+        }
+      },
+      {
+        "id": "input-never-matters",
+        "label": {
+          "zh": "因为改善输入对视觉发育从来没有意义",
+          "en": "Because improved input is never relevant to visual development"
+        },
+        "feedback": {
+          "zh": "输入对发育有意义；这里强调的是改善输入不等于自动、即时恢复已有问题。",
+          "en": "Input matters to development; the distinction is that better input does not automatically and immediately reverse an established problem."
+        }
+      }
+    ],
+    "correctOptionId": "input-outcome-distinct",
+    "sources": [
+      "M05",
+      "M12"
+    ],
+    "reviewStatus": "llm-checked",
+    "contentVersion": "2026-10-22-diseases",
+    "translationStatus": "llm-checked",
+    "medicalReviewStatus": "pending"
+  },
+  {
+    "id": "amb-distinction-04",
+    "context": "amblyopia",
+    "kind": "concept",
+    "target": null,
+    "prompt": {
+      "zh": "怎样向患者解释弱视与斜视的区别？",
+      "en": "How can amblyopia be distinguished from strabismus?"
+    },
+    "options": [
+      {
+        "id": "function-versus-alignment",
+        "label": {
+          "zh": "弱视涉及视觉发育与视功能；斜视描述眼位不一致",
+          "en": "Amblyopia concerns visual development and function; strabismus describes misalignment"
+        },
+        "feedback": {
+          "zh": "两者可能关联，也可分别存在。不能用眼位外观代替对视觉功能的了解。",
+          "en": "They may be related or occur separately. Eye alignment cannot substitute for understanding visual function."
+        }
+      },
+      {
+        "id": "both-muscle-laziness",
+        "label": {
+          "zh": "两者都只是眼外肌懒惰",
+          "en": "Both simply mean lazy eye muscles"
+        },
+        "feedback": {
+          "zh": "这种说法混淆眼位协调和视觉发育，也会误解患者对症状的控制能力。",
+          "en": "This confuses alignment control with visual development and misrepresents how much control the person has over the condition."
+        }
+      },
+      {
+        "id": "alignment-fixes-all",
+        "label": {
+          "zh": "只要把眼位回正，两者的所有问题都立刻消失",
+          "en": "Straightening the eyes immediately removes every problem from both conditions"
+        },
+        "feedback": {
+          "zh": "眼位回正的几何示意不保证已形成的视觉发育问题即时恢复。",
+          "en": "A geometric illustration of realignment does not guarantee immediate recovery of an established developmental problem."
+        }
+      }
+    ],
+    "correctOptionId": "function-versus-alignment",
+    "sources": [
+      "M05",
+      "M06",
+      "M12"
+    ],
+    "reviewStatus": "llm-checked",
+    "contentVersion": "2026-10-22-diseases",
+    "translationStatus": "llm-checked",
+    "medicalReviewStatus": "pending"
   },
 ];
 export const questionById = (id: string) => QUESTIONS.find(question => question.id === id);

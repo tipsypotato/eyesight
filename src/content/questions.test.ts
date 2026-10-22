@@ -17,7 +17,7 @@ describe('question catalog', () => {
     expect(questionsFor('anatomy').map(q => q.id)).toEqual(['anatomy-wall-order-01', 'anatomy-chambers-02', 'anatomy-fundus-03']);
     expect(questionsFor('vision').map(q => q.id)).toEqual(['vision-pupil-01', 'vision-focus-02', 'vision-signal-03']);
     expect(questionsFor('myopia').map(q => q.id)).toEqual(['myopia-axial-01', 'myopia-correction-02', 'myopia-limit-03']);
-    expect(new Set(QUESTIONS.map(q => q.id)).size).toBe(15);
+    expect(new Set(QUESTIONS.map(q => q.id)).size).toBe(29);
     expect(questionById('removed-question')).toBeUndefined();
     for (const q of QUESTIONS) expect(questionById(q.id)).toBe(q);
   });

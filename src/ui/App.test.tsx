@@ -41,6 +41,7 @@ describe('responsive workspace markup', () => {
     { mode: 'optics', tabs: ['parameters', 'explanation'], active: 'parameters' },
     { mode: 'tour', tabs: ['structures', 'parameters', 'explanation'], active: 'explanation' },
     { mode: 'quiz', tabs: ['parameters', 'explanation'], active: 'explanation' },
+    { mode: 'disease', tabs: ['structures', 'explanation'], active: 'explanation' },
   ])('links applicable tabs and panels in $mode without duplicating the model', ({ mode, tabs, active }) => {
     store.getState().setMode(mode);
     const html = renderApp();
@@ -240,5 +241,38 @@ describe('comparison and physiology presentation', () => {
     store.getState().startLesson('vision');
     store.getState().goToStep(3);
     expect(renderApp(false)).toContain('光到神经信号');
+  });
+});
+
+
+describe('disease workspace integration', () => {
+  it('makes the disease workspace directly reachable from the main navigation', () => {
+    const html = renderApp(false);
+    const nav = html.match(/<nav\b[^>]*>(.*?)<\/nav>/s)?.[1];
+    expect(nav).toContain('常见眼病');
+    expect(nav?.match(/<button\b/g)).toHaveLength(5);
+  });
+
+  it('offers two models for a single-eye comparison and a single viewport on a narrow screen', () => {
+    store.getState().openDisease('cataract');
+    store.getState().setDiseaseNormal(false);
+    store.getState().setDiseaseComparison(true);
+    const desktop = renderApp(false);
+    expect(desktop.match(/class="viewport"/g)).toHaveLength(2);
+    expect(desktop).toContain('data-comparison="reference"');
+    expect(desktop).toContain('data-comparison="current"');
+    expect(desktop).not.toContain('class="scene-presets"');
+    expect(renderApp().match(/class="viewport"/g)).toHaveLength(1);
+  });
+
+  it.each(['strabismus', 'amblyopia'] as const)('keeps %s as one eye pair during desktop comparison', id => {
+    store.getState().openDisease(id);
+    store.getState().setDiseaseNormal(false);
+    store.getState().setDiseaseComparison(true);
+    const html = renderApp(false);
+    expect(html.match(/class="viewport"/g)).toHaveLength(1);
+    expect(html).toContain('OD · OS');
+    expect(html).not.toContain('OCULUS DEXTER');
+    expect(html).not.toContain('class="section-controls"');
   });
 });

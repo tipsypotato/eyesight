@@ -1,14 +1,18 @@
+import type { DiseaseDraft } from '../modes/disease';
+
 export type Lang = 'zh' | 'en';
 export type Localized = Record<Lang, string>;
-export const STRUCTURE_IDS = ['cornea', 'sclera', 'iris', 'pupil', 'ciliary-body', 'zonules', 'lens', 'anterior-chamber', 'posterior-chamber', 'vitreous', 'choroid', 'retina', 'macula', 'fovea', 'optic-disc', 'optic-nerve', 'retinal-vessels'] as const;
+export const STRUCTURE_IDS = ['cornea', 'sclera', 'iris', 'pupil', 'ciliary-body', 'zonules', 'lens', 'anterior-chamber', 'posterior-chamber', 'vitreous', 'choroid', 'retina', 'macula', 'fovea', 'optic-disc', 'optic-nerve', 'retinal-vessels', 'iridocorneal-angle', 'trabecular-meshwork'] as const;
 export type StructureId = typeof STRUCTURE_IDS[number];
+export type EyeSide = 'right' | 'left';
+export type EyeRef = { side: EyeSide; structureId: StructureId };
 export type GroupId = 'wall' | 'front' | 'inside' | 'fundus';
 export type Structure = {
   id: StructureId; name: Localized; latin: string; group: GroupId; color: string;
   kind: 'tissue' | 'region' | 'space'; summary: Localized; function: Localized;
   position: Localized; fact: Localized; sources: { title: string; url: string }[];
 };
-export type Mode = 'explore' | 'optics' | 'tour' | 'quiz';
+export type Mode = 'explore' | 'optics' | 'tour' | 'quiz' | 'disease';
 export type LayerMode = 'on' | 'ghost' | 'off';
 export type ViewPreset = 'oblique' | 'front' | 'side' | 'back';
 export type ClipAxis = 'sagittal' | 'axial' | 'coronal';
@@ -36,6 +40,7 @@ export type CameraSnapshot = {
 };
 export interface SceneState {
   lang: Lang; mode: Mode; selectedId: StructureId | null;
+  disease?: DiseaseDraft | null; diseaseNormal?: boolean; selectedEye?: EyeSide;
   relatedIds?: StructureId[];
   layers: Record<StructureId, LayerMode>; isolateId: StructureId | null;
   clip: { enabled: boolean; axis: ClipAxis; offset: number; keepSide: KeepSide };

@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Interactive adult right-eye anatomy and optics teaching demo.",
+  "description": "Interactive eye anatomy and common eye condition explanations for physician-led demonstrations.",
   "author": "tipsypotato <huzhihao2016@gmail.com>",
   "license": "MIT",
   "scripts": {

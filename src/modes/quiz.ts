@@ -108,8 +108,8 @@ export function wrongQuestionIds(session: PracticeSession): string[] {
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
 const strings = (value: unknown): value is string[] => Array.isArray(value) && value.every(item => typeof item === 'string' && item.length > 0) && new Set(value).size === value.length;
 
-// The preview is an explicit migration fixture for this first persisted release, not a published predecessor.
-const migratableContentVersions: readonly string[] = ['2026-10-22-t07-preview'];
+// Known catalogs retain stable question IDs and answers through content upgrades.
+const migratableContentVersions: readonly string[] = ['2026-10-22-t07-preview', '2026-10-22-t07'];
 export const isSupportedContentVersion = (value: unknown): value is string => typeof value === 'string'
   && (value === CONTENT_VERSION || migratableContentVersions.includes(value));
 

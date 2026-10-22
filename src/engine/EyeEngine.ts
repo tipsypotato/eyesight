@@ -1,13 +1,14 @@
 import * as THREE from 'three';
 import { STRUCTURES } from '../anatomy/data';
-import type { CameraSnapshot, SceneState, StructureId, ViewPreset } from '../anatomy/types';
+import type { CameraSnapshot, EyeSide, SceneState, StructureId, ViewPreset } from '../anatomy/types';
 import { Animator } from './animator';
 import { CameraRig } from './camera';
 import { buildEye, createShellSection, setOpticalGeometry, setPosteriorStretch, type EyePart } from './geometry';
-import { BASE_PUPIL_RADIUS, traceOptics, type TraceOpticsResult } from './optics';
+import { BASE_PUPIL_RADIUS, opticsInputForPreset, traceOptics, type TraceOpticsResult } from './optics';
 import { createSectionContour, intersectionSurvives, SECTION_AXES, SectionTool } from './section';
 import { messages } from '../content/messages';
 import { visibleSurface } from './visibility';
+import { applyLensClouding, binocularInputs, createAqueousFlow, createNerveDamage, glaucomaAppearance, orientEye } from './disease';
 
 type Drawable = THREE.Mesh | THREE.Line;
 type Label = { button: HTMLButtonElement; dot: HTMLSpanElement; leader: HTMLSpanElement; outline: HTMLSpanElement };
@@ -28,6 +29,14 @@ export class EyeEngine {
   private animator = new Animator();
   private rig: CameraRig;
   private eye = buildEye(Object.fromEntries(STRUCTURES.map(item => [item.id, item.color])));
+  private leftEye: ReturnType<typeof buildEye> | null = null;
+  private diseaseEffects: THREE.Group | null = null;
+  private diseaseKey = '';
+  private lensContextCamera: CameraSnapshot | null = null;
+  private flowPhase = 0;
+  private pickedSide: EyeSide = 'right';
+  private hoveredSide: EyeSide = 'right';
+  private binocularLabels: HTMLSpanElement[] = [];
   private section = new SectionTool();
   private state: SceneState | null = null;
   private resizeObserver: ResizeObserver;
@@ -69,7 +78,7 @@ export class EyeEngine {
   private opticsResult: TraceOpticsResult | null = null;
   private opticalGeometryKey = '';
 
-  constructor(private host: HTMLElement, private onSelect: (id: StructureId) => void, private onLocate = onSelect, private sectionCallbacks?: SectionCallbacks) {
+  constructor(private host: HTMLElement, private onSelect: (id: StructureId, side?: EyeSide) => void, private onLocate = onSelect, private sectionCallbacks?: SectionCallbacks) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.localClippingEnabled = true;
@@ -90,7 +99,7 @@ export class EyeEngine {
     this.locateButton.className = 'occluded-target';
     this.locateButton.type = 'button';
     this.locateButton.style.display = 'none';
-    this.locateButton.addEventListener('click', () => { if (this.state?.selectedId && this.state.mode !== 'quiz') this.onLocate(this.state.selectedId); });
+    this.locateButton.addEventListener('click', () => { if (this.state?.selectedId && this.state.mode !== 'quiz') this.onLocate(this.state.selectedId, this.state.selectedEye); });
     this.outline.className = 'target-outline';
     this.outline.style.display = 'none';
     this.compass.classList.add('eye-compass');
@@ -110,7 +119,7 @@ export class EyeEngine {
         whiteSpace: 'nowrap', cursor: 'pointer', boxShadow: '0 2px 8px #153b4010',
       });
       button.addEventListener('click', () => {
-        if (this.state?.mode !== 'quiz') this.onSelect(structure.id);
+        if (this.state?.mode !== 'quiz') this.onSelect(structure.id, this.state?.selectedEye ?? 'right');
       });
       const dot = document.createElement('span');
       Object.assign(dot.style, { width: '5px', height: '5px', borderRadius: '50%', position: 'absolute', transform: 'translate(-50%,-50%)', background: structure.color, display: 'none' });
@@ -132,13 +141,6 @@ export class EyeEngine {
     const rim = new THREE.DirectionalLight('#f0d9ba', 0.9);
     rim.position.set(1, -2, -4);
     this.scene.add(key, fill, rim);
-    this.eye.root.traverse(object => {
-      if (object instanceof THREE.Mesh || object instanceof THREE.Line) {
-        for (const material of this.materials(object)) {
-          if ('color' in material) material.userData.baseColor = (material.color as THREE.Color).clone();
-        }
-      }
-    });
     for (const [id, part] of this.eye.parts) {
       if (!part.shell) continue;
       const material = new THREE.MeshBasicMaterial({ color: STRUCTURES.find(item => item.id === id)?.color ?? '#d5b58a', side: THREE.DoubleSide });
@@ -180,27 +182,44 @@ export class EyeEngine {
     const sceneChanged = !previous || state.mode !== previous.mode || state.sceneRevision !== previous.sceneRevision;
     if (sceneChanged || !state.clip.enabled || state.clip.axis !== previous?.clip.axis || state.clip.keepSide !== previous?.clip.keepSide) this.endSectionDrag();
     if (sceneChanged) this.viewportKey = '';
-    if (sceneChanged || state.selectedId !== previous?.selectedId) {
+    if (sceneChanged || state.selectedId !== previous?.selectedId || state.selectedEye !== previous?.selectedEye) {
       this.rig.cancel();
       this.pointerDown.set(Infinity, Infinity);
       this.tapPointerId = null;
       this.pointerDragged = true;
     }
+    if (state.mode === 'disease' && state.disease?.id === 'cataract' && state.disease.view === 'lens-detail'
+      && previous?.mode === 'disease' && previous.disease?.id === 'cataract' && previous.disease.view === 'context') this.lensContextCamera = this.rig.capture();
+    else if (sceneChanged && state.disease?.id === 'cataract' && state.disease.step === 0 && state.disease.view === 'context' && !state.camera && previous?.disease?.id === 'cataract') this.lensContextCamera = null;
     this.state = state;
-    const quizHidden = state.mode === 'quiz' && !state.quizRevealed;
+    const binocular = state.mode === 'disease' && (state.disease?.id === 'strabismus' || state.disease?.id === 'amblyopia');
+    if (binocular && !this.leftEye) {
+      this.leftEye = buildEye(Object.fromEntries(STRUCTURES.map(item => [item.id, item.color])), 'left');
+      this.scene.add(this.leftEye.root);
+      for (const side of ['OD', 'OS']) {
+        const label = document.createElement('span'); label.textContent = side;
+        Object.assign(label.style, { position: 'absolute', color: '#24404a', font: '700 14px system-ui', transform: 'translateX(-50%)' });
+        this.overlay.append(label); this.binocularLabels.push(label);
+      }
+    } else if (!binocular && this.leftEye) {
+      this.scene.remove(this.leftEye.root); this.leftEye.dispose(); this.leftEye = null;
+      this.binocularLabels.forEach(label => label.remove()); this.binocularLabels = [];
+      this.eye.root.position.set(0, 0, 0); this.eye.root.quaternion.identity();
+    }
+    const quizHidden = (state.mode === 'quiz' || state.mode === 'disease' && state.disease?.step === 3) && !state.quizRevealed;
     if (this.locateButton) this.locateButton.textContent = quizHidden ? '' : messages.occludedTarget[state.lang];
     this.canvas.setAttribute('aria-label', state.lang === 'zh'
-      ? '可旋转的右眼三维模型。方向键旋转，加减键缩放。'
-      : 'Rotatable 3D right eye. Arrow keys rotate; plus and minus zoom.');
+      ? binocular ? '可旋转的双眼三维模型。方向键旋转，加减键缩放。' : '可旋转的右眼三维模型。方向键旋转，加减键缩放。'
+      : binocular ? 'Rotatable 3D binocular model. Arrow keys rotate; plus and minus zoom.' : 'Rotatable 3D right eye. Arrow keys rotate; plus and minus zoom.');
     if (sceneChanged) { this.pointerActive = false; this.hoveredId = null; }
     this.canvas.style.cursor = this.pointerActive ? 'grabbing' : 'grab';
-    for (const [id, part] of this.eye.parts) {
+    for (const eye of this.eyes()) for (const [id, part] of eye.parts) {
       part.group.visible = state.layers[id] !== 'off' && (!state.isolateId || state.isolateId === id);
       part.group.position.copy(part.explode).multiplyScalar(state.explode);
       const selected = state.selectedId === id;
       const label = this.labels.get(id);
       if (label) {
-        label.button.textContent = quizHidden ? '' : STRUCTURES.find(item => item.id === id)?.name[state.lang] ?? '';
+        label.button.textContent = quizHidden ? '' : `${binocular ? (state.selectedEye === 'left' ? 'OS · ' : 'OD · ') : ''}${STRUCTURES.find(item => item.id === id)?.name[state.lang] ?? ''}`;
         label.button.style.borderColor = selected ? '#c58b3f' : 'rgba(122,148,150,.28)';
         label.button.style.fontWeight = selected ? '700' : '500';
       }
@@ -224,22 +243,41 @@ export class EyeEngine {
       setOpticalGeometry(this.eye.root, { pupilRadius, accommodation });
       this.opticalGeometryKey = opticalGeometryKey;
     }
+    if (binocular && state.disease && this.leftEye) {
+      const inputs = binocularInputs(state.disease, !!state.diseaseNormal);
+      const target = new THREE.Vector3(0, 0, state.disease.id === 'strabismus' && state.disease.targetDistance === 'near' ? 4 : 8);
+      for (const [side, eye] of [['right', this.eye], ['left', this.leftEye]] as const) {
+        orientEye(eye.root, side, target, inputs[side].deviation);
+        setPosteriorStretch(eye.root, inputs[side].myopia ? 1.22 / 0.914 : 1);
+      }
+      this.posteriorScale = inputs.right.myopia ? 1.22 / 0.914 : 1;
+    }
     this.eye.root.updateMatrixWorld(true);
+    this.updateDiseaseEffects();
     this.updateNeural();
     this.capKey = '';
-    if (sceneChanged && state.camera) this.rig.restore(state.camera);
-    else if (sceneChanged || state.view !== previous?.view || state.explode !== previous?.explode || showingOptics !== (previous?.mode === 'optics' || !!previous?.showOptics)) this.setView(state.view);
+    const returningContext = state.mode === 'disease' && state.disease?.id === 'cataract' && state.disease.view === 'context'
+      && previous?.disease?.id === 'cataract' && previous.disease.view === 'lens-detail' && (state.disease.contextCamera ?? this.lensContextCamera);
+    if (returningContext) this.rig.restore(returningContext);
+    else if (sceneChanged && state.camera) this.rig.restore(state.camera);
+    else if (state.mode === 'disease' && state.disease?.id === 'cataract' && state.disease.view === 'lens-detail' && state.view === previous?.view && previous.disease?.id === 'cataract' && previous.disease.view !== 'lens-detail') this.focus('lens');
+    else if (sceneChanged || state.view !== previous?.view || (state.mode === 'disease' && state.disease?.id === 'cataract' && previous?.disease?.id === 'cataract' && state.disease.view !== previous.disease.view) || state.explode !== previous?.explode || showingOptics !== (previous?.mode === 'optics' || !!previous?.showOptics)) this.setView(state.view);
     this.invalidate();
   }
+
+  private eyes() { return this.leftEye ? [this.eye, this.leftEye] : [this.eye]; }
+  private activeEye() { return this.state?.selectedEye === 'left' && this.leftEye ? this.leftEye : this.eye; }
 
   private updateMaterials() {
     const state = this.state;
     if (!state) return;
     const enclosed = !state.clip.enabled && !state.isolateId && state.explode === 0 && state.layers.sclera === 'on'
       && state.layers.choroid === 'on' && state.layers.retina === 'on';
-    for (const [id, part] of this.eye.parts) {
-      const selected = state.selectedId === id && state.layers[id] === 'on';
-      const hovered = state.mode !== 'quiz' && this.hoveredId === id && state.layers[id] === 'on';
+    for (const eye of this.eyes()) for (const [id, part] of eye.parts) {
+      const side = eye === this.eye ? 'right' : 'left';
+      const selectedEye = !this.leftEye || side === (state.selectedEye ?? 'right');
+      const selected = !(state.mode === 'disease' && state.disease?.step === 3 && !state.quizRevealed) && selectedEye && state.selectedId === id && state.layers[id] === 'on';
+      const hovered = state.mode !== 'quiz' && !(state.mode === 'disease' && state.disease?.step === 3 && !state.quizRevealed) && (!this.leftEye || side === this.hoveredSide) && this.hoveredId === id && state.layers[id] === 'on';
       const highlight = selected ? 0.48 : hovered ? 0.18 : 0;
       const accent = selected ? SELECTED_COLOR : HOVER_COLOR;
       const outlineSpace = id === 'anterior-chamber' || id === 'posterior-chamber' || (id === 'vitreous' && state.presetId === 'chambers');
@@ -264,12 +302,14 @@ export class EyeEngine {
           // shortcut: approximate occlusion inside a closed globe; photometric rendering needs tissue-aware shadows.
           if (enclosed && !selected && ['lens', 'anterior-chamber', 'posterior-chamber', 'vitreous'].includes(id)) material.opacity *= 0.18;
           const transparent = material.opacity < 0.999;
-          const clipped = state.clip.enabled && object !== contour;
+          const clipped = state.clip.enabled && !this.leftEye && object !== contour;
           if (material.transparent !== transparent || material.clippingPlanes?.length !== (clipped ? 1 : 0)) material.needsUpdate = true;
           material.transparent = transparent;
           material.depthWrite = !transparent;
           material.clippingPlanes = clipped ? this.section.planes : [];
           if (material instanceof THREE.MeshPhysicalMaterial) {
+            material.roughness = material.userData.baseRoughness ?? material.roughness;
+            material.clearcoat = material.userData.baseClearcoat ?? material.clearcoat;
             material.emissive.copy(accent);
             material.emissiveIntensity = selected ? 0.38 : hovered ? 0.12 : 0;
           }
@@ -280,20 +320,42 @@ export class EyeEngine {
           }
         }
       });
-      const cap = this.caps.get(id);
+      const cap = eye === this.eye ? this.caps.get(id) : undefined;
       if (cap) cap.material.color.set(STRUCTURES.find(item => item.id === id)!.color).lerp(accent, highlight);
+    }
+    if (state.mode === 'disease' && state.disease) {
+      const normal = !!state.diseaseNormal || state.disease.step === 0;
+      if (state.disease.id === 'cataract') applyLensClouding(this.eye, normal ? 0 : state.disease.opacity);
+      if (this.leftEye) {
+        const inputs = binocularInputs(state.disease, normal);
+        applyLensClouding(this.eye, inputs.right.opacity); applyLensClouding(this.leftEye, inputs.left.opacity);
+      }
+      const quizHidden = state.disease.step === 3 && !state.quizRevealed;
+      if (state.disease.id === 'cataract' || this.leftEye) for (const eye of this.eyes()) {
+        const side = eye === this.eye ? 'right' : 'left';
+        const selected = !quizHidden && state.selectedId === 'lens' && (!this.leftEye || side === state.selectedEye);
+        const hovered = !quizHidden && this.hoveredId === 'lens' && (!this.leftEye || side === this.hoveredSide);
+        if (!selected && !hovered) continue;
+        eye.parts.get('lens')!.group.traverse(object => {
+          if (!(object instanceof THREE.Mesh) || !(object.material instanceof THREE.MeshPhysicalMaterial)) return;
+          const accent = selected ? SELECTED_COLOR : HOVER_COLOR;
+          object.material.color.lerp(accent, selected ? 0.12 : 0.04);
+          object.material.emissive.copy(accent); object.material.emissiveIntensity = selected ? 0.12 : 0.04;
+        });
+      }
     }
   }
 
   focus(id: StructureId) {
     if (this.state?.mode === 'quiz') return;
-    const part = this.eye.parts.get(id);
+    const part = this.activeEye().parts.get(id);
     if (!part || !part.group.visible) return;
     const bounds = this.boundsFor(part);
     const sphere = bounds.getBoundingSphere(new THREE.Sphere());
     const fundus = ['macula', 'fovea', 'optic-disc', 'retinal-vessels', 'retina'].includes(id);
     const direction = fundus ? new THREE.Vector3(0, 0, 1) : id === 'optic-nerve' ? new THREE.Vector3(0, 0, -1) : undefined;
-    this.rig.focus(sphere.center, Math.max(0.06, sphere.radius / 0.34), direction);
+    const lensDetail = id === 'lens' && this.state?.mode === 'disease' && this.state.disease?.id === 'cataract' && this.state.disease.view === 'lens-detail';
+    this.rig.focus(sphere.center, Math.max(0.06, sphere.radius / (lensDetail ? 0.72 : 0.34)), direction?.applyQuaternion(this.activeEye().root.quaternion));
     this.notifyCamera();
     this.invalidate();
   }
@@ -302,7 +364,7 @@ export class EyeEngine {
     if (this.state?.mode === 'quiz' || this.disposed) return;
     const bounds = new THREE.Box3();
     for (const id of new Set(ids)) {
-      const part = this.eye.parts.get(id);
+      const part = this.activeEye().parts.get(id);
       if (part?.group.visible) bounds.union(this.boundsFor(part));
     }
     if (bounds.isEmpty()) return;
@@ -314,8 +376,8 @@ export class EyeEngine {
   }
 
   isStructureVisible(id: StructureId, selectTarget = false) {
-    const part = this.eye.parts.get(id);
-    return !!(part && this.state && visibleSurface(part, this.eye.parts, this.state, this.camera, this.posteriorScale, selectTarget));
+    const part = this.activeEye().parts.get(id);
+    return !!(part && this.state && visibleSurface(part, this.activeEye().parts, this.state, this.camera, this.activeEye().root.userData.posteriorScale ?? 1, selectTarget));
   }
 
   private boundsFor(part: EyePart) {
@@ -332,7 +394,15 @@ export class EyeEngine {
 
   setView(view: ViewPreset) {
     const optical = this.state?.mode === 'optics' || this.state?.showOptics;
-    if (optical) {
+    if (this.state?.mode === 'disease' && this.state.disease?.id === 'cataract' && this.state.disease.view === 'lens-detail') {
+      const sphere = this.boundsFor(this.eye.parts.get('lens')!).getBoundingSphere(new THREE.Sphere());
+      this.rig.preset(view, sphere.radius / 0.72, sphere.center);
+    } else if (this.leftEye) {
+      const bounds = new THREE.Box3().setFromObject(this.eye.root).union(new THREE.Box3().setFromObject(this.leftEye.root));
+      if (this.diseaseEffects) bounds.union(new THREE.Box3().setFromObject(this.diseaseEffects));
+      const sphere = bounds.getBoundingSphere(new THREE.Sphere());
+      this.rig.preset(view, sphere.radius, sphere.center);
+    } else if (optical) {
       const bounds = new THREE.Box3().setFromObject(this.eye.root);
       bounds.expandByPoint(new THREE.Vector3(0, 0, 4));
       bounds.expandByPoint(new THREE.Vector3(0, 0, -1.77));
@@ -438,6 +508,66 @@ export class EyeEngine {
     }
   }
 
+  private updateDiseaseEffects() {
+    const state = this.state;
+    const draft = state?.mode === 'disease' ? state.disease : null;
+    const key = JSON.stringify([draft, state?.diseaseNormal]);
+    if (key === this.diseaseKey) return;
+    this.diseaseKey = key;
+    if (this.diseaseEffects) { this.scene.remove(this.diseaseEffects); this.disposeGroup(this.diseaseEffects); this.diseaseEffects = null; }
+    if (!draft) return;
+    const effects = new THREE.Group(); effects.name = 'disease-effects';
+    if (draft.id === 'glaucoma') {
+      const appearance = glaucomaAppearance(draft, !!state?.diseaseNormal);
+      if (draft.view === 'outflow') effects.add(createAqueousFlow(appearance.restricted));
+      if (draft.view === 'nerve') effects.add(createNerveDamage(appearance.damage));
+    }
+    if (this.leftEye) {
+      const distance = draft.id === 'strabismus' && draft.targetDistance === 'near' ? 4 : 8;
+      const target = new THREE.Vector3(0, 0, distance);
+      if (draft.id === 'amblyopia' && draft.causeCase === 'anisometropia' && !state?.diseaseNormal && draft.step > 0) {
+        const corrected = draft.caseDrafts.anisometropia.inputImproved;
+        const trace = traceOptics(opticsInputForPreset(corrected ? 'corrected' : 'myopia'));
+        for (const ray of trace.rays.filter(ray => !ray.blocked)) {
+          const points = ray.points.filter(([, , z]) => z <= trace.glassesZ).map(([x, y, z]) => this.eye.root.localToWorld(new THREE.Vector3(y, x, z)));
+          const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineBasicMaterial({ color: '#c9932e', transparent: true, opacity: 0.7, depthTest: false }));
+          line.name = 'amblyopia-input-ray'; line.renderOrder = 14; effects.add(line);
+        }
+        if (corrected) {
+          const lens = new THREE.Mesh(new THREE.TorusGeometry(0.31, 0.016, 8, 48), new THREE.MeshBasicMaterial({ color: '#247c95', depthTest: false }));
+          lens.name = 'input-correction-lens'; lens.position.copy(this.eye.root.localToWorld(new THREE.Vector3(0, 0, trace.glassesZ))); lens.quaternion.copy(this.eye.root.quaternion); lens.renderOrder = 15; effects.add(lens);
+        }
+      }
+      const marker = new THREE.Mesh(new THREE.OctahedronGeometry(0.10), new THREE.MeshBasicMaterial({ color: '#94712d', depthTest: false }));
+      marker.name = 'fixation-target'; marker.position.copy(target); marker.renderOrder = 15; effects.add(marker);
+      if (draft.id !== 'strabismus' || draft.showAxes) for (const [i, eye] of this.eyes().entries()) {
+        const origin = eye.root.position.clone();
+        const direction = new THREE.Vector3(0, 0, 1).applyQuaternion(eye.root.quaternion);
+        const end = origin.clone().addScaledVector(direction, (distance - origin.z) / direction.z);
+        const ray = new THREE.Line(new THREE.BufferGeometry().setFromPoints([eye.root.localToWorld(new THREE.Vector3(0, 0, 1.1)), end]), new THREE.LineDashedMaterial({ color: i === 0 ? '#2179a1' : '#a1677c', dashSize: 0.12, gapSize: 0.06, depthTest: false }));
+        ray.name = i === 0 ? 'right-gaze-axis' : 'left-gaze-axis'; ray.computeLineDistances(); ray.renderOrder = 14; effects.add(ray);
+        if (end.distanceTo(target) > 0.03) {
+          const miss = new THREE.Mesh(new THREE.TorusGeometry(0.11, 0.014, 5, 32), new THREE.MeshBasicMaterial({ color: '#b05055', depthTest: false }));
+          miss.name = 'gaze-miss'; miss.position.copy(end); miss.renderOrder = 15; effects.add(miss);
+        }
+      }
+    }
+    this.diseaseEffects = effects; this.scene.add(effects);
+  }
+
+  private animateAqueous(dt: number) {
+    const draft = this.state?.mode === 'disease' ? this.state.disease : null;
+    const flow = this.diseaseEffects?.getObjectByName('aqueous-flow');
+    const playing = draft?.id === 'glaucoma' && draft.flowPlaying && !!flow && !this.media.matches;
+    if (playing) this.flowPhase += dt * (glaucomaAppearance(draft, !!this.state?.diseaseNormal).restricted ? 0.35 : 0.8);
+    flow?.children.forEach((arrow, i) => arrow.traverse(object => {
+      if (object instanceof THREE.Mesh || object instanceof THREE.Line) for (const material of this.materials(object)) {
+        material.opacity = playing ? 0.55 + 0.45 * Math.max(0, Math.cos(this.flowPhase * Math.PI * 2 - i * 1.2)) : 1;
+      }
+    }));
+    return !!playing;
+  }
+
   private updateNeural() {
     const step = this.state?.physiology?.kind === 'signal' ? this.state.physiology.step : 0;
     const key = `${step}|${this.posteriorScale}|${this.state?.explode}|${this.eye.root.matrixWorld.elements.join(',')}`;
@@ -477,11 +607,11 @@ export class EyeEngine {
   private updateSections() {
     if (!this.state) return;
     this.section.update(this.state.clip, this.camera);
-    this.section.guide.visible = this.state.clip.enabled && this.state.mode !== 'quiz';
+    this.section.guide.visible = this.state.clip.enabled && !this.leftEye && this.state.mode !== 'quiz';
     const key = `${this.state.clip.enabled}|${this.state.clip.axis}|${this.state.clip.offset}|${this.state.explode}|${this.posteriorScale}`;
     for (const [id, cap] of this.caps) {
       const part = this.eye.parts.get(id)!;
-      cap.visible = this.state.clip.enabled && this.state.layers[id] === 'on';
+      cap.visible = this.state.clip.enabled && !this.leftEye && this.state.layers[id] === 'on';
       if (key !== this.capKey) {
         const axis = SECTION_AXES[this.state.clip.axis];
         const offset = this.state.clip.offset - axis.dot(part.group.position);
@@ -514,7 +644,7 @@ export class EyeEngine {
   private renderLabels() {
     const state = this.state;
     if (!state) return;
-    const enabled = state.mode !== 'quiz';
+    const enabled = state.mode !== 'quiz' && !(state.mode === 'disease' && state.disease?.step === 3 && !state.quizRevealed);
     const references = state.selectedId && FUNDUS_REFERENCES.includes(state.selectedId) ? FUNDUS_REFERENCES : [];
     const related = enabled ? state.relatedIds ?? [] : [];
     const priority = (id: StructureId) => id === state.selectedId ? 3 : related.includes(id) ? 2 : references.includes(id) ? 1 : 0;
@@ -525,9 +655,9 @@ export class EyeEngine {
     for (const id of ids) {
       const { button, dot, leader, outline: secondaryOutline } = this.labels.get(id)!;
       button.style.display = dot.style.display = leader.style.display = secondaryOutline.style.display = 'none';
-      const part = this.eye.parts.get(id)!;
+      const part = this.activeEye().parts.get(id)!;
       if (!enabled || (!state.labels && !priority(id))) continue;
-      const world = visibleSurface(part, this.eye.parts, state, this.camera, this.posteriorScale);
+      const world = visibleSurface(part, this.activeEye().parts, state, this.camera, this.activeEye().root.userData.posteriorScale ?? 1);
       if (!world) {
         if (id === state.selectedId) this.locateButton.style.display = 'block';
         continue;
@@ -560,16 +690,20 @@ export class EyeEngine {
       dot.style.display = 'block';
       Object.assign(leader.style, { display: 'block', left: `${x}px`, top: `${y}px`, width: `${Math.hypot(position.x - x, position.y - y)}px`, transform: `rotate(${Math.atan2(position.y - y, position.x - x)}rad)` });
     }
+    if (this.leftEye) for (const [i, eye] of this.eyes().entries()) {
+      const p = eye.root.localToWorld(new THREE.Vector3(0, 1.15, 0)).project(this.camera);
+      Object.assign(this.binocularLabels[i].style, { left: `${(p.x + 1) * this.width / 2}px`, top: `${(1 - p.y) * this.height / 2}px` });
+    }
     this.renderCompass();
   }
 
   private renderCompass() {
     const lang = this.state!.lang;
     this.compass.setAttribute('aria-label', messages.compass[lang]);
-    this.compass.firstElementChild!.textContent = messages.compassTitle[lang];
+    this.compass.firstElementChild!.textContent = this.leftEye ? (this.state?.selectedEye === 'left' ? 'OS' : 'OD') : messages.compassTitle[lang];
     const rotation = this.camera.quaternion.clone().invert();
     ANATOMICAL_AXES.forEach(([name, x, y, z], i) => {
-      const direction = new THREE.Vector3(x, y, z).applyQuaternion(rotation);
+      const direction = new THREE.Vector3(x * (this.leftEye && this.state?.selectedEye === 'left' ? -1 : 1), y, z).applyQuaternion(this.activeEye().root.quaternion).applyQuaternion(rotation);
       const group = this.compass.children[i + 1];
       const endX = 70 + direction.x * 30, endY = 65 - direction.y * 30;
       group.setAttribute('opacity', direction.z < 0 ? '0.55' : '1');
@@ -606,7 +740,7 @@ export class EyeEngine {
 
   private pickStructure(clientX: number, clientY: number): StructureId | null {
     const state = this.state;
-    if (!state || state.mode === 'quiz') return null;
+    if (!state || state.mode === 'quiz' || state.mode === 'disease' && state.disease?.step === 3 && !state.quizRevealed) return null;
     const rect = this.canvas.getBoundingClientRect();
     if (clientX < rect.left || clientY < rect.top || clientX > rect.left + rect.width || clientY > rect.top + rect.height) return null;
     this.camera.updateMatrixWorld();
@@ -614,19 +748,25 @@ export class EyeEngine {
     this.section.update(state.clip, this.camera);
     this.pointer.set((clientX - rect.left) / rect.width * 2 - 1, -(clientY - rect.top) / rect.height * 2 + 1);
     this.raycaster.setFromCamera(this.pointer, this.camera);
-    const candidates = [...this.eye.parts.values()].filter(part => part.group.visible && state.layers[part.id] === 'on');
-    const hits: { id: StructureId; distance: number }[] = [];
-    for (const part of candidates) {
-      const intersection = this.raycaster.intersectObject(part.group, true).find(intersectionSurvives);
-      if (intersection) hits.push({ id: part.id, distance: intersection.distance });
-    }
-    const pupil = this.eye.parts.get('pupil')!;
-    if (pupil.group.visible && state.layers.pupil === 'on') {
-      const center = pupil.anchor.clone().add(pupil.group.position);
-      const hit = this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), -center.z), new THREE.Vector3());
-      if (hit && Math.hypot(hit.x - center.x, hit.y - center.y) < pupil.group.userData.hitRadius && (!state.clip.enabled || this.section.keeps(hit))) hits.push({ id: 'pupil', distance: this.raycaster.ray.origin.distanceTo(hit) });
+    const hits: { id: StructureId; side: EyeSide; distance: number }[] = [];
+    for (const eye of this.eyes()) {
+      eye.root.updateWorldMatrix(true, true);
+      const side: EyeSide = eye === this.eye ? 'right' : 'left';
+      const candidates = [...eye.parts.values()].filter(part => part.group.visible && state.layers[part.id] === 'on');
+      for (const part of candidates) {
+        const intersection = this.raycaster.intersectObject(part.group, true).find(intersectionSurvives);
+        if (intersection) hits.push({ id: part.id, side, distance: intersection.distance });
+      }
+      const pupil = eye.parts.get('pupil')!;
+      if (pupil.group.visible && state.layers.pupil === 'on') {
+        const center = pupil.group.localToWorld(pupil.anchor.clone());
+        const normal = new THREE.Vector3(0, 0, 1).transformDirection(pupil.group.matrixWorld);
+        const hit = this.raycaster.ray.intersectPlane(new THREE.Plane().setFromNormalAndCoplanarPoint(normal, center), new THREE.Vector3());
+        if (hit && hit.distanceTo(center) < pupil.group.userData.hitRadius && (!state.clip.enabled || this.leftEye || this.section.keeps(hit))) hits.push({ id: 'pupil', side, distance: this.raycaster.ray.origin.distanceTo(hit) });
+      }
     }
     hits.sort((a, b) => a.distance - b.distance);
+    this.pickedSide = hits[0]?.side ?? 'right';
     return hits[0]?.id ?? null;
   }
 
@@ -634,8 +774,8 @@ export class EyeEngine {
     const sectionHovered = this.pointerPosition && !this.pointerActive && this.pickSectionFrame(this.pointerPosition.x, this.pointerPosition.y);
     const id = this.pointerPosition && !this.pointerActive
       && !sectionHovered ? this.pickStructure(this.pointerPosition.x, this.pointerPosition.y) : null;
-    if (id !== this.hoveredId) {
-      this.hoveredId = id;
+    if (id !== this.hoveredId || this.pickedSide !== this.hoveredSide) {
+      this.hoveredId = id; this.hoveredSide = this.pickedSide;
       this.updateMaterials();
     }
     this.canvas.style.cursor = this.pointerActive ? 'grabbing' : sectionHovered ? 'move' : id ? 'pointer' : 'grab';
@@ -650,7 +790,7 @@ export class EyeEngine {
   }
 
   private pickSectionFrame(clientX: number, clientY: number) {
-    if (!this.sectionCallbacks || !this.state?.clip.enabled || this.state.mode === 'quiz') return null;
+    if (this.leftEye || !this.sectionCallbacks || !this.state?.clip.enabled || this.state.mode === 'quiz') return null;
     const rect = this.setPointerRay(clientX, clientY);
     this.section.update(this.state.clip);
     this.section.guide.updateMatrixWorld(true);
@@ -758,7 +898,7 @@ export class EyeEngine {
     this.pointerPosition = event.pointerType === 'touch' ? null : new THREE.Vector2(event.clientX, event.clientY);
     if (clicked) {
       const id = this.pickStructure(event.clientX, event.clientY);
-      if (id) this.onSelect(id);
+      if (id) this.onSelect(id, this.pickedSide);
     }
     this.updateHover();
     this.invalidate();
@@ -838,8 +978,9 @@ export class EyeEngine {
     this.updateSections();
     this.updateHover();
     this.renderLabels();
+    const flowing = this.animateAqueous(dt);
     this.renderer.render(this.scene, this.camera);
-    if (this.animator.active || moved) this.invalidate();
+    if (this.animator.active || moved || flowing) this.invalidate();
   };
 
   private disposeGroup(group: THREE.Group) {
@@ -875,6 +1016,8 @@ export class EyeEngine {
     this.canvas.removeEventListener('keydown', this.handleKeyDown);
     this.canvas.removeEventListener('webglcontextrestored', this.invalidate);
     this.eye.dispose();
+    this.leftEye?.dispose();
+    if (this.diseaseEffects) this.disposeGroup(this.diseaseEffects);
     this.disposeGroup(this.rays);
     this.disposeGroup(this.neural);
     this.disposeGroup(this.section.guide);

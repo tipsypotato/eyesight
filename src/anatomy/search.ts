@@ -10,12 +10,15 @@ const aliases = new Map<string, readonly StructureId[]>([
   ['晶体', ['lens']], ['crystalline lens', ['lens']],
   ['黑眼珠', ['iris', 'pupil']],
   ['白内障', ['lens']], ['cataract', ['lens']],
+  ['房角', ['iridocorneal-angle']], ['anterior chamber angle', ['iridocorneal-angle']],
+  ['小梁网', ['trabecular-meshwork']], ['trabecular meshwork', ['trabecular-meshwork']],
   ['青光眼', ['optic-disc', 'optic-nerve']], ['glaucoma', ['optic-disc', 'optic-nerve']],
 ]);
 
 export function searchStructures(query: string): StructureSearchResult {
   const normalized = query.trim().toLowerCase();
-  const ids = aliases.get(normalized);
+  const exact = STRUCTURES.filter(item => [item.id, item.name.zh, item.name.en, item.latin].some(name => name.toLowerCase() === normalized));
+  const ids = aliases.get(normalized) ?? (exact.length ? exact.map(item => item.id) : undefined);
   const group = normalized === '眼底' || normalized === 'fundus' ? 'fundus' : null;
   const items = STRUCTURES.filter(item => group ? item.group === group : ids ? ids.includes(item.id)
     : `${item.name.zh} ${item.name.en} ${item.latin} ${item.id}`.toLowerCase().includes(normalized));

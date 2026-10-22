@@ -2,17 +2,18 @@ import { createStore } from 'zustand/vanilla';
 import { RELATIONSHIPS } from '../anatomy/relationships';
 import { advanceTask, type TaskProgress, type TourAction } from '../modes/tourTasks';
 import { LESSONS } from '../anatomy/data';
-import { SCENE_PRESETS, STRUCTURE_IDS, type ScenePreset, type CameraSnapshot, type Lang, type LayerMode, type Mode, type OpticsExperiment, type OpticsInput, type OpticsPreset, type PhysiologyKind, type SceneState, type StructureId, type ViewPreset } from '../anatomy/types';
+import { SCENE_PRESETS, STRUCTURE_IDS, type ScenePreset, type CameraSnapshot, type EyeSide, type Lang, type LayerMode, type Mode, type OpticsExperiment, type OpticsInput, type OpticsPreset, type PhysiologyKind, type SceneState, type StructureId, type ViewPreset } from '../anatomy/types';
 import { opticsInputForPreset, validateOpticsInput } from '../engine/optics';
 import { PHYSIOLOGY_LENGTHS, physiologyInput } from '../modes/physiology';
 import { createSession, currentQuestion, nextSessionQuestion, revealSessionAnswer, submitSessionAnswer, wrongQuestionIds, type PracticeSession } from '../modes/quiz';
 import { parseProgress, PROGRESS_KEY, type SavedProgress } from './progress';
 import { CONTENT_VERSION, questionsFor, type QuestionContext } from '../content/questions';
+import { createDiseaseDraft, createDiseaseDrafts, isDiseaseId, parseDiseaseDraft, type DiseaseDraft, type DiseaseId, type DiseaseStep } from '../modes/disease';
 
 export const QUIZ_POOL: StructureId[] = ['cornea', 'sclera', 'iris', 'lens', 'retina', 'optic-nerve'];
 const defaultLayers = () => Object.fromEntries(STRUCTURE_IDS.map(id => [id, ['vitreous', 'anterior-chamber', 'posterior-chamber', 'cornea'].includes(id) ? 'ghost' : 'on'])) as Record<StructureId, LayerMode>;
 const initialScene = (): SceneState => ({
-  lang: 'zh', mode: 'explore', selectedId: null, relatedIds: [], layers: defaultLayers(), isolateId: null,
+  lang: 'zh', mode: 'explore', selectedId: null, selectedEye: 'right', disease: null, diseaseNormal: false, relatedIds: [], layers: defaultLayers(), isolateId: null,
   clip: { enabled: true, axis: 'sagittal', offset: 0, keepSide: 'negative' }, presetId: null, explode: 0, labels: false,
   view: 'oblique', opticsPreset: 'normal', opticsInput: opticsInputForPreset('normal'), opticsExperiment: 'baseline', comparison: null, physiology: null, quizRevealed: false, showOptics: false, camera: null, sceneRevision: 0,
 });
@@ -21,6 +22,12 @@ type ObservationScene = Pick<SceneState, 'selectedId' | 'layers' | 'isolateId' |
 const clearedObservation = { focusReturn: null, revealReturn: null, revealPreset: null };
 const clearedRelationship = { relatedIds: [] as StructureId[], relationshipId: null, relationshipReturn: null };
 export interface EyeState extends SceneState {
+  disease: DiseaseDraft | null; diseaseNormal: boolean; selectedEye: EyeSide;
+  diseaseDrafts: Record<DiseaseId, DiseaseDraft>; diseaseComparison: boolean; diseaseReturnMode: Mode;
+  openDisease: (id: DiseaseId, camera?: CameraSnapshot) => void; leaveDisease: (camera?: CameraSnapshot) => void;
+  setDiseaseStep: (step: DiseaseStep, camera?: CameraSnapshot) => void; updateDisease: (patch: Partial<DiseaseDraft>) => void;
+  setDiseaseNormal: (normal: boolean) => void; setDiseaseComparison: (enabled: boolean) => void; resetDisease: () => void;
+  selectEye: (side: EyeSide, id: StructureId | null) => void;
   relationshipId: string | null;
   relationshipReturn: SceneSnapshot | null;
   enterRelationship: (id: string, camera?: CameraSnapshot) => void; exitRelationship: () => void;
@@ -61,8 +68,25 @@ type WorkspaceDraft = Omit<SceneState, 'lang' | 'mode' | 'sceneRevision'> & Pick
 function captureDraft(state: SceneState & Pick<EyeState, 'lessonId' | 'step' | 'quiz' | 'isolationLayers'>, camera = state.camera): WorkspaceDraft {
   const { selectedId, layers, isolateId, clip, explode, labels, view, presetId, opticsPreset, opticsInput, opticsExperiment, comparison, physiology, quizRevealed, showOptics, lessonId, step, quiz } = state;
   return { selectedId, layers: { ...layers }, isolateId, clip: { ...clip }, explode, labels, view, presetId, opticsPreset, opticsInput: { ...opticsInput }, opticsExperiment, quizRevealed, showOptics, lessonId, step, quiz,
+    disease: state.disease ? pauseDisease(state.disease, camera) : null, diseaseNormal: state.diseaseNormal ?? false, selectedEye: state.selectedEye ?? 'right',
     comparison: structuredClone(comparison), physiology: physiology ? structuredClone({ ...physiology, playing: false }) : null,
     isolationLayers: state.isolationLayers ? { ...state.isolationLayers } : null, camera: camera ? structuredClone(camera) : null };
+}
+
+function pauseDisease(disease: DiseaseDraft, camera = disease.camera): DiseaseDraft {
+  return structuredClone({ ...disease, camera: camera ?? null, ...(disease.id === 'glaucoma' ? { flowPlaying: false } : {}) });
+}
+
+function diseaseScene(disease: DiseaseDraft): SceneState {
+  const scene = { ...initialScene(), mode: 'disease' as const, disease, diseaseNormal: disease.step === 0, camera: disease.camera ?? null, selectedEye: disease.selectedEye ?? 'right', selectedId: disease.selectedId ?? null };
+  if (disease.id === 'strabismus' || disease.id === 'amblyopia') return { ...scene, view: 'front', clip: { ...scene.clip, enabled: false } };
+  const nerve = disease.id === 'glaucoma' && disease.view === 'nerve';
+  if (nerve) {
+    const fundus = presetScene('fundus', scene);
+    return { ...scene, ...fundus, selectedId: fundus.selectedId ?? 'optic-disc', camera: disease.camera ?? null };
+  }
+  const layers = { ...scene.layers, sclera: 'ghost', choroid: 'ghost', retina: 'ghost', vitreous: 'off' } as SceneState['layers'];
+  return { ...scene, layers, selectedId: disease.selectedId === undefined ? nerve ? 'optic-disc' : disease.id === 'glaucoma' ? 'trabecular-meshwork' : 'lens' : disease.selectedId, view: nerve ? 'back' : 'oblique' };
 }
 
 function selectionPatch(state: SceneState, id: StructureId, preserveSection = false): Partial<SceneState> {
@@ -100,10 +124,10 @@ function sceneFor(mode: Mode, lessonId: string | null = null, index = 0, quiz: P
   return { ...teachingScene, ...selectionPatch(teachingScene, step.target) };
 }
 
-type SceneSnapshot = ObservationScene & Pick<EyeState, 'isolationLayers' | 'opticsPreset' | 'opticsInput' | 'opticsExperiment' | 'comparison' | 'physiology' | 'focusReturn' | 'revealReturn' | 'revealPreset' | 'relatedIds' | 'relationshipId' | 'relationshipReturn'> & { camera: CameraSnapshot | null };
+type SceneSnapshot = ObservationScene & Pick<EyeState, 'disease' | 'diseaseNormal' | 'diseaseComparison' | 'selectedEye' | 'isolationLayers' | 'opticsPreset' | 'opticsInput' | 'opticsExperiment' | 'comparison' | 'physiology' | 'focusReturn' | 'revealReturn' | 'revealPreset' | 'relatedIds' | 'relationshipId' | 'relationshipReturn'> & { camera: CameraSnapshot | null };
 function captureScene(s: EyeState, camera = s.camera): SceneSnapshot {
   const { selectedId, layers, isolateId, clip, explode, labels, view, presetId, showOptics, isolationLayers, opticsPreset, opticsInput, opticsExperiment, comparison, physiology, focusReturn, revealReturn, revealPreset, relatedIds, relationshipId, relationshipReturn } = s;
-  return structuredClone({ selectedId, layers, isolateId, clip, explode, labels, view, presetId, showOptics, isolationLayers, opticsPreset, opticsInput, opticsExperiment, comparison, physiology, focusReturn, revealReturn, revealPreset, relatedIds, relationshipId, relationshipReturn, camera: camera ?? null });
+  return structuredClone({ selectedId, layers, isolateId, clip, explode, labels, view, presetId, showOptics, isolationLayers, opticsPreset, opticsInput, opticsExperiment, comparison, physiology, focusReturn, revealReturn, revealPreset, relatedIds, relationshipId, relationshipReturn, disease: s.disease, diseaseNormal: s.diseaseNormal, diseaseComparison: s.diseaseComparison, selectedEye: s.selectedEye, camera: camera ?? null });
 }
 function sameScene(a: SceneSnapshot, b: SceneSnapshot) {
   const comparable = ({ camera: _camera, focusReturn: _focus, revealReturn: _reveal, revealPreset: _preset, ...scene }: SceneSnapshot) => scene;
@@ -134,6 +158,7 @@ export function createEyeStore(storage?: StorageLike) {
     const parsed = parseProgress(storage?.getItem(PROGRESS_KEY) ?? null); saved = parsed.value;
     if (parsed.discarded) notice = 'recovered';
   } catch { storageFailed = true; notice = 'unavailable'; }
+  let lastDiseaseId: DiseaseId = saved?.activeDiseaseId ?? 'cataract';
   const sessions = saved?.sessions ?? {}, activeSessions = saved?.activeSessions ?? {};
   let activeQuizId = saved?.activeQuizId ?? null;
   let restoredQuiz = activeQuizId ? sessions[activeQuizId] : null;
@@ -142,11 +167,21 @@ export function createEyeStore(storage?: StorageLike) {
     activeQuizId = restoredQuiz.sessionId; sessions[activeQuizId] = restoredQuiz; activeSessions.structures = activeQuizId;
   }
   for (const [mode, draft] of Object.entries(saved?.drafts ?? {})) {
-    const quiz = mode === 'quiz' ? restoredQuiz : null;
+    const quiz = mode === 'quiz' ? (draft.quizSessionId ? sessions[draft.quizSessionId] : null) ?? restoredQuiz : null;
     drafts.set(mode as Mode, { ...draft, relatedIds: [], quiz, quizRevealed: false, ...(quiz ? questionScene(quiz) : {}) });
   }
   const restoredMode = saved?.mode ?? 'explore';
   const restored = drafts.get(restoredMode) ?? captureDraft({ ...sceneFor(restoredMode, null, 0, restoredMode === 'quiz' ? restoredQuiz : null), lessonId: null, step: 0, quiz: restoredMode === 'quiz' ? restoredQuiz : null, isolationLayers: null });
+  const diseaseDrafts = { ...createDiseaseDrafts(), ...saved?.diseaseDrafts };
+  const restoredDisease = diseaseDrafts[lastDiseaseId];
+  if (restoredMode === 'disease') {
+    restoredQuiz = sessions[activeSessions[restoredDisease.id]] ?? null;
+    if (restoredDisease.step === 3 && !restoredQuiz && questionsFor(restoredDisease.id as QuestionContext).length) {
+      restoredQuiz = createSession(restoredDisease.id, questionsFor(restoredDisease.id as QuestionContext));
+      activeQuizId = restoredQuiz.sessionId; sessions[activeQuizId] = restoredQuiz; activeSessions[restoredDisease.id] = activeQuizId;
+    }
+    Object.assign(restored, diseaseScene(restoredDisease), { quiz: restoredQuiz, quizRevealed: !!(restoredQuiz && currentQuestion(restoredQuiz) && restoredQuiz.answers[currentQuestion(restoredQuiz)!.id]) });
+  }
   let persist: (camera?: CameraSnapshot) => void = () => {};
   const store = createStore<EyeState>((set, get) => {
     const histories = new Map<Mode, SceneSnapshot[]>();
@@ -175,15 +210,88 @@ export function createEyeStore(storage?: StorageLike) {
       set(patch);
     };
     const canPlayPhysiology = (kind: PhysiologyKind) => get().mode === 'optics' || (kind === 'signal' && get().mode === 'tour' && get().lessonId === 'vision');
+    const canPractice = () => get().mode === 'quiz' || get().mode === 'disease' && get().disease?.step === 3;
     const commitQuiz = (quiz: PracticeSession) => set(s => ({ quiz, sessions: { ...s.sessions, [quiz.sessionId]: quiz }, activeSessions: { ...s.activeSessions, [quiz.context]: quiz.sessionId }, activeQuizId: quiz.sessionId }));
+    const saveDisease = (camera?: CameraSnapshot) => {
+      const s = get(); if (s.mode !== 'disease' || !s.disease) return;
+      const disease = pauseDisease({ ...s.disease, selectedEye: s.selectedEye, selectedId: s.selectedId }, camera ?? liveCamera ?? s.camera);
+      set({ disease, diseaseDrafts: { ...s.diseaseDrafts, [disease.id]: disease } });
+    };
     return ({
-    ...initialScene(), ...restored, mode: restoredMode, sessions, activeSessions, activeQuizId, storageNotice: notice, practiceObservation: null, relationshipId: null, relationshipReturn: null, tourTasks: saved?.tourTasks ?? {}, lessonPositions: saved?.lessonPositions ?? {}, ...clearedObservation, undoCount: 0, lang,
+    ...initialScene(), ...restored, disease: restoredMode === 'disease' ? restoredDisease : null, diseaseNormal: restoredMode === 'disease' && restoredDisease.step === 0, selectedEye: restored.selectedEye ?? 'right', diseaseDrafts, diseaseComparison: false, diseaseReturnMode: saved?.diseaseReturnMode ?? 'explore', mode: restoredMode, sessions, activeSessions, activeQuizId, storageNotice: notice, practiceObservation: null, relationshipId: null, relationshipReturn: null, tourTasks: saved?.tourTasks ?? {}, lessonPositions: saved?.lessonPositions ?? {}, ...clearedObservation, undoCount: 0, lang,
+    openDisease: (id, camera) => {
+      if (!isDiseaseId(id)) return;
+      if (get().mode === 'disease' && get().disease?.id === id) return;
+      lastDiseaseId = id;
+      const entering = get().mode !== 'disease';
+      if (entering) {
+        const current = get();
+        const base = current.practiceObservation ?? current.relationshipReturn;
+        drafts.set(current.mode, captureDraft(base ? { ...current, ...base } : current, base ? base.camera : camera ?? liveCamera ?? current.camera));
+        set({ diseaseReturnMode: current.mode });
+      } else saveDisease(camera);
+      finishGesture(); histories.delete('disease');
+      const s = get(), disease = pauseDisease(s.diseaseDrafts[id]);
+      let quiz = s.sessions[s.activeSessions[id]] ?? null;
+      if (disease.step === 3 && !quiz && questionsFor(id as QuestionContext).length) quiz = createSession(id, questionsFor(id as QuestionContext));
+      if (quiz) commitQuiz(quiz);
+      set({ ...diseaseScene(disease), selectedEye: disease.selectedEye ?? 'right', disease, diseaseNormal: disease.step === 0, ...clearedObservation, ...clearedRelationship, diseaseComparison: false, practiceObservation: null, isolationLayers: null, lessonId: null, step: 0, quiz, quizRevealed: !!(quiz && currentQuestion(quiz) && quiz.answers[currentQuestion(quiz)!.id]), lang: s.lang, undoCount: 0, sceneRevision: (s.sceneRevision ?? 0) + 1 });
+    },
+    leaveDisease: camera => { if (get().mode === 'disease') get().setMode(get().diseaseReturnMode === 'disease' ? 'explore' : get().diseaseReturnMode, camera); },
+    setDiseaseStep: (step, camera) => {
+      const s = get(); if (s.mode !== 'disease' || !s.disease || !Number.isInteger(step) || step < 0 || step > 3 || s.disease.step === step) return;
+      clearHistory();
+      const disease = { ...pauseDisease(s.disease, camera ?? liveCamera ?? s.camera), step };
+      set({ disease, diseaseNormal: step === 0, diseaseComparison: false, diseaseDrafts: { ...s.diseaseDrafts, [disease.id]: disease } });
+      if (step === 3) get().startPractice(disease.id as QuestionContext, false, false, camera);
+    },
+    updateDisease: patch => {
+      const s = get(), current = s.disease;
+      if (s.mode !== 'disease' || !current || !patch || typeof patch !== 'object' || Array.isArray(patch)
+        || Object.keys(patch).some(key => !Object.hasOwn(current, key) || ['id', 'step', 'camera', 'contextCamera'].includes(key))) return;
+      const candidate = { ...current, ...patch } as DiseaseDraft;
+      if (candidate.id === 'glaucoma' && current.id === 'glaucoma' && candidate.scenario !== current.scenario) { candidate.outflowRelieved = false; candidate.flowPlaying = false; }
+      if (candidate.id === 'strabismus') {
+        if ('deviationDeg' in patch) candidate.alignment = 'custom';
+        else if ('alignment' in patch && candidate.alignment !== 'custom') candidate.deviationDeg = ({ normal: 0, esotropia: 10, exotropia: -10 } as const)[candidate.alignment];
+      }
+      const parsed = parseDiseaseDraft(candidate); if (!parsed) return;
+      const viewChanged = 'view' in candidate && 'view' in current && candidate.view !== current.view;
+      const disease: DiseaseDraft = { ...parsed, camera: viewChanged ? null : current.camera ?? null };
+      if (disease.id === 'cataract' && current.id === 'cataract') {
+        disease.contextCamera = viewChanged && current.view === 'context'
+          ? structuredClone(liveCamera ?? s.camera ?? current.camera ?? null) : current.contextCamera ?? null;
+        if (viewChanged && disease.view === 'context') disease.camera = disease.contextCamera;
+      }
+      const patchScene = viewChanged ? diseaseScene(disease) : {};
+      changeScene({ ...patchScene, lang: s.lang, disease, diseaseNormal: s.diseaseNormal, diseaseDrafts: { ...s.diseaseDrafts, [disease.id]: disease }, ...(viewChanged ? { sceneRevision: (s.sceneRevision ?? 0) + 1 } : {}) });
+    },
+    setDiseaseNormal: normal => {
+      const s = get(); if (s.mode !== 'disease' || !s.disease || typeof normal !== 'boolean') return;
+      if (!normal && s.disease.step === 0) get().setDiseaseStep(1);
+      set({ diseaseNormal: normal });
+    },
+    setDiseaseComparison: enabled => { if (get().mode === 'disease' && typeof enabled === 'boolean') set({ diseaseComparison: enabled }); },
+    resetDisease: () => {
+      const s = get(); if (s.mode !== 'disease' || !s.disease) return;
+      clearHistory(); const disease = createDiseaseDraft(s.disease.id);
+      set({ ...diseaseScene(disease), disease, diseaseNormal: true, selectedEye: 'right', ...clearedObservation, ...clearedRelationship, diseaseComparison: false, isolationLayers: null, diseaseDrafts: { ...s.diseaseDrafts, [disease.id]: disease }, lang: s.lang, sceneRevision: (s.sceneRevision ?? 0) + 1 });
+    },
+    selectEye: (side, id) => {
+      if (!['right', 'left'].includes(side) || (id !== null && !STRUCTURE_IDS.includes(id)) || get().mode === 'quiz' || get().mode === 'disease' && get().disease?.step === 3 && !get().quizRevealed) return;
+      set(s => {
+        const selection = { selectedEye: side, ...(id === null ? {} : selectionPatch(s, id, true)) };
+        if (s.mode !== 'disease' || !s.disease) return selection;
+        const disease = { ...s.disease, selectedEye: side, selectedId: id ?? s.selectedId };
+        return { ...selection, disease, diseaseDrafts: { ...s.diseaseDrafts, [disease.id]: disease } };
+      });
+    },
     dismissStorageNotice: () => set({ storageNotice: null }),
     flushProgress: camera => persist(camera),
     rememberCamera: camera => { liveCamera = structuredClone(camera); },
     clearLocalProgress: () => {
-      drafts.clear(); histories.clear(); gesture = null; liveCamera = null; storageFailed = false;
-      set(s => ({ ...initialScene(), ...clearedObservation, lang: s.lang, sceneRevision: (s.sceneRevision ?? 0) + 1, isolationLayers: null, undoCount: 0, lessonId: null, step: 0, quiz: null, sessions: {}, activeSessions: {}, activeQuizId: null, tourTasks: {}, lessonPositions: {}, relationshipId: null, relationshipReturn: null, practiceObservation: null, storageNotice: null }));
+      drafts.clear(); histories.clear(); gesture = null; liveCamera = null; storageFailed = false; lastDiseaseId = 'cataract';
+      set(s => ({ ...initialScene(), disease: null, diseaseNormal: false, selectedEye: 'right', diseaseDrafts: createDiseaseDrafts(), diseaseComparison: false, diseaseReturnMode: 'explore', ...clearedObservation, lang: s.lang, sceneRevision: (s.sceneRevision ?? 0) + 1, isolationLayers: null, undoCount: 0, lessonId: null, step: 0, quiz: null, sessions: {}, activeSessions: {}, activeQuizId: null, tourTasks: {}, lessonPositions: {}, relationshipId: null, relationshipReturn: null, practiceObservation: null, storageNotice: null }));
     },
     recordTourAction: event => {
       const s = get(); if (s.mode !== 'tour' || !s.lessonId) return;
@@ -210,11 +318,13 @@ export function createEyeStore(storage?: StorageLike) {
       const entries = history(), previous = entries.at(-1);
       if (!previous) return;
       histories.set(get().mode, entries.slice(0, -1));
-      set(s => ({ ...previous, physiology: previous.physiology ? { ...previous.physiology, playing: false } : null, undoCount: entries.length - 1, sceneRevision: (s.sceneRevision ?? 0) + 1 }));
+      set(s => ({ ...previous, ...(previous.disease ? { disease: pauseDisease(previous.disease), diseaseDrafts: { ...s.diseaseDrafts, [previous.disease.id]: pauseDisease(previous.disease) } } : {}), physiology: previous.physiology ? { ...previous.physiology, playing: false } : null, undoCount: entries.length - 1, sceneRevision: (s.sceneRevision ?? 0) + 1 }));
     },
     setLanguage: lang => { set({ lang }); try { storage?.setItem('eyesight.language', lang); } catch { /* The live session still works. */ } },
     setMode: (mode, camera) => {
       if (mode === get().mode) return;
+      if (mode === 'disease') { get().openDisease(lastDiseaseId, camera); return; }
+      if (get().mode === 'disease') saveDisease(camera);
       const temporaryReturn = get().practiceObservation ?? get().relationshipReturn;
       if (get().relationshipId) get().exitRelationship();
       if (get().practiceObservation) set({ ...get().practiceObservation!, practiceObservation: null });
@@ -223,11 +333,13 @@ export function createEyeStore(storage?: StorageLike) {
       drafts.set(current.mode, captureDraft(current, temporaryReturn ? current.camera : camera));
       let draft = drafts.get(mode);
       if (!draft) {
-        const quiz = mode === 'quiz' ? (current.activeQuizId && current.sessions[current.activeQuizId]) || createSession('structures', questionsFor('structures')) : null;
+        const activeQuiz = current.activeQuizId ? current.sessions[current.activeQuizId] : null;
+        const quiz = mode === 'quiz' ? (activeQuiz && !isDiseaseId(activeQuiz.context) ? activeQuiz : current.sessions[current.activeSessions.structures]) || createSession('structures', questionsFor('structures')) : null;
         if (quiz) commitQuiz(quiz);
         draft = captureDraft({ ...sceneFor(mode, null, 0, quiz), lessonId: null, step: 0, quiz, isolationLayers: null });
       }
-      set({ ...draft, ...clearedObservation, mode, undoCount: histories.get(mode)?.length ?? 0, lang: current.lang, sceneRevision: (current.sceneRevision ?? 0) + 1 });
+      if (mode === 'quiz' && draft.quiz) commitQuiz(draft.quiz);
+      set({ ...draft, disease: null, diseaseNormal: false, selectedEye: 'right', diseaseComparison: false, ...clearedObservation, mode, undoCount: histories.get(mode)?.length ?? 0, lang: current.lang, sceneRevision: (current.sceneRevision ?? 0) + 1 });
     },
     select: (id, preserveSection = false) => {
       if (get().mode === 'quiz') return;
@@ -351,25 +463,32 @@ export function createEyeStore(storage?: StorageLike) {
     },
     startPractice: (context, restart = false, wrongOnly = false, camera) => {
       if (!questionsFor(context).length) return;
-      if (get().mode !== 'quiz') get().setMode('quiz', camera);
       const previous = get().sessions[get().activeSessions[context]];
       let pool = questionsFor(context);
       if (wrongOnly) { const ids = previous ? wrongQuestionIds(previous) : []; pool = pool.filter(q => ids.includes(q.id)); if (!pool.length) return; }
+      if (isDiseaseId(context)) { if (get().mode !== 'disease' || get().disease?.id !== context) get().openDisease(context, camera); }
+      else if (get().mode !== 'quiz') get().setMode('quiz', camera);
       const quiz = previous && !restart && !wrongOnly ? previous : createSession(context, pool);
       clearHistory(); commitQuiz(quiz);
+      if (isDiseaseId(context)) {
+        const s = get(), disease = { ...pauseDisease(s.disease!, camera ?? liveCamera ?? s.camera), step: 3 as const };
+        set({ disease, diseaseDrafts: { ...s.diseaseDrafts, [context]: disease }, quizRevealed: !!(currentQuestion(quiz) && quiz.answers[currentQuestion(quiz)!.id]) });
+        return;
+      }
       set(s => ({ ...sceneFor('quiz', null, 0, quiz), ...clearedObservation, isolationLayers: null, lang: s.lang, quiz, sceneRevision: (s.sceneRevision ?? 0) + 1 }));
     },
     startQuiz: () => { if (get().mode !== 'quiz') get().setMode('quiz'); else get().restartQuiz(); },
-    restartQuiz: () => { if (get().mode === 'quiz') get().startPractice((get().quiz?.context ?? 'structures') as QuestionContext, true); },
+    restartQuiz: () => { if (canPractice()) get().startPractice((get().quiz?.context ?? 'structures') as QuestionContext, true); },
     restartLesson: () => { if (get().mode === 'tour' && get().lessonId) get().goToStep(0); },
-    answerQuiz: id => { const quiz = get().quiz; if (get().mode !== 'quiz' || !quiz) return; const next = submitSessionAnswer(quiz, id); if (next !== quiz) { commitQuiz(next); set({ quizRevealed: true }); } },
-    revealQuiz: () => { const quiz = get().quiz; if (get().mode !== 'quiz' || !quiz) return; const next = revealSessionAnswer(quiz); if (next !== quiz) { commitQuiz(next); set({ quizRevealed: true }); } },
+    answerQuiz: id => { const quiz = get().quiz; if (!canPractice() || !quiz) return; const next = submitSessionAnswer(quiz, id); if (next !== quiz) { commitQuiz(next); set({ quizRevealed: true }); } },
+    revealQuiz: () => { const quiz = get().quiz; if (!canPractice() || !quiz) return; const next = revealSessionAnswer(quiz); if (next !== quiz) { commitQuiz(next); set({ quizRevealed: true }); } },
     advanceQuiz: () => {
       const previous = get().quiz;
-      if (get().mode !== 'quiz' || !previous) return;
+      if (!canPractice() || !previous) return;
       const quiz = nextSessionQuestion(previous);
       if (quiz === previous) return;
       clearHistory(); commitQuiz(quiz);
+      if (get().mode === 'disease') { set({ quizRevealed: !!(currentQuestion(quiz) && quiz.answers[currentQuestion(quiz)!.id]) }); return; }
       set(s => ({ ...sceneFor('quiz', null, 0, quiz), ...clearedObservation, isolationLayers: null, lang: s.lang, quiz, sceneRevision: (s.sceneRevision ?? 0) + 1 }));
     },
     inspectQuizStructure: camera => {
@@ -379,8 +498,8 @@ export function createEyeStore(storage?: StorageLike) {
       get().revealStructure(question.target, get().camera ?? undefined);
     },
     continuePractice: () => { if (get().practiceObservation) get().setMode('quiz'); },
-    resetCamera: () => set(s => ({ view: s.presetId ? presetScene(s.presetId, s).view : sceneFor(s.mode, s.lessonId, s.step, s.quiz).view, camera: null, focusReturn: null, sceneRevision: (s.sceneRevision ?? 0) + 1 })),
-    resetScene: () => { const s = get(); changeScene({ ...sceneFor(s.mode, s.lessonId, s.step, s.quiz), ...clearedObservation, ...clearedRelationship, isolationLayers: null, lang: s.lang, sceneRevision: (s.sceneRevision ?? 0) + 1 }); },
+    resetCamera: () => set(s => ({ view: s.mode === 'disease' && s.disease ? diseaseScene(s.disease).view : s.presetId ? presetScene(s.presetId, s).view : sceneFor(s.mode, s.lessonId, s.step, s.quiz).view, camera: null, focusReturn: null, sceneRevision: (s.sceneRevision ?? 0) + 1 })),
+    resetScene: () => { const s = get(); if (s.mode === 'disease') { s.resetDisease(); return; } changeScene({ ...sceneFor(s.mode, s.lessonId, s.step, s.quiz), ...clearedObservation, ...clearedRelationship, isolationLayers: null, lang: s.lang, sceneRevision: (s.sceneRevision ?? 0) + 1 }); },
     rememberFocus: camera => { if (get().mode !== 'quiz') set({ focusReturn: structuredClone(camera) }); },
     returnFocus: () => {
       const camera = get().focusReturn;
@@ -423,10 +542,11 @@ export function createEyeStore(storage?: StorageLike) {
     const current = captureDraft(base ? { ...s, ...base } : s, base ? base.camera : liveCamera ?? s.camera);
     const allDrafts = Object.fromEntries([...drafts, [s.mode, current]]);
     const sceneDrafts = Object.fromEntries(Object.entries(allDrafts).map(([mode, draft]) => {
-      const { quiz: _quiz, quizRevealed: _revealed, relatedIds: _related, ...scene } = draft;
-      return [mode, scene];
+      const { quiz, quizRevealed: _revealed, relatedIds: _related, disease: _disease, diseaseNormal: _normal, ...scene } = draft;
+      return [mode, { ...scene, ...(quiz && mode === 'quiz' ? { quizSessionId: quiz.sessionId } : {}) }];
     }));
-    const payload: SavedProgress = { schemaVersion: 2, contentVersion: CONTENT_VERSION, mode: s.mode, drafts: sceneDrafts, lessonPositions: s.lessonPositions, tourTasks: s.tourTasks, sessions: s.sessions, activeSessions: s.activeSessions, activeQuizId: s.activeQuizId };
+    const diseaseDrafts = { ...s.diseaseDrafts, ...(s.mode === 'disease' && s.disease ? { [s.disease.id]: pauseDisease({ ...s.disease, selectedEye: s.selectedEye, selectedId: s.selectedId }, liveCamera ?? s.camera) } : {}) };
+    const payload: SavedProgress = { schemaVersion: 2, contentVersion: CONTENT_VERSION, mode: s.mode, drafts: sceneDrafts, lessonPositions: s.lessonPositions, tourTasks: s.tourTasks, sessions: s.sessions, activeSessions: s.activeSessions, activeQuizId: s.activeQuizId, diseaseDrafts, activeDiseaseId: lastDiseaseId, diseaseReturnMode: s.diseaseReturnMode };
     try { storage.setItem(PROGRESS_KEY, JSON.stringify(payload)); }
     catch { storageFailed = true; store.setState({ storageNotice: 'unavailable' }); }
   };

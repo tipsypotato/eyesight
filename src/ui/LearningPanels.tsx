@@ -1,9 +1,11 @@
 import { useState, type RefObject } from 'react';
 import { useStore } from 'zustand';
 import { LESSONS } from '../anatomy/data';
-import type { Lang, Localized } from '../anatomy/types';
+import type { Lang, Localized, StructureId } from '../anatomy/types';
 import { type QuestionContext } from '../content/questions';
 import { messages } from '../content/messages';
+import { DISEASES, DISEASE_SOURCES } from '../content/diseases';
+import { isDiseaseId } from '../modes/disease';
 import type { EyeEngine } from '../engine/EyeEngine';
 import { currentQuestion, sessionScore, wrongQuestionIds, type PracticeSession } from '../modes/quiz';
 import { eyeStore } from '../state/store';
@@ -32,7 +34,7 @@ export const LEARNING_TEXT = {
 } satisfies Record<string, Localized>;
 
 const contexts: QuestionContext[] = ['structures', 'anatomy', 'vision', 'myopia'];
-const contextName = (context: string, lang: Lang) => context === 'structures' ? messages.quiz[lang] : LESSONS.find(lesson => lesson.id === context)?.title[lang] ?? messages.quiz[lang];
+const contextName = (context: string, lang: Lang) => context === 'structures' ? messages.quiz[lang] : isDiseaseId(context) ? DISEASES[context].name[lang] : LESSONS.find(lesson => lesson.id === context)?.title[lang] ?? messages.quiz[lang];
 function Results({ session, lang }: { session: PracticeSession; lang: Lang }) {
   const answers = session.order.map(id => session.answers[id]).filter(Boolean);
   return <dl className="practice-results">
@@ -42,7 +44,7 @@ function Results({ session, lang }: { session: PracticeSession; lang: Lang }) {
   </dl>;
 }
 
-export function PracticePanel({ engine }: { engine: EngineRef }) {
+export function PracticePanel({ engine, onInspect }: { engine: EngineRef; onInspect?: (id: StructureId) => void }) {
   const s = useStore(eyeStore); const quiz = s.quiz; const lang = s.lang;
   const [confirmSession, setConfirmSession] = useState<string | null>(null);
   const context = (quiz?.context ?? 'structures') as QuestionContext;
@@ -53,10 +55,10 @@ export function PracticePanel({ engine }: { engine: EngineRef }) {
   const history = Object.values(s.sessions).filter(session => session.context === context && session.sessionId !== quiz?.sessionId);
   const restart = () => { setConfirmSession(null); s.startPractice(context, true, false, engine.current?.captureCamera()); };
   return <div className="mode-content practice-panel">
-    <label className="practice-topic">{LEARNING_TEXT.topic[lang]}<select value={context} onChange={event => { setConfirmSession(null); s.startPractice(event.target.value as QuestionContext, false, false, engine.current?.captureCamera()); }}>{contexts.map(topic => <option key={topic} value={topic}>{contextName(topic, lang)}</option>)}</select></label>
+    {!isDiseaseId(context) && <label className="practice-topic">{LEARNING_TEXT.topic[lang]}<select value={context} onChange={event => { setConfirmSession(null); s.startPractice(event.target.value as QuestionContext, false, false, engine.current?.captureCamera()); }}>{contexts.map(topic => <option key={topic} value={topic}>{contextName(topic, lang)}</option>)}</select></label>}
     <p className="micro">{LEARNING_TEXT.optional[lang]}</p>
     {quiz && question ? <>
-      {context !== 'structures' && <button className="text-button" onClick={() => s.startLesson(context)}>{LEARNING_TEXT.backLesson[lang]} ←</button>}
+      {context !== 'structures' && !isDiseaseId(context) && <button className="text-button" onClick={() => s.startLesson(context)}>{LEARNING_TEXT.backLesson[lang]} ←</button>}
       <span className="eyebrow">{messages.quiz[lang]} {quiz.index + 1} / {quiz.order.length}</span>
       <div className="progress-track">{quiz.order.map((_, index) => <span key={index} className={index <= quiz.index ? 'done' : ''}/>)}</div>
       <h2>{question.prompt[lang]}</h2><p>{question.kind === 'identify' ? messages.quizBody[lang] : LEARNING_TEXT.answerHint[lang]}</p>
@@ -68,7 +70,8 @@ export function PracticePanel({ engine }: { engine: EngineRef }) {
         <strong>{answer.revealed ? messages.revealed[lang] : answer.correct ? messages.correct[lang] : LEARNING_TEXT.incorrectCount[lang]}</strong>
         <h3>{LEARNING_TEXT.correctExplanation[lang]}</h3><p>{correct.feedback[lang]}</p>
         {chosen && !answer.correct && <><h3>{LEARNING_TEXT.choiceExplanation[lang]}</h3><p>{chosen.feedback[lang]}</p></>}
-        {question.target && <button onClick={() => s.inspectQuizStructure(engine.current?.captureCamera())}>{LEARNING_TEXT.inspect[lang]} ↗</button>}
+        {isDiseaseId(context) && <p className="micro practice-sources">{messages.sources[lang]}: {question.sources.map(id => { const source = DISEASE_SOURCES[id as keyof typeof DISEASE_SOURCES]; return source ? <a key={id} href={source.url} target="_blank" rel="noreferrer">{source.title}</a> : id; })}</p>}
+        {question.target && <button onClick={() => onInspect && question.target ? onInspect(question.target) : s.inspectQuizStructure(engine.current?.captureCamera())}>{LEARNING_TEXT.inspect[lang]} ↗</button>}
       </div>}
       {confirmSession === quiz.sessionId ? <div className="practice-restart" role="group" aria-label={LEARNING_TEXT.newRound[lang]}><p>{LEARNING_TEXT.restartPrompt[lang]}</p><button onClick={restart}>{LEARNING_TEXT.confirmRestart[lang]}</button><button onClick={() => setConfirmSession(null)}>{LEARNING_TEXT.cancel[lang]}</button></div> : <button className="text-button" onClick={() => setConfirmSession(quiz.sessionId)}>{LEARNING_TEXT.newRound[lang]}</button>}
     </> : quiz ? <div className="quiz-result"><span className="eyebrow">{messages.quizComplete[lang]}</span><h2>{contextName(context, lang)}</h2><Results session={quiz} lang={lang}/></div> : null}
@@ -88,7 +91,7 @@ export function PracticeActions({ engine }: { engine: EngineRef }) {
   return <div className="practice-actions">
     <button disabled={!wrong.length} onClick={() => s.startPractice(context, false, true, engine.current?.captureCamera())}>{LEARNING_TEXT.reviewWrong[lang]} ({wrong.length})</button>
     <button className="primary" onClick={() => s.startPractice(context, true, false, engine.current?.captureCamera())}>{messages.retry[lang]} ↻</button>
-    {context !== 'structures' && <button onClick={() => s.startLesson(context)}>{LEARNING_TEXT.backLesson[lang]}</button>}
-    <button onClick={() => s.setMode('explore', engine.current?.captureCamera())}>{messages.backExplore[lang]}</button>
+    {context !== 'structures' && !isDiseaseId(context) && <button onClick={() => s.startLesson(context)}>{LEARNING_TEXT.backLesson[lang]}</button>}
+    {!isDiseaseId(context) && <button onClick={() => s.setMode('explore', engine.current?.captureCamera())}>{messages.backExplore[lang]}</button>}
   </div>;
 }

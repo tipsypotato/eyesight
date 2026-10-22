@@ -8,6 +8,8 @@ const grossAnatomy = { title: 'Webvision · Gross Anatomy of the Eye', url: 'htt
 const retinalAnatomy = { title: 'Webvision · Simple Anatomy of the Retina', url: 'https://www.webvision.pitt.edu/book/part-i-foundations/simple-anatomy-of-the-retina/' };
 const neuroAnatomy = { title: 'UTHealth · Gross Anatomy of the Eye', url: 'https://nba.uth.tmc.edu/neuroanatomy/L8/Lab08p01_index.html' };
 
+const aqueousAnatomy = { title: 'NCBI Webvision · What is glaucoma? · Anterior chamber angle', url: 'https://www.ncbi.nlm.nih.gov/books/NBK543075/figure/diseases_glaucoma.F7A/' };
+
 export const GROUPS: { id: GroupId; name: Localized }[] = [
   { id: 'wall', name: { zh: '眼球壁', en: 'Eye wall' } },
   { id: 'front', name: { zh: '前段结构', en: 'Anterior structures' } },
@@ -87,6 +89,22 @@ export const STRUCTURES: Structure[] = [
     position: { zh: '虹膜后面与晶状体、悬韧带之间，外周邻近睫状体。', en: 'Between the back of the iris and the lens and zonules, bordered peripherally by the ciliary body.' },
     fact: { zh: '后房仍位于眼球前段，并非眼球后部的大腔隙。', en: 'Despite its name, the posterior chamber belongs to the anterior segment, not the large cavity at the back of the eye.' },
     sources: [grossAnatomy, histology],
+  },
+  {
+    id: 'iridocorneal-angle', name: { zh: '房角', en: 'Iridocorneal angle' }, latin: 'Angulus iridocornealis', group: 'front', color: '#70b9b3', kind: 'region',
+    summary: { zh: '周边角膜与虹膜之间的前房区域，并非一块独立的厚组织。', en: 'The peripheral anterior chamber region between the cornea and iris, not a separate thick tissue.' },
+    function: { zh: '容纳小梁网等房水流出相关结构。', en: 'Contains structures involved in aqueous outflow, including the trabecular meshwork.' },
+    position: { zh: '前房周边，靠近角膜与巩膜交界处。', en: 'At the edge of the anterior chamber, near the junction of the cornea and sclera.' },
+    fact: { zh: '本模型用薄环标记区域，不表示真实组织厚度。', en: 'A thin ring marks this region in the model; it does not represent tissue thickness.' },
+    sources: [aqueousAnatomy],
+  },
+  {
+    id: 'trabecular-meshwork', name: { zh: '小梁网', en: 'Trabecular meshwork' }, latin: 'Reticulum trabeculare', group: 'front', color: '#47988e', kind: 'tissue',
+    summary: { zh: '位于房角的网状组织，是房水常规流出通路的一部分。', en: 'Mesh-like tissue at the anterior chamber angle, forming part of the conventional aqueous outflow pathway.' },
+    function: { zh: '房水经小梁网流向 Schlemm 管，再进入下游引流通路。', en: 'Aqueous humor passes through it toward Schlemm’s canal and downstream drainage channels.' },
+    position: { zh: '前房周边的房角处，环绕角膜内缘附近。', en: 'At the peripheral anterior chamber angle, around the inner corneal margin.' },
+    fact: { zh: '这里仅示意小梁网通路；房水还有其他流出途径。', en: 'Only the trabecular route is illustrated here; aqueous humor also has other outflow pathways.' },
+    sources: [aqueousAnatomy, grossAnatomy],
   },
   {
     id: 'vitreous', name: { zh: '玻璃体', en: 'Vitreous body' }, latin: 'Corpus vitreum', group: 'inside', color: '#b6cbd0', kind: 'tissue',

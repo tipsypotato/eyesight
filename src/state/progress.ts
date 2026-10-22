@@ -5,19 +5,21 @@ import { validateOpticsInput } from '../engine/optics';
 import { PHYSIOLOGY_LENGTHS, physiologyInput } from '../modes/physiology';
 import { isSupportedContentVersion, restoreSession, type PracticeSession } from '../modes/quiz';
 import { TOUR_TASKS, type TaskProgress } from '../modes/tourTasks';
+import { isDiseaseId, parseDiseaseDraft, type DiseaseDraft, type DiseaseId } from '../modes/disease';
 
 export const PROGRESS_KEY = 'eyesight.progress.v2';
 export type PersistedDraft = Pick<SceneState, 'selectedId' | 'layers' | 'isolateId' | 'clip' | 'presetId' | 'explode' | 'labels' | 'view' | 'opticsPreset' | 'opticsInput' | 'opticsExperiment' | 'comparison' | 'physiology' | 'showOptics' | 'camera'> & {
-  isolationLayers: SceneState['layers'] | null; lessonId: string | null; step: number;
+  isolationLayers: SceneState['layers'] | null; lessonId: string | null; step: number; selectedEye?: SceneState['selectedEye']; quizSessionId?: string;
 };
 export type SavedProgress = {
   schemaVersion: 2; contentVersion: string; mode: Mode;
   drafts: Partial<Record<Mode, PersistedDraft>>;
   lessonPositions: Record<string, number>; tourTasks: Record<string, TaskProgress>;
   sessions: Record<string, PracticeSession>; activeSessions: Record<string, string>; activeQuizId: string | null;
+  diseaseDrafts?: Partial<Record<DiseaseId, DiseaseDraft>>; activeDiseaseId?: DiseaseId | null; diseaseReturnMode?: Mode;
 };
 
-const modes = ['explore', 'optics', 'tour', 'quiz'] as const;
+const modes = ['explore', 'optics', 'tour', 'quiz', 'disease'] as const;
 const experiments = ['baseline', 'free', 'axialIncrement', 'objectDistance', 'accommodation', 'pupil', 'externalLens'] as const;
 const presets = ['normal', 'myopia', 'corrected'] as const;
 const record = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -27,8 +29,9 @@ const integer = (value: unknown, min: number, max: number): value is number => f
 const structureOrNull = (value: unknown): value is SceneState['selectedId'] => value === null || member(value, STRUCTURE_IDS);
 
 function layers(value: unknown): SceneState['layers'] | null {
-  if (!record(value) || !STRUCTURE_IDS.every(id => member(value[id], ['on', 'ghost', 'off']))) return null;
-  return Object.fromEntries(STRUCTURE_IDS.map(id => [id, value[id]])) as SceneState['layers'];
+  const added = ['iridocorneal-angle', 'trabecular-meshwork'];
+  if (!record(value) || !STRUCTURE_IDS.every(id => member(value[id], ['on', 'ghost', 'off']) || added.includes(id) && value[id] === undefined)) return null;
+  return Object.fromEntries(STRUCTURE_IDS.map(id => [id, value[id] ?? 'on'])) as SceneState['layers'];
 }
 
 function optics(value: unknown): OpticsInput | null {
@@ -38,7 +41,7 @@ function optics(value: unknown): OpticsInput | null {
   return { axialIncrement, objectDistance, accommodation, pupil, externalLens };
 }
 
-function camera(value: unknown): CameraSnapshot | null {
+function parseCamera(value: unknown): CameraSnapshot | null {
   const vector = (item: unknown): item is [number, number, number] => Array.isArray(item) && item.length === 3 && item.every(n => finite(n, -1e6, 1e6));
   if (!record(value) || !vector(value.position) || !vector(value.target) || !finite(value.zoom, 1e-6, 1e6)
     || Math.hypot(...value.position.map((n, i) => n - (value.target as number[])[i])) < 1e-8) return null;
@@ -79,7 +82,7 @@ function parseDraft(value: unknown, mode: Mode): PersistedDraft | null {
   if (value.isolationLayers !== null && !isolationLayers) return null;
   const lesson = LESSONS.find(item => item.id === value.lessonId);
   if (value.lessonId !== null && !lesson || !integer(value.step, 0, lesson ? lesson.steps.length - 1 : 0)) return null;
-  const savedCamera = value.camera === null || value.camera === undefined ? null : camera(value.camera);
+  const savedCamera = value.camera === null || value.camera === undefined ? null : parseCamera(value.camera);
   if (value.camera !== null && value.camera !== undefined && !savedCamera) return null;
   let comparison: PersistedDraft['comparison'] = null;
   if (value.comparison !== null) {
@@ -98,6 +101,8 @@ function parseDraft(value: unknown, mode: Mode): PersistedDraft | null {
     explode: value.explode, labels: value.labels, view: value.view, opticsPreset: value.opticsPreset, opticsInput: input, opticsExperiment: value.opticsExperiment,
     comparison, physiology: demo, showOptics: value.showOptics ?? false, camera: savedCamera, isolationLayers,
     lessonId: lesson?.id ?? null, step: value.step,
+    ...(member(value.selectedEye, ['right', 'left']) ? { selectedEye: value.selectedEye } : {}),
+    ...(typeof value.quizSessionId === 'string' ? { quizSessionId: value.quizSessionId } : {}),
   };
 }
 
@@ -127,8 +132,24 @@ export function parseProgress(raw: string | null): { value: SavedProgress | null
   const mode = member(source.mode, modes) ? source.mode : 'explore';
   if (mode !== source.mode) discarded = true;
   const drafts = entries(source.drafts, (key, value) => member(key, modes) ? parseDraft(value, key) : null);
+  const diseaseDrafts = source.diseaseDrafts === undefined ? {} : entries(source.diseaseDrafts, (key, value) => {
+    const parsed = parseDiseaseDraft(value);
+    if (!isDiseaseId(key) || parsed?.id !== key || !record(value)) return null;
+    const camera = value.camera == null ? null : parseCamera(value.camera);
+    if (value.camera != null && !camera) discarded = true;
+    if (parsed.id === 'cataract') {
+      const contextCamera = value.contextCamera == null ? null : parseCamera(value.contextCamera);
+      if (value.contextCamera != null && !contextCamera) discarded = true;
+      return { ...parsed, camera, contextCamera };
+    }
+    return { ...parsed, camera, ...(parsed.id === 'glaucoma' ? { flowPlaying: false } : {}) };
+  });
+  const activeDiseaseId = isDiseaseId(source.activeDiseaseId) ? source.activeDiseaseId : null;
+  const diseaseReturnMode = member(source.diseaseReturnMode, modes) && source.diseaseReturnMode !== 'disease' ? source.diseaseReturnMode : 'explore';
+  if (source.activeDiseaseId != null && activeDiseaseId === null || source.diseaseReturnMode !== undefined && diseaseReturnMode !== source.diseaseReturnMode) discarded = true;
+  const diseases = { diseaseDrafts, activeDiseaseId, diseaseReturnMode };
   if (!isSupportedContentVersion(source.contentVersion)) return {
-    value: { schemaVersion: 2, contentVersion: CONTENT_VERSION, mode, drafts, lessonPositions: {}, tourTasks: {}, sessions: {}, activeSessions: {}, activeQuizId: null },
+    value: { schemaVersion: 2, contentVersion: CONTENT_VERSION, mode, drafts, lessonPositions: {}, tourTasks: {}, sessions: {}, activeSessions: {}, activeQuizId: null, ...diseases },
     discarded: true,
   };
   const lessonPositions = entries(source.lessonPositions, (key, value) => {
@@ -148,5 +169,5 @@ export function parseProgress(raw: string | null): { value: SavedProgress | null
   const activeSessions = entries(source.activeSessions, (context, id) => typeof id === 'string' && Object.hasOwn(sessions, id) && sessions[id].context === context ? id : null);
   const activeQuizId = typeof source.activeQuizId === 'string' && Object.hasOwn(sessions, source.activeQuizId) ? source.activeQuizId : null;
   if (source.activeQuizId !== activeQuizId) discarded = true;
-  return { value: { schemaVersion: 2, contentVersion: CONTENT_VERSION, mode, drafts, lessonPositions, tourTasks, sessions, activeSessions, activeQuizId }, discarded };
+  return { value: { schemaVersion: 2, contentVersion: CONTENT_VERSION, mode, drafts, lessonPositions, tourTasks, sessions, activeSessions, activeQuizId, ...diseases }, discarded };
 }

@@ -46,7 +46,7 @@ export function visibleSurface(part: EyePart, parts: Map<StructureId, EyePart>, 
   };
   const anchor = part.anchor.clone();
   if (anchor.z < 0) anchor.z *= posteriorScale;
-  anchor.add(part.group.position);
+  part.group.localToWorld(anchor);
   if (part.id === 'pupil') {
     ray.set(origin, anchor.clone().sub(origin).normalize());
     return unobstructed(anchor) ? anchor : null;

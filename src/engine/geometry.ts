@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { StructureId } from '../anatomy/types';
+import type { EyeSide, StructureId } from '../anatomy/types';
 import { createIrisTextures } from './irisTexture';
 import { createFundusDetails } from './fundus';
 import { BASE_PUPIL_RADIUS } from './optics';
@@ -17,6 +17,7 @@ const COLORS: Record<StructureId, string> = {
   'ciliary-body': '#b86b61', zonules: '#e9dab2', lens: '#f6d98b',
   'anterior-chamber': '#8ed9e2', 'posterior-chamber': '#a1dbe0', vitreous: '#95cdd5',
   choroid: '#96564e', retina: '#e9ac76', macula: '#c79436', fovea: '#a14a32',
+  'iridocorneal-angle': '#70b9b3', 'trabecular-meshwork': '#47988e',
   'optic-disc': '#f4d79f', 'optic-nerve': '#d9b477', 'retinal-vessels': '#c14f48',
 };
 
@@ -116,6 +117,7 @@ export function createShellSection(outer: number, inner: number, offset: number)
 
 /** Extend the posterior hemisphere while preserving the cornea, lens and limbus. */
 export function setPosteriorStretch(root: THREE.Group, factor: number) {
+  root.userData.posteriorScale = factor;
   const vertex = new THREE.Vector3();
   root.traverse(object => {
     if (!(object instanceof THREE.Mesh || object instanceof THREE.Line) || object.userData.cap) return;
@@ -195,8 +197,8 @@ export function setOpticalGeometry(root: THREE.Group, { pupilRadius, accommodati
   }
 }
 
-/** Procedural adult right eye. +X nasal, +Y superior, +Z anterior; dimensions are schematic. */
-export function buildEye(colors: Partial<Record<StructureId, string>> = {}) {
+/** Procedural adult eye; right-eye +X is nasal, +Y superior, +Z anterior. Left anatomy is reflected. */
+export function buildEye(colors: Partial<Record<StructureId, string>> = {}, side: EyeSide = 'right') {
   const root = new THREE.Group();
   const parts = new Map<StructureId, EyePart>();
   const materials = new Map<StructureId, THREE.MeshPhysicalMaterial>();
@@ -334,6 +336,12 @@ export function buildEye(colors: Partial<Record<StructureId, string>> = {}) {
   mesh('anterior-chamber', new THREE.SphereGeometry(1, 48, 24), [0, 0, 0.815], [0.605, 0.605, 0.12]);
   part('posterior-chamber', [-0.49, 0.24, 0.62], [0, 0, 0.50], 0.13);
   mesh('posterior-chamber', profile([[0.245, 0.625], [0.59, 0.603], [0.615, 0.64], [0.245, 0.64], [0.245, 0.625]]));
+  part('iridocorneal-angle', [-0.65, 0, 0.705], [0, 0, 0.66], 0.48);
+  const angle = mesh('iridocorneal-angle', new THREE.RingGeometry(0.635, 0.69, 96), [0, 0, 0.705]);
+  angle.name = 'angle-region';
+  part('trabecular-meshwork', [-0.67, 0, 0.715], [0, 0, 0.66], 0.82);
+  const trabecular = mesh('trabecular-meshwork', new THREE.TorusGeometry(0.67, 0.012, 6, 96), [0, 0, 0.715]);
+  trabecular.name = 'trabecular-ring';
   part('vitreous', [-0.34, -0.32, -0.28], [0, -0.16, -0.10], 0.055);
   mesh('vitreous', truncatedSphere(0.900, 0.275));
 
@@ -358,6 +366,33 @@ export function buildEye(colors: Partial<Record<StructureId, string>> = {}) {
   }
 
 
+  if (side === 'left') {
+    // Bake the reflection and reverse winding so normals, picking and optical deformation stay valid.
+    root.updateMatrixWorld(true);
+    root.traverse(object => {
+      if (!(object instanceof THREE.Mesh || object instanceof THREE.Line)) return;
+      object.geometry.applyMatrix4(object.matrixWorld);
+      object.geometry.scale(-1, 1, 1);
+      const index = object.geometry.index;
+      if (index) for (let i = 0; i < index.count; i += 3) {
+        const b = index.getX(i + 1); index.setX(i + 1, index.getX(i + 2)); index.setX(i + 2, b);
+      }
+      object.position.set(0, 0, 0); object.quaternion.identity(); object.scale.set(1, 1, 1);
+    });
+    for (const item of parts.values()) { item.anchor.x *= -1; item.explode.x *= -1; }
+  }
+  root.userData.eyeSide = side;
+  root.traverse(object => {
+    object.userData.eyeSide = side;
+    if (!(object instanceof THREE.Mesh || object instanceof THREE.Line)) return;
+    for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
+      if ('color' in material) material.userData.baseColor = (material.color as THREE.Color).clone();
+      if (material instanceof THREE.MeshPhysicalMaterial) {
+        material.userData.baseRoughness = material.roughness;
+        material.userData.baseClearcoat = material.clearcoat;
+      }
+    }
+  });
   root.updateMatrixWorld(true);
   return {
     root, parts,
