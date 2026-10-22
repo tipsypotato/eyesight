@@ -6,11 +6,13 @@
 
 ## 在线演示与发布
 
-发布地址：[eyesight 在线 demo](https://tipsypotato.github.io/eyesight/)（首次上线待验证）。
+访问：[eyesight 在线 demo](https://tipsypotato.github.io/eyesight/)。已于 2026-10-22 完成 GitHub Pages 发布和线上浏览器验证。
 
 推送到 `main` 后，[GitHub Actions](https://github.com/tipsypotato/eyesight/actions/workflows/pages.yml) 使用 Node.js 26 安装锁定依赖、执行测试及类型检查/生产构建，再将 `dist/` 发布到 GitHub Pages；检查失败不会发布新版本。也可在 Actions 中选择 `main` 手动运行。
 
 仓库 Settings → Pages 的 Source 使用 **GitHub Actions**。应用保留相对资源路径以兼容 `/eyesight/`；本地和线上使用同一构建配置。线上记录保存于该站点所在浏览器，与本地预览记录相互独立。部署方式参考 [GitHub Pages 官方文档](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site)。
+
+线上 HTML、JS、CSS、图标均返回 HTTP 200，内容与本地生产构建一致。已在内置 Chromium 验证模型渲染、结构选择、中英文切换、白内障变化示意、刷新恢复及返回探索；本次检查未记录浏览器警告或错误。回滚应用变更时，在 `main` 提交对应的 `git revert` 并推送，检查通过后会自动重新发布。
 
 ## 本地运行
 
