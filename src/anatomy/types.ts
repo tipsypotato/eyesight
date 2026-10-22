@@ -16,6 +16,14 @@ export type KeepSide = 'negative' | 'positive';
 export const SCENE_PRESETS = ['intact', 'wall-cut', 'anterior', 'fundus', 'chambers', 'optical-path'] as const;
 export type ScenePreset = typeof SCENE_PRESETS[number];
 export type OpticsPreset = 'normal' | 'myopia' | 'corrected';
+export type OpticsInput = {
+  axialIncrement: number;
+  objectDistance: 'far' | 'mid' | 'near';
+  accommodation: number;
+  pupil: 'small' | 'medium' | 'large';
+  externalLens: 'off' | 'myopia';
+};
+export type OpticsExperiment = 'baseline' | 'free' | keyof OpticsInput;
 export type CameraSnapshot = {
   position: [number, number, number]; target: [number, number, number]; zoom: number;
   viewOffset?: { fullWidth: number; fullHeight: number; offsetX: number; offsetY: number; width: number; height: number };
@@ -27,7 +35,7 @@ export interface SceneState {
   clip: { enabled: boolean; axis: ClipAxis; offset: number; keepSide: KeepSide };
   presetId: ScenePreset | null;
   explode: number; labels: boolean; view: ViewPreset;
-  opticsPreset: OpticsPreset; quizRevealed: boolean;
+  opticsPreset: OpticsPreset; opticsInput: OpticsInput; opticsExperiment: OpticsExperiment; quizRevealed: boolean;
   showOptics?: boolean;
   camera?: CameraSnapshot | null;
   sceneRevision?: number;

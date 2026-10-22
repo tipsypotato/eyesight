@@ -3,8 +3,8 @@ import { STRUCTURES } from '../anatomy/data';
 import type { SceneState, StructureId, ViewPreset } from '../anatomy/types';
 import { Animator } from './animator';
 import { CameraRig } from './camera';
-import { buildEye, createShellSection, setPosteriorStretch, type EyePart } from './geometry';
-import { computeOptics } from './optics';
+import { buildEye, createShellSection, setOpticalGeometry, setPosteriorStretch, type EyePart } from './geometry';
+import { BASE_PUPIL_RADIUS, traceOptics, type TraceOpticsResult } from './optics';
 import { createSectionContour, intersectionSurvives, SECTION_AXES, SectionTool } from './section';
 import { messages } from '../content/messages';
 import { visibleSurface } from './visibility';
@@ -61,6 +61,8 @@ export class EyeEngine {
   private originalPosition: string;
   private capKey = '';
   private posteriorScale = 1;
+  private opticsResult: TraceOpticsResult | null = null;
+  private opticalGeometryKey = '';
 
   constructor(private host: HTMLElement, private onSelect: (id: StructureId) => void, private onLocate = onSelect, private sectionCallbacks?: SectionCallbacks) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' });
@@ -195,13 +197,23 @@ export class EyeEngine {
       }
     }
     this.updateMaterials();
-    if (!previous || previous.opticsPreset !== state.opticsPreset) this.updateRays();
+    if (!this.opticsResult || previous?.opticsInput !== state.opticsInput) {
+      this.opticsResult = traceOptics(state.opticsInput);
+      this.updateRays(this.opticsResult);
+    }
     const showingOptics = state.mode === 'optics' || !!state.showOptics;
     this.rays.visible = showingOptics;
-    const posteriorScale = showingOptics ? -computeOptics(state.opticsPreset).retinaZ / 0.914 : 1;
+    const posteriorScale = showingOptics ? -this.opticsResult.retinaZ / 0.914 : 1;
     if (posteriorScale !== this.posteriorScale) {
       this.posteriorScale = posteriorScale;
       setPosteriorStretch(this.eye.root, posteriorScale);
+    }
+    const pupilRadius = showingOptics ? this.opticsResult.pupilRadius : BASE_PUPIL_RADIUS;
+    const accommodation = showingOptics ? state.opticsInput.accommodation : 0;
+    const opticalGeometryKey = `${pupilRadius}|${accommodation}`;
+    if (opticalGeometryKey !== this.opticalGeometryKey) {
+      setOpticalGeometry(this.eye.root, { pupilRadius, accommodation });
+      this.opticalGeometryKey = opticalGeometryKey;
     }
     this.eye.root.updateMatrixWorld(true);
     this.capKey = '';
@@ -294,8 +306,14 @@ export class EyeEngine {
 
   setView(view: ViewPreset) {
     const optical = this.state?.mode === 'optics' || this.state?.showOptics;
-    this.rig.preset(view, optical ? 1.9 : 1.38 + (this.state?.explode ?? 0) * 0.60,
-      new THREE.Vector3(0, 0, optical ? 0.35 : -0.08 + (this.state?.explode ?? 0) * 0.3));
+    if (optical) {
+      const bounds = new THREE.Box3().setFromObject(this.eye.root);
+      bounds.expandByPoint(new THREE.Vector3(0, 0, 4));
+      bounds.expandByPoint(new THREE.Vector3(0, 0, -1.77));
+      const sphere = bounds.getBoundingSphere(new THREE.Sphere());
+      this.rig.preset(view, sphere.radius, sphere.center);
+    } else this.rig.preset(view, 1.38 + (this.state?.explode ?? 0) * 0.60,
+      new THREE.Vector3(0, 0, -0.08 + (this.state?.explode ?? 0) * 0.3));
     this.invalidate();
   }
 
@@ -307,27 +325,49 @@ export class EyeEngine {
     return Array.isArray(object.material) ? object.material : [object.material];
   }
 
-  private updateRays() {
+  private updateRays(result: TraceOpticsResult) {
     this.disposeGroup(this.rays);
     this.rays.clear();
-    const result = computeOptics(this.state?.opticsPreset ?? 'normal');
     const rayMaterial = new THREE.LineBasicMaterial({ color: '#e0a02e', transparent: true, opacity: 0.94, depthTest: false });
+    const blockedMaterial = new THREE.LineBasicMaterial({ color: '#687872', transparent: true, opacity: 0.65, depthTest: false });
     for (const ray of result.rays) {
       // Rotate the meridional section about the optical axis so it reads in the sagittal view.
       const points = ray.points.map(([x, y, z]) => new THREE.Vector3(y, x, z));
-      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), rayMaterial);
+      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), ray.blocked ? blockedMaterial : rayMaterial);
+      line.name = 'optical-ray';
       line.renderOrder = 10;
       this.rays.add(line);
     }
-    const focus = new THREE.Mesh(new THREE.SphereGeometry(0.028, 16, 12), new THREE.MeshBasicMaterial({ color: '#dd8b22', depthTest: false }));
-    focus.position.set(0, 0, result.focusZ);
-    focus.renderOrder = 11;
-    this.rays.add(focus);
+    const backLimit = result.retinaZ - 0.55;
+    for (const extension of result.extensions) {
+      const [start, end] = extension.points.map(([x, y, z]) => new THREE.Vector3(y, x, z));
+      if (end.z < backLimit) end.lerpVectors(start, end, (backLimit - start.z) / (end.z - start.z));
+      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints([start, end]), new THREE.LineDashedMaterial({ color: '#b58431', dashSize: 0.04, gapSize: 0.025, depthTest: false }));
+      line.name = 'optical-extension';
+      line.computeLineDistances();
+      line.renderOrder = 10;
+      this.rays.add(line);
+    }
+    if (result.focusKind === 'real' && result.focusZ !== null && Number.isFinite(result.focusZ)
+      && result.focusZ >= backLimit && result.focusZ < result.lensZ) {
+      const focus = new THREE.Mesh(new THREE.SphereGeometry(0.028, 16, 12), new THREE.MeshBasicMaterial({ color: '#214f42', depthTest: false }));
+      focus.name = 'optical-focus';
+      focus.position.set(0, 0, result.focusZ);
+      focus.renderOrder = 11;
+      this.rays.add(focus);
+    }
+    for (const [x, y, z] of result.retinalIntersections) {
+      const point = new THREE.Mesh(new THREE.SphereGeometry(0.016, 10, 8), new THREE.MeshBasicMaterial({ color: '#794599', depthTest: false }));
+      point.name = 'retinal-intersection';
+      point.position.set(y, x, z);
+      point.renderOrder = 12;
+      this.rays.add(point);
+    }
     const retinalPlane = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, -0.32, result.retinaZ), new THREE.Vector3(0, 0.32, result.retinaZ)]), new THREE.LineDashedMaterial({ color: '#c46a50', dashSize: 0.035, gapSize: 0.025, depthTest: false }));
     retinalPlane.computeLineDistances();
     retinalPlane.renderOrder = 10;
     this.rays.add(retinalPlane);
-    if (this.state?.opticsPreset === 'corrected') {
+    if (result.correctionPower !== 0) {
       const lens = new THREE.Mesh(new THREE.TorusGeometry(0.28, 0.012, 8, 64), new THREE.MeshBasicMaterial({ color: '#56a9b0', transparent: true, opacity: 0.85, depthTest: false }));
       lens.position.z = result.glassesZ;
       lens.renderOrder = 10;
@@ -488,7 +528,7 @@ export class EyeEngine {
     if (pupil.group.visible && state.layers.pupil === 'on') {
       const center = pupil.anchor.clone().add(pupil.group.position);
       const hit = this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), -center.z), new THREE.Vector3());
-      if (hit && Math.hypot(hit.x - center.x, hit.y - center.y) < 0.213 && (!state.clip.enabled || this.section.keeps(hit))) hits.push({ id: 'pupil', distance: this.raycaster.ray.origin.distanceTo(hit) });
+      if (hit && Math.hypot(hit.x - center.x, hit.y - center.y) < pupil.group.userData.hitRadius && (!state.clip.enabled || this.section.keeps(hit))) hits.push({ id: 'pupil', distance: this.raycaster.ray.origin.distanceTo(hit) });
     }
     hits.sort((a, b) => a.distance - b.distance);
     return hits[0]?.id ?? null;

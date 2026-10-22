@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Mode } from '../anatomy/types';
 import { messages } from '../content/messages';
+import * as optics from '../engine/optics';
 import { createEyeStore, eyeStore } from '../state/store';
 import App from './App';
 
@@ -122,5 +123,64 @@ describe('responsive workspace markup', () => {
     expect(right).toBeGreaterThan(left);
     expect(html).not.toContain('role="tablist"');
     expect(html.match(/class="viewport"/g)).toHaveLength(1);
+  });
+});
+
+describe('optical parameter presentation', () => {
+  it.each(['normal', 'myopia', 'corrected'] as const)('keeps the causal explanation for the %s benchmark', preset => {
+    store.getState().setMode('optics');
+    store.getState().setOptics(preset);
+    expect(renderApp(false)).toContain(messages[`${preset}Body`].zh);
+  });
+
+  it('exposes only the active variable while explaining the locked baseline', () => {
+    store.getState().setMode('optics');
+    store.setState({ opticsExperiment: 'accommodation', opticsInput: { axialIncrement: 0, objectDistance: 'near', accommodation: 0, pupil: 'medium', externalLens: 'off' } });
+    const html = renderApp(false);
+    const controls = [...html.matchAll(/<(?:input|select)\b[^>]*data-optics-input="([^"]+)"[^>]*>/g)];
+    expect(controls).toHaveLength(5);
+    for (const [tag, key] of controls) expect(tag.includes('disabled=""')).toBe(key !== 'accommodation');
+    expect(html).toContain('正常眼轴、较近物体');
+    expect(html).toContain('当前模型内无有限实焦点');
+    expect(html).not.toContain('平行光经过角膜和晶状体折射，在视网膜处会聚。');
+  });
+
+  it('keeps all free-combination inputs editable and localizes their actual values', () => {
+    store.getState().setMode('optics');
+    store.getState().setLanguage('en');
+    store.setState({ opticsExperiment: 'free', opticsInput: { axialIncrement: 0.6, objectDistance: 'mid', accommodation: 0.45, pupil: 'small', externalLens: 'off' } });
+    const html = renderApp();
+    const controls = [...html.matchAll(/<(?:input|select)\b[^>]*data-optics-input="[^"]+"[^>]*>/g)];
+    expect(controls).toHaveLength(5);
+    expect(controls.every(([tag]) => !tag.includes('disabled=""'))).toBe(true);
+    expect(html).toContain('aria-valuetext="0.60 / 1');
+    expect(html).toContain('aria-valuetext="0.45 / 1');
+    expect(html).toContain('Geometric extension');
+    expect(html).not.toMatch(/(?:NaN|Infinity)/);
+    expect(html.match(/class="viewport"/g)).toHaveLength(1);
+  });
+
+  it('updates the retinal conclusion and distinguishes custom parameters from benchmark presets', () => {
+    store.getState().setMode('optics');
+    store.setState({ opticsExperiment: 'axialIncrement', opticsInput: { axialIncrement: 0.5, objectDistance: 'far', accommodation: 0, pupil: 'medium', externalLens: 'off' } });
+    const html = renderApp(false);
+    expect(html).toContain('焦点位于视网膜前方');
+    const presets = html.slice(html.indexOf('class="preset-list"'), html.indexOf('class="optics-parameters"'));
+    expect(presets).not.toContain('aria-pressed="true"');
+    expect(html).toContain('视网膜交点');
+  });
+
+  it('renders parallel and empty ray results without finite-focus claims or invalid SVG coordinates', () => {
+    store.getState().setMode('optics');
+    store.setState({ opticsExperiment: 'free', opticsInput: { axialIncrement: 0, objectDistance: 'near', accommodation: 0.073595625, pupil: 'medium', externalLens: 'off' } });
+    const parallel = renderApp(false);
+    expect(parallel).toContain('当前模型内无有限实焦点');
+    expect(parallel).not.toMatch(/(?:NaN|Infinity)/);
+    const result = optics.traceOptics(store.getState().opticsInput);
+    vi.spyOn(optics, 'traceOptics').mockReturnValue({ ...result, rays: [], extensions: [], retinalIntersections: [], validRayCount: 0, retinalSpread: null });
+    const empty = renderApp(false);
+    expect(empty).toContain('未得到通过瞳孔的光线样本');
+    expect(empty).not.toContain('焦点落在视网膜上');
+    expect(empty).not.toMatch(/(?:NaN|Infinity)/);
   });
 });

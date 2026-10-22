@@ -76,3 +76,24 @@ button.active:not(.eye-label),button.selected:not(.eye-label),.scene-presets but
   .panel-actions{flex:none;padding:12px 20px max(12px,env(safe-area-inset-bottom));background:var(--paper);border-top:1px solid #75836c;display:flex;flex-direction:column;gap:8px}
   .panel-actions .step-actions{margin:0}.panel-actions button{font-size:12px}
 }
+
+.mode-optics .left-panel>.mode-content{padding:0}
+.optics-parameters{border-top:1px solid var(--line);padding-top:16px}
+.optics-mode,.optics-field label{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;font-size:13px;font-weight:600}
+.optics-parameters select{display:block;min-height:44px;width:100%;min-width:0;max-width:100%;padding:8px;border:1px solid #75836c;border-radius:6px;background:var(--paper);font-size:12px}
+.optics-mode select{margin-top:4px}
+.optics-baseline{padding:10px;border-left:3px solid #61744e;background:#edf2e5;font-size:12px;line-height:1.7}
+.optics-field{padding:12px 0;border-bottom:1px solid var(--line)}
+.optics-field output{font-variant-numeric:tabular-nums;font-weight:400}
+.optics-field input[type=range]{display:block;width:100%;height:44px;margin:0;accent-color:#496837}
+.optics-field select{margin-top:6px}.optics-field .micro{margin:5px 0 0}
+.optics-field.locked p{display:none}.optics-field.locked label{font-weight:400}
+.optics-field :disabled{opacity:.65;cursor:default}
+.optics-conclusion{border-left:3px solid #496837;padding-left:12px}
+.optics-metrics{font-size:12px;margin:16px 0}.optics-metrics>div{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-bottom:1px solid var(--line)}
+.optics-metrics dt{color:var(--muted)}.optics-metrics dd{margin:0;font-variant-numeric:tabular-nums;white-space:nowrap}
+.diagram-legend{flex-wrap:wrap;row-gap:8px}.diagram-legend span{display:inline-flex;align-items:center;gap:5px}
+.diagram-legend .retinal-key{background:#794599;border-radius:50%;width:6px;height:6px}
+.diagram-legend .blocked-key{background:#687872;width:14px;height:2px}
+.diagram-legend .extension-key{background:transparent;border-top:2px dashed #a86c17;width:14px;height:0}
+@media(max-width:899px){.panel-body .optics-parameters{margin-bottom:20px}.panel-body .optics-field{padding:8px 0}.panel-body .optics-field .micro{font-size:12px}}

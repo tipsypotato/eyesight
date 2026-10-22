@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createEyeStore } from './store';
-import { SCENE_PRESETS, STRUCTURE_IDS, type CameraSnapshot, type LayerMode } from '../anatomy/types';
+import { SCENE_PRESETS, STRUCTURE_IDS, type CameraSnapshot, type LayerMode, type OpticsExperiment, type OpticsInput, type OpticsPreset } from '../anatomy/types';
 
 describe('learning state', () => {
   it('keeps a canvas fundus selection in the current section without changing other layers', () => {
@@ -172,6 +172,192 @@ describe('learning state', () => {
     store.getState().advanceQuiz();
     expect(store.getState().quizRevealed).toBe(false);
     expect(store.getState().quiz!.index).toBe(1);
+  });
+});
+
+describe('optics experiments', () => {
+  const normal: OpticsInput = { axialIncrement: 0, objectDistance: 'far', accommodation: 0, pupil: 'medium', externalLens: 'off' };
+  const combined: OpticsInput = { axialIncrement: 0.6, objectDistance: 'mid', accommodation: 0.4, pupil: 'large', externalLens: 'myopia' };
+
+  it.each([
+    ['normal', normal],
+    ['myopia', { ...normal, axialIncrement: 1 }],
+    ['corrected', { ...normal, axialIncrement: 1, externalLens: 'myopia' }],
+  ] as const)('loads the complete %s benchmark after free edits', (preset, input) => {
+    const store = createEyeStore();
+    store.getState().setOpticsExperiment('free');
+    store.getState().setOpticsInput(combined);
+    store.getState().setOptics(preset);
+    expect(store.getState()).toMatchObject({ opticsPreset: preset, opticsExperiment: 'baseline', opticsInput: input });
+    const before = store.getState();
+    store.getState().setOpticsInput({ axialIncrement: 0.2 });
+    expect(store.getState()).toBe(before);
+  });
+
+  it.each([
+    ['axialIncrement', 'normal', normal],
+    ['objectDistance', 'normal', normal],
+    ['accommodation', 'normal', { ...normal, objectDistance: 'near' }],
+    ['pupil', 'normal', normal],
+    ['externalLens', 'myopia', { ...normal, axialIncrement: 1 }],
+  ] as const)('starts %s from its fixed teaching baseline without previous deformation', (experiment, preset, input) => {
+    const store = createEyeStore();
+    store.getState().setOptics('corrected');
+    store.getState().setOpticsExperiment('free');
+    store.getState().setOpticsInput(combined);
+    store.getState().setOpticsExperiment(experiment);
+    expect(store.getState()).toMatchObject({ opticsPreset: preset, opticsExperiment: experiment, opticsInput: input });
+  });
+
+  it.each([
+    ['axialIncrement', { axialIncrement: 0.8 }, { pupil: 'small' }],
+    ['objectDistance', { objectDistance: 'near' }, { accommodation: 1 }],
+    ['accommodation', { accommodation: 1 }, { axialIncrement: 1 }],
+    ['pupil', { pupil: 'small' }, { externalLens: 'myopia' }],
+    ['externalLens', { externalLens: 'myopia' }, { objectDistance: 'near' }],
+  ] as const)('allows only %s changes in a single-variable experiment', (experiment, allowed, locked) => {
+    const store = createEyeStore();
+    store.getState().setOpticsExperiment(experiment);
+    const baseline = store.getState().opticsInput;
+    store.getState().setOpticsInput({ ...allowed, ...locked });
+    expect(store.getState().opticsInput).toBe(baseline);
+    store.getState().setOpticsInput(allowed);
+    expect(store.getState().opticsInput).toEqual({ ...baseline, ...allowed });
+    const changed = store.getState();
+    store.getState().setOpticsInput(locked);
+    expect(store.getState()).toBe(changed);
+  });
+
+  it('keeps the current input when unlocking free combination and restores the selected benchmark', () => {
+    const store = createEyeStore();
+    store.getState().setOpticsExperiment('externalLens');
+    store.getState().setOpticsInput({ externalLens: 'myopia' });
+    const input = store.getState().opticsInput;
+    store.getState().setOpticsExperiment('free');
+    expect(store.getState().opticsInput).toEqual(input);
+    store.getState().setOpticsInput(combined);
+    expect(store.getState().opticsInput).toEqual(combined);
+    store.getState().setOpticsExperiment('baseline');
+    expect(store.getState()).toMatchObject({ opticsPreset: 'myopia', opticsExperiment: 'baseline', opticsInput: { ...normal, axialIncrement: 1 } });
+  });
+
+  it('rejects invalid numeric, enum and unknown input without writes, history or UI exceptions', () => {
+    const store = createEyeStore();
+    store.getState().setOpticsExperiment('free');
+    const before = store.getState();
+    const invalid: unknown[] = [
+      { axialIncrement: NaN }, { axialIncrement: Infinity }, { axialIncrement: -0.1 }, { axialIncrement: 1.01 },
+      { accommodation: NaN }, { accommodation: -Infinity }, { accommodation: -0.1 }, { accommodation: 1.01 },
+      { axialIncrement: '0.5' }, { objectDistance: 'infinity' }, { pupil: 'huge' }, { externalLens: 'on' },
+      { accommodation: undefined }, { extraParameter: 1 }, null,
+    ];
+    for (const patch of invalid) {
+      expect(() => store.getState().setOpticsInput(patch as Partial<OpticsInput>)).not.toThrow();
+      expect(store.getState()).toBe(before);
+    }
+    store.getState().setOptics('invalid' as OpticsPreset);
+    store.getState().setOpticsExperiment('invalid' as OpticsExperiment);
+    expect(store.getState()).toBe(before);
+    store.getState().setOpticsInput({ axialIncrement: 1, accommodation: 1 });
+    store.getState().setOpticsInput({ axialIncrement: 0, accommodation: 0 });
+    expect(store.getState().opticsInput).toEqual(normal);
+  });
+
+  it('preserves independent experiment drafts and the latest language across modes', () => {
+    const store = createEyeStore();
+    store.getState().setOpticsExperiment('pupil');
+    store.getState().setOpticsInput({ pupil: 'small' });
+    store.getState().setMode('optics');
+    expect(store.getState()).toMatchObject({ opticsInput: normal, opticsExperiment: 'baseline' });
+    store.getState().setOpticsExperiment('free');
+    store.getState().setOpticsInput(combined);
+    store.getState().setLanguage('en');
+    store.getState().setMode('explore');
+    expect(store.getState()).toMatchObject({ lang: 'en', opticsExperiment: 'pupil', opticsInput: { ...normal, pupil: 'small' } });
+    store.getState().setMode('optics');
+    expect(store.getState()).toMatchObject({ lang: 'en', opticsExperiment: 'free', opticsInput: combined });
+  });
+
+  it('undoes one continuous parameter gesture and preserves the experiment and latest language', () => {
+    const store = createEyeStore();
+    store.getState().setMode('optics');
+    store.getState().setOpticsExperiment('axialIncrement');
+    const camera: CameraSnapshot = { position: [5, 0, 0], target: [0, 0, 0], zoom: 1.1 };
+    store.getState().beginSceneChange(camera);
+    for (const axialIncrement of [0.2, 0.6, 1]) store.getState().setOpticsInput({ axialIncrement });
+    store.getState().endSceneChange();
+    expect(store.getState().undoCount).toBe(2);
+    store.getState().setLanguage('en');
+    store.getState().undoScene();
+    expect(store.getState()).toMatchObject({ opticsInput: normal, opticsExperiment: 'axialIncrement', camera, lang: 'en', undoCount: 1 });
+    store.getState().undoScene();
+    expect(store.getState()).toMatchObject({ opticsInput: normal, opticsExperiment: 'baseline', lang: 'en', undoCount: 0 });
+  });
+
+  it('does not record unchanged inputs or a parameter gesture returning to its start', () => {
+    const store = createEyeStore();
+    store.getState().setOpticsExperiment('accommodation');
+    const undoCount = store.getState().undoCount;
+    store.getState().setOpticsInput({ accommodation: 0 });
+    store.getState().beginSceneChange();
+    store.getState().setOpticsInput({ accommodation: 1 });
+    store.getState().setOpticsInput({ accommodation: 0 });
+    store.getState().endSceneChange();
+    expect(store.getState().undoCount).toBe(undoCount);
+  });
+
+  it('finishes a parameter gesture on workspace change and restores its own undo history', () => {
+    const store = createEyeStore();
+    store.getState().setMode('optics');
+    store.getState().setOpticsExperiment('axialIncrement');
+    store.getState().beginSceneChange();
+    store.getState().setOpticsInput({ axialIncrement: 0.8 });
+    store.getState().setMode('explore');
+    store.getState().endSceneChange();
+    expect(store.getState()).toMatchObject({ opticsInput: normal, undoCount: 0 });
+    store.getState().setMode('optics');
+    expect(store.getState()).toMatchObject({ opticsInput: { ...normal, axialIncrement: 0.8 }, undoCount: 2 });
+    store.getState().undoScene();
+    expect(store.getState().opticsInput).toEqual(normal);
+  });
+
+  it('resets the active optics scene, permits undo and retains other workspaces', () => {
+    const store = createEyeStore();
+    store.getState().setOpticsExperiment('pupil');
+    store.getState().setOpticsInput({ pupil: 'large' });
+    store.getState().setMode('optics');
+    store.getState().setOptics('corrected');
+    store.getState().setOpticsExperiment('free');
+    store.getState().setOpticsInput(combined);
+    store.getState().setLanguage('en');
+    store.getState().resetCamera();
+    expect(store.getState()).toMatchObject({ opticsExperiment: 'free', opticsInput: combined });
+    store.getState().reset();
+    expect(store.getState()).toMatchObject({ lang: 'en', opticsPreset: 'normal', opticsExperiment: 'baseline', opticsInput: normal });
+    store.getState().undoScene();
+    expect(store.getState()).toMatchObject({ lang: 'en', opticsPreset: 'corrected', opticsExperiment: 'free', opticsInput: combined });
+    store.getState().setMode('explore');
+    expect(store.getState()).toMatchObject({ lang: 'en', opticsExperiment: 'pupil', opticsInput: { ...normal, pupil: 'large' } });
+  });
+
+  it('loads complete tour benchmarks and keeps optical drafts outside the lesson', () => {
+    const store = createEyeStore();
+    store.getState().setMode('optics');
+    store.getState().setOpticsExperiment('free');
+    store.getState().setOpticsInput(combined);
+    store.getState().startLesson('myopia');
+    store.getState().goToStep(1);
+    expect(store.getState()).toMatchObject({ opticsPreset: 'myopia', opticsExperiment: 'baseline', opticsInput: { ...normal, axialIncrement: 1 } });
+    store.getState().setOpticsExperiment('pupil');
+    store.getState().setOpticsInput({ pupil: 'small' });
+    store.getState().resetScene();
+    expect(store.getState()).toMatchObject({ step: 1, opticsExperiment: 'baseline', opticsInput: { ...normal, axialIncrement: 1 } });
+    store.getState().goToStep(2);
+    expect(store.getState()).toMatchObject({ opticsPreset: 'corrected', opticsExperiment: 'baseline', opticsInput: { ...normal, axialIncrement: 1, externalLens: 'myopia' }, undoCount: 0 });
+    store.getState().restartLesson();
+    expect(store.getState()).toMatchObject({ step: 0, opticsPreset: 'normal', opticsExperiment: 'baseline', opticsInput: normal });
+    store.getState().setMode('optics');
+    expect(store.getState()).toMatchObject({ opticsExperiment: 'free', opticsInput: combined });
   });
 });
 

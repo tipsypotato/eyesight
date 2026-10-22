@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { StructureId } from '../anatomy/types';
 import { createIrisTextures } from './irisTexture';
 import { createFundusDetails } from './fundus';
+import { BASE_PUPIL_RADIUS } from './optics';
 
 export interface EyePart {
   id: StructureId;
@@ -82,7 +83,7 @@ function irisSurface() {
   const sectors = 192, rings = 40;
   for (let j = 0; j <= rings; j++) {
     const t = j / rings;
-    const radius = 0.215 + t * 0.435;
+    const radius = BASE_PUPIL_RADIUS + t * (0.65 - BASE_PUPIL_RADIUS);
     for (let i = 0; i <= sectors; i++) {
       const angle = i / sectors * Math.PI * 2;
       const collarDistance = (t - 0.28 - 0.018 * Math.sin(angle * 11)) / 0.07;
@@ -123,6 +124,17 @@ export function setPosteriorStretch(root: THREE.Group, factor: number) {
     if (!geometry.userData.originalPositions) geometry.userData.originalPositions = new Float32Array(position.array);
     const original = geometry.userData.originalPositions as Float32Array;
     object.updateMatrix();
+    // Anterior meshes have their own reversible optical deformation; never replay them here.
+    if (geometry.userData.hasPosteriorVertices === undefined) {
+      geometry.userData.hasPosteriorVertices = false;
+      for (let i = 0; i < position.count; i++) {
+        if (vertex.fromArray(original, i * 3).applyMatrix4(object.matrix).z < 0) {
+          geometry.userData.hasPosteriorVertices = true;
+          break;
+        }
+      }
+    }
+    if (!geometry.userData.hasPosteriorVertices) return;
     const inverse = object.matrix.clone().invert();
     for (let i = 0; i < position.count; i++) {
       vertex.fromArray(original, i * 3).applyMatrix4(object.matrix);
@@ -135,6 +147,52 @@ export function setPosteriorStretch(root: THREE.Group, factor: number) {
     geometry.computeBoundingBox();
     geometry.computeBoundingSphere();
   });
+}
+
+/** Change the aperture and accommodation from original anatomy, preserving the iris root. */
+export function setOpticalGeometry(root: THREE.Group, { pupilRadius, accommodation }: { pupilRadius: number; accommodation: number }) {
+  if (!Number.isFinite(pupilRadius) || pupilRadius <= 0 || pupilRadius >= 0.63
+    || !Number.isFinite(accommodation) || accommodation < 0 || accommodation > 1) throw new RangeError('Invalid optical geometry');
+  const vertex = new THREE.Vector3();
+  for (const id of ['iris', 'pupil', 'lens', 'ciliary-body', 'zonules']) {
+    const group = root.getObjectByName(id);
+    if (!group) continue;
+    if (id === 'pupil') group.userData.hitRadius = pupilRadius;
+    group.traverse(object => {
+      if (!(object instanceof THREE.Mesh || object instanceof THREE.Line)) return;
+      const geometry = object.geometry, position = geometry.getAttribute('position');
+      if (!geometry.userData.originalPositions) geometry.userData.originalPositions = new Float32Array(position.array);
+      const original = geometry.userData.originalPositions as Float32Array;
+      object.updateMatrix();
+      const inverse = object.matrix.clone().invert();
+      const relaxed = id === 'iris' || id === 'pupil' ? pupilRadius === BASE_PUPIL_RADIUS : accommodation === 0;
+      for (let i = 0; i < position.count; i++) {
+        vertex.fromArray(original, i * 3);
+        if (!relaxed) {
+          vertex.applyMatrix4(object.matrix);
+          const radius = Math.hypot(vertex.x, vertex.y);
+          let targetRadius = radius;
+          if (id === 'iris') targetRadius += (pupilRadius - BASE_PUPIL_RADIUS) * THREE.MathUtils.clamp((0.63 - radius) / (0.63 - BASE_PUPIL_RADIUS), 0, 1);
+          else if (id === 'pupil') targetRadius *= pupilRadius / BASE_PUPIL_RADIUS;
+          else if (id === 'lens') {
+            targetRadius *= 1 - 0.06 * accommodation;
+            vertex.z = 0.455 + (vertex.z - 0.455) * (1 + 0.25 * accommodation);
+          } else {
+            targetRadius *= 1 - 0.06 * accommodation;
+            // shortcut: a slight sag indicates reduced zonular tension; use biomechanics for calibrated motion.
+            if (id === 'zonules') vertex.z -= 0.02 * accommodation * Math.sin(Math.PI * THREE.MathUtils.clamp((radius - 0.423) / (0.607 - 0.423), 0, 1));
+          }
+          if (radius > 0) { vertex.x *= targetRadius / radius; vertex.y *= targetRadius / radius; }
+          vertex.applyMatrix4(inverse);
+        }
+        position.setXYZ(i, vertex.x, vertex.y, vertex.z);
+      }
+      position.needsUpdate = true;
+      if (geometry.getAttribute('normal')) geometry.computeVertexNormals();
+      geometry.computeBoundingBox();
+      geometry.computeBoundingSphere();
+    });
+  }
 }
 
 /** Procedural adult right eye. +X nasal, +Y superior, +Z anterior; dimensions are schematic. */
@@ -216,7 +274,7 @@ export function buildEye(colors: Partial<Record<StructureId, string>> = {}) {
   cornea.material.ior = 1.376;
 
   part('iris', [-0.41, 0.19, 0.66], [0, 0, 0.66]);
-  const irisBody = mesh('iris', profile([[0.215, 0.646], [0.63, 0.646], [0.655, 0.659], [0.65, 0.666], [0.215, 0.666], [0.215, 0.646]]));
+  const irisBody = mesh('iris', profile([[BASE_PUPIL_RADIUS, 0.646], [0.63, 0.646], [0.655, 0.659], [0.65, 0.666], [BASE_PUPIL_RADIUS, 0.666], [BASE_PUPIL_RADIUS, 0.646]]));
   irisBody.material.color.set('#30251e');
   irisBody.material.roughness = 0.78;
   const textures = createIrisTextures();
@@ -230,8 +288,9 @@ export function buildEye(colors: Partial<Record<StructureId, string>> = {}) {
   iris.material.roughness = 0.72;
 
   part('pupil', [0, 0, 0.677], [0, 0, 0.66]);
+  parts.get('pupil')!.group.userData.hitRadius = BASE_PUPIL_RADIUS;
   // The pupil is an aperture: only its boundary is drawn; hit testing uses the open circle.
-  const pupilPoints = Array.from({ length: 96 }, (_, i) => new THREE.Vector3(0.214 * Math.cos(i / 96 * Math.PI * 2), 0.214 * Math.sin(i / 96 * Math.PI * 2), 0.678));
+  const pupilPoints = Array.from({ length: 96 }, (_, i) => new THREE.Vector3(BASE_PUPIL_RADIUS * Math.cos(i / 96 * Math.PI * 2), BASE_PUPIL_RADIUS * Math.sin(i / 96 * Math.PI * 2), 0.678));
   const pupilMaterial = new THREE.LineBasicMaterial({ color: '#253f3b', transparent: true, opacity: 0.8 });
   pupilMaterial.userData.baseOpacity = 0.8;
   parts.get('pupil')!.group.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pupilPoints), pupilMaterial));

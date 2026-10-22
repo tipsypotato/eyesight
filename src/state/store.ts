@@ -1,6 +1,7 @@
 import { createStore } from 'zustand/vanilla';
 import { LESSONS } from '../anatomy/data';
-import { SCENE_PRESETS, STRUCTURE_IDS, type ScenePreset, type CameraSnapshot, type Lang, type LayerMode, type Mode, type OpticsPreset, type SceneState, type StructureId, type ViewPreset } from '../anatomy/types';
+import { SCENE_PRESETS, STRUCTURE_IDS, type ScenePreset, type CameraSnapshot, type Lang, type LayerMode, type Mode, type OpticsExperiment, type OpticsInput, type OpticsPreset, type SceneState, type StructureId, type ViewPreset } from '../anatomy/types';
+import { opticsInputForPreset, validateOpticsInput } from '../engine/optics';
 import { createQuiz, currentTarget, nextQuestion, revealAnswer, submitAnswer, type QuizState } from '../modes/quiz';
 
 export const QUIZ_POOL: StructureId[] = ['cornea', 'sclera', 'iris', 'lens', 'retina', 'optic-nerve'];
@@ -8,7 +9,7 @@ const defaultLayers = () => Object.fromEntries(STRUCTURE_IDS.map(id => [id, ['vi
 const initialScene = (): SceneState => ({
   lang: 'zh', mode: 'explore', selectedId: null, layers: defaultLayers(), isolateId: null,
   clip: { enabled: true, axis: 'sagittal', offset: 0, keepSide: 'negative' }, presetId: null, explode: 0, labels: false,
-  view: 'oblique', opticsPreset: 'normal', quizRevealed: false, showOptics: false, camera: null, sceneRevision: 0,
+  view: 'oblique', opticsPreset: 'normal', opticsInput: opticsInputForPreset('normal'), opticsExperiment: 'baseline', quizRevealed: false, showOptics: false, camera: null, sceneRevision: 0,
 });
 type StorageLike = Pick<Storage, 'getItem' | 'setItem'>;
 type ObservationScene = Pick<SceneState, 'selectedId' | 'layers' | 'isolateId' | 'clip' | 'explode' | 'labels' | 'view' | 'presetId' | 'showOptics'>;
@@ -27,6 +28,7 @@ export interface EyeState extends SceneState {
   toggleIsolate: () => void; setClip: (patch: Partial<SceneState['clip']>) => void;
   setExplode: (value: number) => void; setLabels: (value: boolean) => void;
   setView: (view: ViewPreset) => void; setOptics: (preset: OpticsPreset) => void;
+  setOpticsInput: (patch: Partial<OpticsInput>) => void; setOpticsExperiment: (value: OpticsExperiment) => void;
   startLesson: (id: string) => void; goToStep: (step: number) => void;
   startQuiz: () => void; answerQuiz: (id: StructureId) => void;
   revealQuiz: () => void; advanceQuiz: () => void; reset: () => void;
@@ -38,8 +40,8 @@ export interface EyeState extends SceneState {
 type WorkspaceDraft = Omit<SceneState, 'lang' | 'mode' | 'sceneRevision'> & Pick<EyeState, 'lessonId' | 'step' | 'quiz' | 'isolationLayers'>;
 
 function captureDraft(state: SceneState & Pick<EyeState, 'lessonId' | 'step' | 'quiz' | 'isolationLayers'>, camera = state.camera): WorkspaceDraft {
-  const { selectedId, layers, isolateId, clip, explode, labels, view, presetId, opticsPreset, quizRevealed, showOptics, lessonId, step, quiz } = state;
-  return { selectedId, layers: { ...layers }, isolateId, clip: { ...clip }, explode, labels, view, presetId, opticsPreset, quizRevealed, showOptics, lessonId, step, quiz,
+  const { selectedId, layers, isolateId, clip, explode, labels, view, presetId, opticsPreset, opticsInput, opticsExperiment, quizRevealed, showOptics, lessonId, step, quiz } = state;
+  return { selectedId, layers: { ...layers }, isolateId, clip: { ...clip }, explode, labels, view, presetId, opticsPreset, opticsInput: { ...opticsInput }, opticsExperiment, quizRevealed, showOptics, lessonId, step, quiz,
     isolationLayers: state.isolationLayers ? { ...state.isolationLayers } : null, camera: camera ? structuredClone(camera) : null };
 }
 
@@ -68,14 +70,15 @@ function sceneFor(mode: Mode, lessonId: string | null = null, index = 0, quiz: Q
   const step = mode === 'tour' ? LESSONS.find(lesson => lesson.id === lessonId)?.steps[index] : null;
   if (!step) return scene;
   const teachingScene: SceneState = { ...scene, selectedId: step.target, view: step.view,
-    clip: { enabled: step.clip, axis: 'sagittal', offset: 0, keepSide: 'negative' }, showOptics: !!step.optics, opticsPreset: step.optics ?? 'normal' };
+    clip: { enabled: step.clip, axis: 'sagittal', offset: 0, keepSide: 'negative' }, showOptics: !!step.optics,
+    opticsPreset: step.optics ?? 'normal', opticsInput: opticsInputForPreset(step.optics ?? 'normal') };
   return { ...teachingScene, ...selectionPatch(teachingScene, step.target) };
 }
 
-type SceneSnapshot = ObservationScene & Pick<EyeState, 'isolationLayers' | 'opticsPreset' | 'focusReturn' | 'revealReturn' | 'revealPreset'> & { camera: CameraSnapshot | null };
+type SceneSnapshot = ObservationScene & Pick<EyeState, 'isolationLayers' | 'opticsPreset' | 'opticsInput' | 'opticsExperiment' | 'focusReturn' | 'revealReturn' | 'revealPreset'> & { camera: CameraSnapshot | null };
 function captureScene(s: EyeState, camera = s.camera): SceneSnapshot {
-  const { selectedId, layers, isolateId, clip, explode, labels, view, presetId, showOptics, isolationLayers, opticsPreset, focusReturn, revealReturn, revealPreset } = s;
-  return structuredClone({ selectedId, layers, isolateId, clip, explode, labels, view, presetId, showOptics, isolationLayers, opticsPreset, focusReturn, revealReturn, revealPreset, camera: camera ?? null });
+  const { selectedId, layers, isolateId, clip, explode, labels, view, presetId, showOptics, isolationLayers, opticsPreset, opticsInput, opticsExperiment, focusReturn, revealReturn, revealPreset } = s;
+  return structuredClone({ selectedId, layers, isolateId, clip, explode, labels, view, presetId, showOptics, isolationLayers, opticsPreset, opticsInput, opticsExperiment, focusReturn, revealReturn, revealPreset, camera: camera ?? null });
 }
 function sameScene(a: SceneSnapshot, b: SceneSnapshot) {
   const comparable = ({ camera: _camera, focusReturn: _focus, revealReturn: _reveal, revealPreset: _preset, ...scene }: SceneSnapshot) => scene;
@@ -168,7 +171,29 @@ export function createEyeStore(storage?: StorageLike) {
     },
     setLabels: labels => changeScene({ labels }),
     setView: view => set(s => ({ view, camera: null, sceneRevision: (s.sceneRevision ?? 0) + 1 })),
-    setOptics: opticsPreset => changeScene({ opticsPreset }),
+    setOptics: opticsPreset => {
+      if (!['normal', 'myopia', 'corrected'].includes(opticsPreset)) return;
+      changeScene({ opticsPreset, opticsInput: opticsInputForPreset(opticsPreset), opticsExperiment: 'baseline' });
+    },
+    setOpticsInput: patch => {
+      const s = get();
+      if (!patch || typeof patch !== 'object' || Array.isArray(patch) || s.opticsExperiment === 'baseline') return;
+      const keys = Object.keys(patch);
+      if (keys.some(key => !Object.hasOwn(s.opticsInput, key) || (s.opticsExperiment !== 'free' && key !== s.opticsExperiment))) return;
+      const opticsInput = { ...s.opticsInput, ...patch };
+      try { validateOpticsInput(opticsInput); } catch { return; }
+      if (JSON.stringify(opticsInput) !== JSON.stringify(s.opticsInput)) changeScene({ opticsInput });
+    },
+    setOpticsExperiment: opticsExperiment => {
+      const s = get();
+      if (opticsExperiment === 'free') { changeScene({ opticsExperiment }); return; }
+      if (opticsExperiment === 'baseline') { get().setOptics(s.opticsPreset); return; }
+      if (!Object.hasOwn(s.opticsInput, opticsExperiment)) return;
+      const opticsPreset = opticsExperiment === 'externalLens' ? 'myopia' : 'normal';
+      const opticsInput = opticsInputForPreset(opticsPreset);
+      if (opticsExperiment === 'accommodation') opticsInput.objectDistance = 'near';
+      changeScene({ opticsPreset, opticsInput, opticsExperiment });
+    },
     startLesson: lessonId => {
       if (!LESSONS.some(lesson => lesson.id === lessonId)) return;
       if (get().mode !== 'tour') get().setMode('tour');

@@ -4,6 +4,27 @@
 
 审校角色：独立于解剖内容初稿编写者的 LLM 审校员。本文记录语言一致性与基础术语核对，不构成眼科专家审核、临床认证或患者个体判断。
 
+## T05 追加批次（2026-10-22）
+
+- Batch / contentVersion：`T05-optical-parameters-2026-10-22`；审校员：Codex 独立 LLM 上下文 `t05_i18n_check`，与文案起稿上下文分离；未取得可核验的具体后端型号，不作推测。
+- 范围：`messages.ts` 新增 40 对，修改既有 `opticsNote` 1 对，合计 **41 对最终全部通过，0 遗漏、0 未解决项**。当前有效总数为 **289 对**（249 + 40；修改对不重复计数）。
+- 结合 `App.tsx`、`store.ts`、`optics.ts` 与归档术语表核对实际动作；包括单变量加载并锁定基准、free 保留参数、近物调节、镜片求解条件、无实焦/图外焦点、视网膜等效平面及非处方边界。
+- 两处修订已独立复核关闭：`opticsBaseline` 从 Benchmark only 改为 Baseline only；浏览器发现英文镜片选项截断，`lensMyopia` 改为“本例发散镜片 / Example diverging lens”。随后增补的 `opticsNote` 等效平面说明也已单独复审通过。
+- 批次 SHA-256：`3cfa372a5fff1081f99659fbf1963d4c0107d87b0a08bb943f5f424862fbacb2`。按当前源文件顺序，从 `opticsNote` 开始提取本批 `[{key,zh,en},…]`，以紧凑 JSON、UTF-8、保留中文原文序列化计算。
+- 审校时 `messages.ts` 整文件 SHA-256：`7fe2dbf598f67055b531be82dd75d6210854f408680c9de1a206f0cef12ebb1c`。
+
+| 范围 | 全部 key | 结论 |
+| --- | --- | --- |
+| 模型边界（修改） | opticsNote | pass：归一化薄透镜、非处方、等效平面与真实曲面落点的区别 |
+| 模式与基准 | opticsParameters, opticsMode, opticsBaseline, opticsFree, opticsSingleHint, opticsBaselineNormal, opticsBaselineNear, opticsBaselineMyopia, opticsFreeHint | pass：加载条件、锁定与保留范围等价 |
+| 参数与观察提示 | axialIncrement, axialHint, objectDistance, distanceHint, accommodation, accommodationHint, pupilSize, pupilHint, externalLens, externalLensHint | pass：改变什么、观察哪里、固定哪些条件一致 |
+| 档位与单位 | objectFar, objectMid, objectNear, pupilSmall, pupilMedium, pupilLarge, lensOff, lensMyopia, normalizedRange | pass：平行入射、示意范围、外镜片及孔径术语一致 |
+| 结论与图例 | focusOnRetina, focusBeforeRetina, focusBehindRetina, noRealFocus, noRaySamples, retinalSamples, retinalSpread, retinalIntersections, blockedRays, geometricExtension, focusOutside, objectPoint | pass：前后关系、有限实焦、空样本及虚线含义一致 |
+
+非空与占位词自动检查通过；实际浏览器检查英文参数、控件锁定、图例换行及中英文切换保留状态。调节说明依据 [AAO EyeWiki 看近反射](https://eyewiki.aao.org/Reflexes_and_the_Eye)，聚焦及虹膜入光关系依据 [NEI](https://www.nei.nih.gov/eye-health-information/healthy-vision/how-eyes-work)，沿用来源登记 M10/M01；模型数值是自行校准的示意值。没有运行时翻译服务。
+
+本批状态为 `llm-checked`；医学专家审核仍为 pending。未重审历史全部文案、未做读屏或真实设备检查，语言审校不证明几何/临床精度。
+
 ## T03 追加批次（2026-10-22）
 
 - Batch / contentVersion：`T03-scene-interaction-2026-10-22`；模型：Codex 独立 LLM 上下文，审校员 `t03_i18n_review`（运行环境未提供可核验的后端型号，不作推测）。

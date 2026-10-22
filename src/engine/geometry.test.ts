@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
 import { STRUCTURE_IDS } from '../anatomy/types';
-import { buildEye, createShellSection, setPosteriorStretch } from './geometry';
+import { buildEye, createShellSection, setOpticalGeometry, setPosteriorStretch } from './geometry';
 import { intersectionSurvives, SectionTool } from './section';
 
 describe('adult right-eye geometry', () => {
@@ -107,6 +107,72 @@ describe('adult right-eye geometry', () => {
     setPosteriorStretch(eye.root, 1);
     expect(new THREE.Box3().setFromObject(retina).min.z).toBeCloseTo(initial.min.z, 5);
     eye.dispose();
+  });
+
+  it('changes the real iris aperture while retaining its outer attachment and matching the pupil boundary', () => {
+    const eye = buildEye();
+    const iris = eye.parts.get('iris')!.group;
+    const meshes = iris.children as THREE.Mesh[];
+    const originals = meshes.map(mesh => new Float32Array(mesh.geometry.getAttribute('position').array));
+    try {
+      for (const radius of [0.1505, 0.2795, 0.215]) {
+        setOpticalGeometry(eye.root, { pupilRadius: radius, accommodation: 0 });
+        for (const [meshIndex, mesh] of meshes.entries()) {
+          const position = mesh.geometry.getAttribute('position');
+          let inner = Infinity;
+          for (let i = 0; i < position.count; i++) {
+            inner = Math.min(inner, Math.hypot(position.getX(i), position.getY(i)));
+            const original = originals[meshIndex];
+            if (Math.hypot(original[i * 3], original[i * 3 + 1]) >= 0.6299) {
+              expect(position.getX(i)).toBeCloseTo(original[i * 3], 6);
+              expect(position.getY(i)).toBeCloseTo(original[i * 3 + 1], 6);
+              expect(position.getZ(i)).toBe(original[i * 3 + 2]);
+            }
+          }
+          expect(inner).toBeCloseTo(radius, 5);
+          expect(mesh.scale.toArray()).toEqual([1, 1, 1]);
+        }
+        const pupil = eye.parts.get('pupil')!.group;
+        const boundary = (pupil.children[0] as THREE.Line).geometry.getAttribute('position');
+        expect(Math.hypot(boundary.getX(0), boundary.getY(0))).toBeCloseTo(radius, 6);
+        expect(pupil.userData.hitRadius).toBe(radius);
+        eye.root.updateMatrixWorld(true);
+        const ray = new THREE.Raycaster(new THREE.Vector3(0.18, 0, 2), new THREE.Vector3(0, 0, -1));
+        expect(ray.intersectObject(iris, true).length > 0).toBe(radius < 0.18);
+      }
+    } finally { eye.dispose(); }
+  });
+
+  it('accommodates the actual lens, ciliary ring and zonules reversibly without changing cornea or axial length', () => {
+    const eye = buildEye();
+    const ids = ['iris', 'pupil', 'lens', 'ciliary-body', 'zonules', 'cornea', 'retina'] as const;
+    const snapshot = () => ids.map(id => eye.parts.get(id)!.group.children.map(object =>
+      Array.from((object as THREE.Mesh).geometry.getAttribute('position').array)));
+    const initial = snapshot();
+    const bounds = (id: typeof ids[number]) => new THREE.Box3().setFromObject(eye.parts.get(id)!.group);
+    const lens = bounds('lens'), ciliary = bounds('ciliary-body'), retina = bounds('retina'), cornea = bounds('cornea');
+    try {
+      setOpticalGeometry(eye.root, { pupilRadius: 0.1505, accommodation: 1 });
+      expect(bounds('lens').getSize(new THREE.Vector3()).z).toBeGreaterThan(lens.getSize(new THREE.Vector3()).z);
+      expect(bounds('lens').getSize(new THREE.Vector3()).x).toBeLessThan(lens.getSize(new THREE.Vector3()).x);
+      expect(bounds('ciliary-body').getSize(new THREE.Vector3()).x).toBeLessThan(ciliary.getSize(new THREE.Vector3()).x);
+      expect(snapshot()[4]).not.toEqual(initial[4]);
+      expect(bounds('retina')).toEqual(retina);
+      expect(bounds('cornea')).toEqual(cornea);
+      const accommodated = snapshot().slice(0, 5);
+      setPosteriorStretch(eye.root, 1.3);
+      expect(snapshot().slice(0, 5)).toEqual(accommodated);
+      setOpticalGeometry(eye.root, { pupilRadius: 0.2795, accommodation: 0.4 });
+      expect(bounds('retina').min.z).toBeCloseTo(retina.min.z * 1.3, 5);
+      setPosteriorStretch(eye.root, 1);
+      setOpticalGeometry(eye.root, { pupilRadius: 0.215, accommodation: 0 });
+      expect(snapshot()).toEqual(initial);
+      setPosteriorStretch(eye.root, 1.2);
+      setOpticalGeometry(eye.root, { pupilRadius: 0.2795, accommodation: 1 });
+      setOpticalGeometry(eye.root, { pupilRadius: 0.215, accommodation: 0 });
+      setPosteriorStretch(eye.root, 1);
+      expect(snapshot()).toEqual(initial);
+    } finally { eye.dispose(); }
   });
 });
 

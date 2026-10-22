@@ -1,11 +1,11 @@
-import { Component, useEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { Component, useEffect, useId, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { useStore } from 'zustand';
 import { GROUPS, LESSONS, STRUCTURES } from '../anatomy/data';
 import { searchStructures } from '../anatomy/search';
-import { SCENE_PRESETS, type ScenePreset, type ClipAxis, type Mode, type OpticsPreset, type StructureId, type ViewPreset } from '../anatomy/types';
+import { SCENE_PRESETS, type ScenePreset, type ClipAxis, type Mode, type OpticsExperiment, type OpticsInput, type OpticsPreset, type StructureId, type ViewPreset } from '../anatomy/types';
 import { messages, type MessageKey } from '../content/messages';
 import { EyeEngine } from '../engine/EyeEngine';
-import { computeOptics } from '../engine/optics';
+import { traceOptics, type TraceOpticsResult } from '../engine/optics';
 import { currentTarget, quizScore } from '../modes/quiz';
 import { eyeStore, QUIZ_POOL } from '../state/store';
 
@@ -92,32 +92,78 @@ function Details({ engine }: { engine: EngineRef }) {
   </article>;
 }
 
-function OpticsDiagram() {
-  const s = useEye(); const t = useText(); const result = computeOptics(s.opticsPreset);
-  const x = (z: number) => 25 + (2.3 - z) * 80;
-  const y = (height: number) => 91 - height * 245;
-  return <div className="optics-diagram"><svg viewBox="0 0 330 168" role="img" aria-label={`${t(s.opticsPreset)} · ${t('rays')}`}>
-    <line x1="15" y1="91" x2="320" y2="91" stroke="#c8d1cc" strokeDasharray="3 4"/>
-    <line x1={x(result.corneaZ)} y1="27" x2={x(result.corneaZ)} y2="140" stroke="#83c8cb" strokeWidth="4"/>
-    <ellipse cx={x(result.lensZ)} cy="91" rx="6" ry="40" fill="#d8e7c0" stroke="#adc582"/>
-    {s.opticsPreset === 'corrected' && <path d={`M${x(result.glassesZ)-3},25 Q${x(result.glassesZ)+8},91 ${x(result.glassesZ)-3},145`} fill="none" stroke="#667bc1" strokeWidth="4"/>}
-    <line x1={x(result.retinaZ)} y1="24" x2={x(result.retinaZ)} y2="143" stroke="#c75d53" strokeWidth="3"/>
-    {result.rays.map((ray, i) => <polyline key={i} points={ray.points.map(p => `${x(p[2])},${y(p[0])}`).join(' ')} fill="none" stroke="#b47c23" strokeWidth="1.8"/>)}
-    <circle cx={x(result.focusZ)} cy="91" r="4" fill="#214f42" stroke="white" strokeWidth="1.5"/>
-    <text x={x(result.corneaZ)} y="14" textAnchor="middle">{structure('cornea')!.name[s.lang]}</text>
-    <text x={x(result.lensZ)} y="155" textAnchor="middle">{structure('lens')!.name[s.lang]}</text>
-    <text x={x(result.retinaZ)} y="14" textAnchor="middle">{t('retinalPlane')}</text>
-  </svg><div className="diagram-legend"><span><i className="ray-key"/>{t('rays')}</span><span><i className="focus-key"/>{t('focalPoint')}</span></div></div>;
+function OpticsDiagram({ result: supplied }: { result?: TraceOpticsResult }) {
+  const s = useEye(); const t = useText(); const clipId = useId();
+  const result = supplied ?? traceOptics(s.opticsInput);
+  const front = result.objectZ ?? 2.3, back = result.retinaZ - 0.55;
+  const x = (z: number) => 20 + (front - z) / (front - back) * 290;
+  const y = (height: number) => 104 - height * 150;
+  const plot = (points: [number, number, number][]) => points.map(p => `${x(p[2])},${y(p[0])}`).join(' ');
+  const inViewFocus = result.focusKind === 'real' && result.focusZ !== null && result.focusZ >= back && result.focusZ <= result.lensZ;
+  return <div className="optics-diagram"><svg viewBox="0 0 330 216" role="img" aria-label={t('opticsTitle')}>
+    <defs><clipPath id={clipId}><rect x="15" y="26" width="305" height="160"/></clipPath></defs>
+    <line x1="15" y1="104" x2="320" y2="104" stroke="#c8d1cc" strokeDasharray="3 4"/>
+    <line x1={x(result.corneaZ)} y1="35" x2={x(result.corneaZ)} y2="175" stroke="#83c8cb" strokeWidth="4"/>
+    <ellipse cx={x(result.lensZ)} cy="104" rx={6 + s.opticsInput.accommodation * 4} ry="55" fill="#d8e7c0" stroke="#adc582"/>
+    <path d={`M${x(result.pupilZ)},28 V${y(result.pupilRadius)} M${x(result.pupilZ)},${y(-result.pupilRadius)} V180`} fill="none" stroke="#39786c" strokeWidth="4"/>
+    {result.correctionPower !== 0 && <path d={`M${x(result.glassesZ)-3},35 Q${x(result.glassesZ)+8},104 ${x(result.glassesZ)-3},175`} fill="none" stroke="#667bc1" strokeWidth="4"/>}
+    <line x1={x(result.retinaZ)} y1="28" x2={x(result.retinaZ)} y2="180" stroke="#c75d53" strokeWidth="3"/>
+    <g clipPath={`url(#${clipId})`}>
+      {result.rays.map((ray, i) => <polyline key={i} points={plot(ray.points)} fill="none" stroke={ray.blocked ? '#687872' : '#a86c17'} strokeWidth={ray.blocked ? '1.2' : '1.8'}/>)}
+      {result.extensions.map((ray, i) => <polyline key={i} points={plot(ray.points)} fill="none" stroke="#a86c17" strokeWidth="1.3" strokeDasharray="4 4"/>)}
+      {result.retinalIntersections.map((point, i) => <circle key={i} cx={x(point[2])} cy={y(point[0])} r="2.7" fill="#794599" stroke="white" strokeWidth="0.8"/>)}
+    </g>
+    {inViewFocus && <circle cx={x(result.focusZ!)} cy="104" r="4" fill="#214f42" stroke="white" strokeWidth="1.5"/>}
+    {result.objectZ !== null && <><circle cx={x(result.objectZ)} cy="104" r="3" fill="#a86c17"/><text x="20" y="195">{t('objectPoint')}</text></>}
+    <text x={x(result.corneaZ)} y="16" textAnchor="middle">{structure('cornea')!.name[s.lang]}</text>
+    <text x={x(result.lensZ)} y="210" textAnchor="middle">{structure('lens')!.name[s.lang]}</text>
+    <text x={x(result.retinaZ)} y="16" textAnchor="middle">{t('retinalPlane')}</text>
+  </svg><div className="diagram-legend"><span><i className="ray-key"/>{t('rays')}</span><span><i className="focus-key"/>{t('focalPoint')}</span><span><i className="retinal-key"/>{t('retinalIntersections')}</span><span><i className="blocked-key"/>{t('blockedRays')}</span><span><i className="extension-key"/>{t('geometricExtension')}</span></div>
+    {result.focusKind === 'real' && !inViewFocus && <p className="micro">{t('focusOutside')}</p>}
+  </div>;
 }
 
 function OpticsPresets({ engine }: { engine: EngineRef }) {
   const s = useEye(); const t = useText();
-  return <div className="preset-list">{(['normal', 'myopia', 'corrected'] as OpticsPreset[]).map((preset, i) => <button key={preset} className={s.opticsPreset === preset ? 'selected' : ''} aria-pressed={s.opticsPreset === preset} onClick={() => editScene(engine.current, () => s.setOptics(preset))}><span>0{i+1}</span>{t(preset)}<b>{s.opticsPreset === preset ? '●' : '○'}</b></button>)}</div>;
+  return <div className="preset-list">{(['normal', 'myopia', 'corrected'] as OpticsPreset[]).map((preset, i) => {
+    const selected = s.opticsExperiment === 'baseline' && s.opticsPreset === preset;
+    return <button key={preset} className={selected ? 'selected' : ''} aria-pressed={selected} onClick={() => editScene(engine.current, () => s.setOptics(preset))}><span>0{i+1}</span>{t(preset)}<b>{selected ? '●' : '○'}</b></button>;
+  })}</div>;
 }
 
-function OpticsPanel({ engine, controls = true }: { engine: EngineRef; controls?: boolean }) {
-  const s = useEye(); const t = useText();
-  return <div className="mode-content"><span className="eyebrow">{t('optics')}</span><h2>{t('opticsTitle')}</h2>{controls && <OpticsPresets engine={engine}/>}<p className="summary">{t(`${s.opticsPreset}Body` as MessageKey)}</p><OpticsDiagram/><p className="micro note">{t('opticsNote')}</p></div>;
+const opticsFields: { key: keyof OpticsInput; label: MessageKey; hint: MessageKey; options?: [string, MessageKey][] }[] = [
+  { key: 'axialIncrement', label: 'axialIncrement', hint: 'axialHint' },
+  { key: 'objectDistance', label: 'objectDistance', hint: 'distanceHint', options: [['far', 'objectFar'], ['mid', 'objectMid'], ['near', 'objectNear']] },
+  { key: 'accommodation', label: 'accommodation', hint: 'accommodationHint' },
+  { key: 'pupil', label: 'pupilSize', hint: 'pupilHint', options: [['small', 'pupilSmall'], ['medium', 'pupilMedium'], ['large', 'pupilLarge']] },
+  { key: 'externalLens', label: 'externalLens', hint: 'externalLensHint', options: [['off', 'lensOff'], ['myopia', 'lensMyopia']] },
+];
+
+function OpticsControls({ engine }: { engine: EngineRef }) {
+  const s = useEye(); const t = useText(); const gesture = useSceneRangeGesture(engine);
+  const edit = (action: () => void) => editScene(engine.current, action);
+  const expanded = s.opticsExperiment !== 'baseline';
+  return <div className="mode-content"><h2>{t('opticsParameters')}</h2><OpticsPresets engine={engine}/>{!expanded && <p>{t(`${s.opticsPreset}Body` as MessageKey)}</p>}<div className="optics-parameters">
+    <label className="optics-mode">{t('opticsMode')}<select value={s.opticsExperiment} onChange={e => edit(() => s.setOpticsExperiment(e.target.value as OpticsExperiment))}>
+      <option value="baseline">{t('opticsBaseline')}</option>{opticsFields.map(field => <option key={field.key} value={field.key}>{t(field.label)}</option>)}<option value="free">{t('opticsFree')}</option>
+    </select></label><p className="micro">{t('opticsSingleHint')}</p>
+    {expanded && <><p className="optics-baseline">{t(s.opticsExperiment === 'free' ? 'opticsFreeHint' : s.opticsExperiment === 'accommodation' ? 'opticsBaselineNear' : s.opticsExperiment === 'externalLens' ? 'opticsBaselineMyopia' : 'opticsBaselineNormal')}</p>
+      {opticsFields.map(field => {
+        const value = s.opticsInput[field.key], disabled = s.opticsExperiment !== 'free' && s.opticsExperiment !== field.key;
+        return <div key={field.key} className={`optics-field ${disabled ? 'locked' : ''}`}><label htmlFor={`optics-${field.key}`}>{t(field.label)}{typeof value === 'number' && <output>{value.toFixed(2)}</output>}</label>
+          {field.options ? <select id={`optics-${field.key}`} data-optics-input={field.key} aria-describedby={`optics-${field.key}-hint`} value={value} disabled={disabled} onChange={e => edit(() => s.setOpticsInput({ [field.key]: e.target.value }))}>{field.options.map(([option, label]) => <option key={option} value={option}>{t(label)}</option>)}</select>
+            : <input id={`optics-${field.key}`} data-optics-input={field.key} aria-describedby={`optics-${field.key}-hint`} aria-valuetext={`${Number(value).toFixed(2)} / 1 · ${t('normalizedRange')}`} type="range" min="0" max="1" step="0.01" value={value} disabled={disabled} {...gesture} onChange={e => s.setOpticsInput({ [field.key]: Number(e.target.value) })}/>}
+          <p id={`optics-${field.key}-hint`} className="micro">{t(field.hint)}</p>
+        </div>;
+      })}
+    </>}
+  </div></div>;
+}
+
+function OpticsPanel() {
+  const s = useEye(); const t = useText(); const result = traceOptics(s.opticsInput);
+  const conclusion: MessageKey = !result.validRayCount ? 'noRaySamples' : result.focusKind !== 'real' || result.focusZ === null ? 'noRealFocus' : Math.abs(result.focusZ - result.retinaZ) < 1e-7 ? 'focusOnRetina' : result.focusZ > result.retinaZ ? 'focusBeforeRetina' : 'focusBehindRetina';
+  return <div className="mode-content"><span className="eyebrow">{t('optics')}</span><h2>{t('opticsTitle')}</h2><p className="summary optics-conclusion" role="status">{t(conclusion)}</p><OpticsDiagram result={result}/><dl className="optics-metrics"><div><dt>{t('retinalSamples')}</dt><dd>{result.validRayCount} / {result.rays.length}</dd></div><div><dt>{t('retinalSpread')}</dt><dd>{result.retinalSpread === null ? '—' : result.retinalSpread.toFixed(4)}</dd></div></dl><p className="micro note">{t('opticsNote')}</p></div>;
 }
 
 function TourList() {
@@ -163,19 +209,21 @@ const presetMessages: Record<ScenePreset, MessageKey> = {
   intact: 'presetIntact', 'wall-cut': 'presetWall', anterior: 'presetAnterior', fundus: 'presetFundus', chambers: 'presetChambers', 'optical-path': 'presetOptical',
 };
 const rangeKeys = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown']);
-function SceneControls({ engine }: { engine: EngineRef }) {
-  const s = useEye(); const t = useText();
+function useSceneRangeGesture(engine: EngineRef) {
   const begin = () => eyeStore.getState().beginSceneChange(engine.current?.captureCamera());
   const end = () => eyeStore.getState().endSceneChange();
   useEffect(() => {
     window.addEventListener('pointerup', end); window.addEventListener('pointercancel', end); window.addEventListener('blur', end);
     return () => { window.removeEventListener('pointerup', end); window.removeEventListener('pointercancel', end); window.removeEventListener('blur', end); end(); };
   }, []);
-  const rangeGesture = {
+  return {
     onPointerDown: begin, onPointerUp: end, onPointerCancel: end, onLostPointerCapture: end, onBlur: end,
     onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => { if (rangeKeys.has(e.key)) begin(); },
     onKeyUp: (e: React.KeyboardEvent<HTMLInputElement>) => { if (rangeKeys.has(e.key)) end(); },
   };
+}
+function SceneControls({ engine }: { engine: EngineRef }) {
+  const s = useEye(); const t = useText(); const rangeGesture = useSceneRangeGesture(engine);
   const edit = (action: () => void) => editScene(engine.current, action);
   const axis = { sagittal: 'x', axial: 'y', coronal: 'z' }[s.clip.axis];
   return <div className="scene-controls">
@@ -239,8 +287,8 @@ function MobilePanel({ engine, size, onSize }: { engine: EngineRef; size: PanelS
       }}>{t(item)}</button>)}</div>
       <div className="panel-body" hidden={size === 'collapsed'} ref={body}>
         {tabs.includes('structures') && <div id="panel-structures" role="tabpanel" aria-labelledby="tab-structures" hidden={tab !== 'structures'} tabIndex={0}><StructuresPanel engine={engine}/></div>}
-        <div id="panel-parameters" role="tabpanel" aria-labelledby="tab-parameters" hidden={tab !== 'parameters'} tabIndex={0}>{s.mode === 'optics' && <OpticsPresets engine={engine}/>}<SceneControls engine={engine}/></div>
-        <div id="panel-explanation" role="tabpanel" aria-labelledby="tab-explanation" hidden={tab !== 'explanation'} tabIndex={0}>{s.mode === 'explore' ? <Details engine={engine}/> : s.mode === 'optics' ? <OpticsPanel engine={engine} controls={false}/> : s.mode === 'tour' ? <><details className="tour-picker"><summary>{t('backTours')}</summary><TourList/></details><TourStepPanel engine={engine}/></> : <QuizPanel/>}</div>
+        <div id="panel-parameters" role="tabpanel" aria-labelledby="tab-parameters" hidden={tab !== 'parameters'} tabIndex={0}>{s.mode === 'optics' && <><OpticsControls engine={engine}/><OpticsPanel/></>}<SceneControls engine={engine}/></div>
+        <div id="panel-explanation" role="tabpanel" aria-labelledby="tab-explanation" hidden={tab !== 'explanation'} tabIndex={0}>{s.mode === 'explore' ? <Details engine={engine}/> : s.mode === 'optics' ? <OpticsPanel/> : s.mode === 'tour' ? <><details className="tour-picker"><summary>{t('backTours')}</summary><TourList/></details><TourStepPanel engine={engine}/></> : <QuizPanel/>}</div>
       </div>
     {(s.mode === 'tour' || s.mode === 'quiz') && <div className="panel-actions"><ModeActions engine={engine}/></div>}
   </aside>;
@@ -279,8 +327,8 @@ export default function App() {
     <main className={`workspace mode-${s.mode}`}>
       <section className="scene-column" inert={narrow && panelSize === 'full' ? true : undefined}><div className="scene-heading"><div><span className="eyebrow">OCULUS DEXTER · OD</span><h1>{t('rightEye')}<span>{t('schematic')}</span></h1></div><div className="scene-actions">{s.mode !== 'quiz' && <button className={s.labels ? 'active' : ''} aria-pressed={s.labels} onClick={() => editScene(engine.current, () => s.setLabels(!s.labels))}>{t('labels')}</button>}<button onClick={s.resetCamera}>{t('resetCamera')}</button><button title={t('resetSceneHint')} onClick={() => editScene(engine.current, s.resetScene)}>{t('reset')}</button></div></div><div className="stage"><div className="stage-grid"/><Viewport engine={engine}/><div className="scene-corner" data-viewport-overlay>01 <span>/ {t(s.mode)}</span></div><p className="interaction-hint" data-viewport-overlay>{t(s.mode === 'quiz' ? 'dragQuiz' : 'drag')}</p></div><div className="observation-actions">{s.revealPreset && <span role="status">{t(s.revealPreset)} <button onClick={() => editScene(engine.current, s.undoReveal)}>{t('undoReveal')}</button></span>}{s.focusReturn && <button onClick={s.returnFocus}>{t('returnFocus')}</button>}</div>{!narrow && <SceneControls engine={engine}/>}</section>
       {narrow ? <MobilePanel engine={engine} size={panelSize} onSize={setPanelSize}/> : <>
-        <aside className="left-panel">{s.mode === 'explore' ? <StructuresPanel engine={engine}/> : s.mode === 'tour' ? <TourList/> : <div className="mode-content"><span className="eyebrow">{t(s.mode === 'quiz' ? 'quiz' : 'optics')}</span><h2>{t(s.mode === 'quiz' ? 'quizPanel' : 'opticsTitle')}</h2><p>{t(s.mode === 'quiz' ? 'quizHint' : `${s.opticsPreset}Body` as MessageKey)}</p><div className="sidebar-illustration"><EyeIcon/></div><p className="micro">{s.mode === 'quiz' ? `${t('score')} · ${s.quiz ? quizScore(s.quiz) : 0} / ${QUIZ_POOL.length}` : t('opticsNote')}</p></div>}</aside>
-        <aside className="right-panel"><div className="desktop-panel-body">{s.mode === 'explore' ? <Details engine={engine}/> : s.mode === 'optics' ? <OpticsPanel engine={engine}/> : s.mode === 'tour' ? <TourStepPanel engine={engine}/> : <QuizPanel/>}</div>{(s.mode === 'tour' || s.mode === 'quiz') && <div className="panel-actions"><ModeActions engine={engine}/></div>}</aside>
+        <aside className="left-panel">{s.mode === 'explore' ? <StructuresPanel engine={engine}/> : s.mode === 'tour' ? <TourList/> : s.mode === 'optics' ? <OpticsControls engine={engine}/> : <div className="mode-content"><span className="eyebrow">{t('quiz')}</span><h2>{t('quizPanel')}</h2><p>{t('quizHint')}</p><div className="sidebar-illustration"><EyeIcon/></div><p className="micro">{t('score')} · {s.quiz ? quizScore(s.quiz) : 0} / {QUIZ_POOL.length}</p></div>}</aside>
+        <aside className="right-panel"><div className="desktop-panel-body">{s.mode === 'explore' ? <Details engine={engine}/> : s.mode === 'optics' ? <OpticsPanel/> : s.mode === 'tour' ? <TourStepPanel engine={engine}/> : <QuizPanel/>}</div>{(s.mode === 'tour' || s.mode === 'quiz') && <div className="panel-actions"><ModeActions engine={engine}/></div>}</aside>
       </>}
     </main><footer><span><i/>{t('anatomyCount')}</span><details ref={about}><summary>{t('info')} ↗</summary><div><p>{t('modelNote')}</p><p>{t('opticsNote')}</p></div></details><span className="footer-version">eyesight / 0.1</span></footer>
   </div>;

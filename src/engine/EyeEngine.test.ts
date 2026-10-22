@@ -6,6 +6,7 @@ import { buildEye } from './geometry';
 import { SectionTool } from './section';
 import { Animator } from './animator';
 import { CameraRig } from './camera';
+import { opticsInputForPreset, traceOptics, type TraceOpticsResult } from './optics';
 
 it('reapplies the current viewport after restoring a mode saved before a resize', () => {
   const eye = buildEye(), store = createEyeStore(), document = new EventTarget();
@@ -232,6 +233,173 @@ function pointerFixture() {
   };
   return { eye, store, engine, internal, camera, sync, pointAt };
 }
+
+it('updates optical input immediately and restores anterior and posterior geometry when the optical view closes', () => {
+  const { eye, store, engine, sync } = pointerFixture();
+  const geometry = (id: 'iris' | 'lens' | 'retina') => (eye.parts.get(id)!.group.children[0] as THREE.Mesh).geometry.getAttribute('position');
+  const snapshot = () => ['iris', 'lens', 'retina'].map(id => Array.from(geometry(id as 'iris' | 'lens' | 'retina').array));
+  const initial = snapshot();
+  try {
+    store.setState({ mode: 'optics' }); sync();
+    const normal = snapshot();
+    store.setState({ opticsInput: { ...opticsInputForPreset('myopia'), pupil: 'small', accommodation: 1 } }); sync();
+    const adjusted = snapshot();
+    expect(adjusted[0]).not.toEqual(normal[0]);
+    expect(adjusted[1]).not.toEqual(normal[1]);
+    expect(adjusted[2]).not.toEqual(normal[2]);
+    store.setState({ lang: 'en' }); sync();
+    expect(snapshot()).toEqual(adjusted);
+    store.setState({ mode: 'explore', showOptics: false }); sync();
+    expect(snapshot()).toEqual(initial);
+    store.setState({ showOptics: true }); sync();
+    expect(snapshot()).toEqual(adjusted);
+    store.setState({ showOptics: false }); sync();
+    expect(snapshot()).toEqual(initial);
+    expect((engine as unknown as { rays: THREE.Group }).rays.visible).toBe(false);
+  } finally { eye.dispose(); }
+});
+
+it('picks only inside the current open pupil instead of using the old fixed aperture', () => {
+  const { eye, store, internal, sync, pointAt } = pointerFixture();
+  try {
+    store.setState(s => ({ mode: 'optics', clip: { ...s.clip, enabled: false },
+      layers: Object.fromEntries(Object.keys(s.layers).map(id => [id, id === 'pupil' ? 'on' : 'off'])) as typeof s.layers }));
+    for (const [pupil, point, expected] of [
+      ['large', 0.24, 'pupil'], ['small', 0.20, null], ['small', 0.10, 'pupil'], ['medium', 0.20, 'pupil'],
+    ] as const) {
+      store.setState({ opticsInput: { ...opticsInputForPreset('normal'), pupil } }); sync();
+      pointAt(new THREE.Vector3(point, 0, 0.677));
+      expect(internal.hoveredId).toBe(expected);
+    }
+  } finally { eye.dispose(); }
+});
+
+it('draws shared optical paths, clipped rays and visible retinal intersections without solid light behind the retina', () => {
+  const { eye, store, engine, sync } = pointerFixture();
+  const rays = (engine as unknown as { rays: THREE.Group }).rays;
+  try {
+    for (const objectDistance of ['far', 'mid', 'near'] as const) {
+      const input = { ...opticsInputForPreset('normal'), pupil: 'small' as const, objectDistance };
+      store.setState({ mode: 'optics', opticsInput: input }); sync();
+      const result = traceOptics(input);
+      const lines = rays.children.filter(child => child.name === 'optical-ray') as THREE.Line[];
+      expect(lines).toHaveLength(result.rays.length);
+      const blocked = lines[result.rays.findIndex(ray => ray.blocked)] as THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>;
+      const transmitted = lines[result.rays.findIndex(ray => !ray.blocked)] as THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>;
+      expect(blocked.material.color.equals(transmitted.material.color)).toBe(false);
+      lines.forEach((line, i) => {
+        const position = line.geometry.getAttribute('position');
+        expect(position.getZ(position.count - 1)).toBeCloseTo(result.rays[i].blocked ? result.pupilZ : result.retinaZ, 6);
+        expect(Array.from(position.array).every(Number.isFinite)).toBe(true);
+        for (let j = 0; j < position.count; j++) expect(position.getZ(j)).toBeGreaterThanOrEqual(result.retinaZ - 1e-6);
+      });
+      const intersections = rays.children.filter(child => child.name === 'retinal-intersection');
+      expect(intersections).toHaveLength(result.validRayCount);
+      intersections.forEach((point, i) => {
+        expect(point.position.toArray()).toEqual([result.retinalIntersections[i][1], result.retinalIntersections[i][0], result.retinaZ]);
+      });
+      const extensions = rays.children.filter(child => child.name === 'optical-extension') as THREE.Line[];
+      expect(extensions).toHaveLength(result.extensions.length);
+      if (objectDistance === 'mid') expect(extensions.length).toBeGreaterThan(0);
+      for (const line of extensions) {
+        expect(line.material).toBeInstanceOf(THREE.LineDashedMaterial);
+        const position = line.geometry.getAttribute('position');
+        expect(position.getZ(position.count - 1)).toBeGreaterThanOrEqual(result.retinaZ - 0.550001);
+      }
+    }
+  } finally { eye.dispose(); }
+});
+
+it('restores the optical workspace after visiting tour presets without leaving its geometry in the tour', () => {
+  const { eye, store, sync } = pointerFixture();
+  const shape = () => ['iris', 'lens', 'retina'].map(id => Array.from((eye.parts.get(id as 'iris')!.group.children[0] as THREE.Mesh).geometry.getAttribute('position').array));
+  try {
+    store.getState().setMode('optics');
+    store.getState().setOpticsExperiment('free');
+    store.getState().setOpticsInput({ axialIncrement: 0.6, accommodation: 0.8, pupil: 'large' }); sync();
+    const saved = shape();
+    store.getState().startLesson('myopia'); store.getState().goToStep(1); sync();
+    expect(eye.parts.get('pupil')!.group.userData.hitRadius).toBe(0.215);
+    expect(shape()).not.toEqual(saved);
+    store.getState().setMode('optics'); sync();
+    expect(shape()).toEqual(saved);
+    store.getState().setMode('tour'); sync();
+    expect(eye.parts.get('pupil')!.group.userData.hitRadius).toBe(0.215);
+  } finally { eye.dispose(); }
+});
+
+it('fits the full optical teaching range on square and narrow stages without moving the camera during parameter edits', () => {
+  const { eye, store, engine, camera, sync } = pointerFixture();
+  const document = new EventTarget();
+  const canvas = Object.assign(new EventTarget(), { style: {}, setAttribute() {}, clientWidth: 390, clientHeight: 390,
+    ownerDocument: document, getRootNode: () => document });
+  const animator = new Animator(); animator.reducedMotion = true;
+  const rig = new CameraRig(camera, canvas as unknown as HTMLElement, animator);
+  Object.assign(engine, { canvas, rig, setView: EyeEngine.prototype.setView });
+  try {
+    store.setState({ mode: 'optics', opticsInput: opticsInputForPreset('myopia') }); sync();
+    const bounds = new THREE.Box3().setFromObject(eye.root);
+    const samples = [new THREE.Vector3(0, 0, 4), new THREE.Vector3(0, 0, 2.5), new THREE.Vector3(0, 0, -1.77)];
+    for (const x of [bounds.min.x, bounds.max.x]) for (const y of [bounds.min.y, bounds.max.y]) for (const z of [bounds.min.z, bounds.max.z]) samples.push(new THREE.Vector3(x, y, z));
+    for (const [width, height, area] of [
+      [600, 600, { x: 0, y: 0, width: 600, height: 600 }],
+      [390, 390, { x: 8, y: 110, width: 374, height: 240 }],
+      [390, 228, { x: 8, y: 40, width: 240, height: 176 }],
+    ] as const) {
+      rig.setViewport(width, height, area);
+      for (const view of ['side', 'oblique', 'front', 'back'] as const) {
+        store.setState({ view }); sync(); engine.resetCamera(); rig.controls.update(); camera.updateMatrixWorld(true);
+        for (const sample of samples) {
+          const point = sample.clone().project(camera);
+          const px = (point.x + 1) * width / 2, py = (1 - point.y) * height / 2;
+          expect(px, `${view} ${width}×${height}`).toBeGreaterThan(area.x);
+          expect(px, `${view} ${width}×${height}`).toBeLessThan(area.x + area.width);
+          expect(py, `${view} ${width}×${height}`).toBeGreaterThan(area.y);
+          expect(py, `${view} ${width}×${height}`).toBeLessThan(area.y + area.height);
+        }
+      }
+    }
+    rig.orbit(0.2, 0.1);
+    const pose = rig.capture();
+    store.setState({ opticsInput: { ...store.getState().opticsInput, objectDistance: 'mid' } }); sync();
+    expect(rig.capture()).toEqual(pose);
+  } finally { rig.controls.dispose(); eye.dispose(); }
+});
+
+it('shows an external lens only when the shared trace produces a nonzero correction', () => {
+  const { eye, store, engine, sync } = pointerFixture();
+  const rays = (engine as unknown as { rays: THREE.Group }).rays;
+  const lensCount = () => rays.children.filter(child => child instanceof THREE.Mesh && child.geometry instanceof THREE.TorusGeometry).length;
+  try {
+    store.setState({ mode: 'optics', opticsInput: { ...opticsInputForPreset('normal'), externalLens: 'myopia' } }); sync();
+    expect(lensCount()).toBe(0);
+    store.setState({ opticsInput: opticsInputForPreset('corrected') }); sync();
+    expect(lensCount()).toBe(1);
+    store.setState({ opticsInput: opticsInputForPreset('myopia') }); sync();
+    expect(lensCount()).toBe(0);
+  } finally { eye.dispose(); }
+});
+
+it('omits non-real or out-of-view focus markers and releases old ray resources on updates', () => {
+  const { eye, store, engine, sync } = pointerFixture();
+  const internal = engine as unknown as { rays: THREE.Group; updateRays(result: TraceOpticsResult): void };
+  try {
+    store.setState({ mode: 'optics' }); sync();
+    const initial = internal.rays.children.find(child => child.name === 'optical-ray') as THREE.Line;
+    const disposed = vi.fn(); initial.geometry.addEventListener('dispose', disposed);
+    const normal = traceOptics(opticsInputForPreset('normal'));
+    for (const [focusKind, focusZ] of [['parallel', null], ['virtual', 3], ['real', -1e8]] as const) {
+      internal.updateRays({ ...normal, focusKind, focusZ });
+      expect(internal.rays.getObjectByName('optical-focus')).toBeUndefined();
+      internal.rays.traverse(object => {
+        if (object instanceof THREE.Mesh || object instanceof THREE.Line) expect(Array.from(object.geometry.getAttribute('position').array).every(Number.isFinite)).toBe(true);
+      });
+    }
+    expect(disposed).toHaveBeenCalledOnce();
+    internal.updateRays({ ...normal, rays: [], extensions: [], retinalIntersections: [], validRayCount: 0, retinalSpread: null, focusKind: 'parallel', focusZ: null });
+    expect(internal.rays.children.filter(child => child.name === 'retinal-intersection')).toHaveLength(0);
+  } finally { eye.dispose(); }
+});
 
 it.each(['fovea', 'lens'] as const)('keeps the real %s visible when a corner compass and panel change the usable rectangle', id => {
   const { eye, store, engine, camera, sync } = pointerFixture();
