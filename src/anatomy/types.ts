@@ -24,6 +24,11 @@ export type OpticsInput = {
   externalLens: 'off' | 'myopia';
 };
 export type OpticsExperiment = 'baseline' | 'free' | keyof OpticsInput;
+export type PhysiologyKind = 'pupil' | 'accommodation' | 'signal';
+export type PhysiologyState = {
+  kind: PhysiologyKind; step: number; playing: boolean;
+  returnInput: OpticsInput; returnExperiment: OpticsExperiment; returnPreset: OpticsPreset; returnShowOptics: boolean;
+};
 export type CameraSnapshot = {
   position: [number, number, number]; target: [number, number, number]; zoom: number;
   viewOffset?: { fullWidth: number; fullHeight: number; offsetX: number; offsetY: number; width: number; height: number };
@@ -36,6 +41,8 @@ export interface SceneState {
   presetId: ScenePreset | null;
   explode: number; labels: boolean; view: ViewPreset;
   opticsPreset: OpticsPreset; opticsInput: OpticsInput; opticsExperiment: OpticsExperiment; quizRevealed: boolean;
+  comparison: { input: OpticsInput; showing: 'reference' | 'current' } | null;
+  physiology: PhysiologyState | null;
   showOptics?: boolean;
   camera?: CameraSnapshot | null;
   sceneRevision?: number;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createEyeStore } from './store';
-import { SCENE_PRESETS, STRUCTURE_IDS, type CameraSnapshot, type LayerMode, type OpticsExperiment, type OpticsInput, type OpticsPreset } from '../anatomy/types';
+import { SCENE_PRESETS, STRUCTURE_IDS, type CameraSnapshot, type LayerMode, type OpticsExperiment, type OpticsInput, type OpticsPreset, type PhysiologyKind } from '../anatomy/types';
 
 describe('learning state', () => {
   it('keeps a canvas fundus selection in the current section without changing other layers', () => {
@@ -361,6 +361,165 @@ describe('optics experiments', () => {
   });
 });
 
+
+describe('comparison and physiology', () => {
+  const normal: OpticsInput = { axialIncrement: 0, objectDistance: 'far', accommodation: 0, pupil: 'medium', externalLens: 'off' };
+  const combined: OpticsInput = { axialIncrement: 0.6, objectDistance: 'mid', accommodation: 0.4, pupil: 'large', externalLens: 'myopia' };
+  const opticsStore = () => { const store = createEyeStore(); store.getState().setMode('optics'); return store; };
+
+  it('freezes the actual input while view switching preserves the current input and scene controls', () => {
+    const store = opticsStore();
+    store.getState().setOpticsExperiment('free'); store.getState().setOpticsInput(combined);
+    store.getState().setClip({ axis: 'axial', offset: 0.3 }); store.getState().setExplode(0.2); store.getState().setView('back');
+    const before = store.getState();
+    store.getState().saveComparison();
+    expect(store.getState().comparison).toEqual({ input: combined, showing: 'current' });
+    expect(store.getState().comparison!.input).not.toBe(before.opticsInput);
+    store.getState().setOpticsInput({ axialIncrement: 1 });
+    store.getState().setComparisonView('reference');
+    expect(store.getState()).toMatchObject({ comparison: { input: combined, showing: 'reference' }, opticsInput: { ...combined, axialIncrement: 1 }, clip: before.clip, explode: 0.2, view: 'back', layers: before.layers, camera: before.camera });
+    store.getState().clearComparison();
+    expect(store.getState()).toMatchObject({ comparison: null, opticsInput: { ...combined, axialIncrement: 1 }, clip: before.clip, view: 'back' });
+  });
+
+  it('keeps comparison drafts and deep undo snapshots through language, mode and scene resets', () => {
+    const store = opticsStore();
+    store.getState().saveComparison(); store.getState().setOpticsExperiment('axialIncrement'); store.getState().setOpticsInput({ axialIncrement: 1 });
+    store.getState().setComparisonView('reference'); store.getState().setLanguage('en');
+    const saved = store.getState().comparison;
+    store.getState().setMode('explore'); expect(store.getState().comparison).toBeNull();
+    store.getState().resetScene(); store.getState().setMode('optics');
+    expect(store.getState().comparison).toEqual(saved);
+    expect(store.getState().comparison!.input).not.toBe(saved!.input);
+    store.getState().resetCamera(); expect(store.getState().comparison).toEqual(saved);
+    store.getState().resetScene(); expect(store.getState().comparison).toBeNull();
+    store.getState().undoScene();
+    expect(store.getState()).toMatchObject({ lang: 'en', comparison: saved, opticsInput: { ...normal, axialIncrement: 1 } });
+    store.getState().clearComparison(); store.getState().undoScene(); expect(store.getState().comparison).toEqual(saved);
+  });
+
+  it('starts each physiology sequence from a fixed normal baseline and restores the original experiment', () => {
+    const store = opticsStore();
+    store.getState().setOptics('corrected'); store.getState().setOpticsExperiment('free'); store.getState().setOpticsInput(combined);
+    store.getState().saveComparison(); store.getState().setPhysiology('pupil');
+    expect(store.getState()).toMatchObject({ comparison: null, opticsPreset: 'normal', opticsExperiment: 'baseline', opticsInput: { ...normal, pupil: 'large' }, physiology: { kind: 'pupil', step: 0, playing: false, returnInput: combined, returnExperiment: 'free', returnPreset: 'corrected' } });
+    const before = store.getState(); store.getState().setPhysiology('pupil'); expect(store.getState()).toBe(before);
+    store.getState().setPhysiology('accommodation'); expect(store.getState().opticsInput).toEqual(normal);
+    store.getState().setPhysiology(null);
+    expect(store.getState()).toMatchObject({ physiology: null, opticsInput: combined, opticsPreset: 'corrected', opticsExperiment: 'free' });
+  });
+
+  it.each([
+    ['pupil', [
+      { ...normal, pupil: 'large' }, normal, { ...normal, pupil: 'small' }, normal, { ...normal, pupil: 'large' },
+    ]],
+    ['accommodation', [
+      normal, { ...normal, objectDistance: 'near' }, { ...normal, objectDistance: 'near', accommodation: 0.5 },
+      { ...normal, objectDistance: 'near', accommodation: 1 }, { ...normal, accommodation: 1 }, { ...normal, accommodation: 0.5 }, normal,
+    ]],
+    ['signal', [normal, normal, normal]],
+  ] as const)('advances %s through deterministic inputs and stops at the final step', (kind, inputs) => {
+    const store = opticsStore(); store.getState().setPhysiology(kind); store.getState().playPhysiology();
+    for (let step = 0; step < inputs.length; step++) {
+      expect(store.getState().opticsInput).toEqual(inputs[step]);
+      expect(store.getState().physiology).toMatchObject({ kind, step, playing: step < inputs.length - 1 });
+      store.getState().advancePhysiology();
+    }
+    const final = store.getState(); store.getState().advancePhysiology(); store.getState().playPhysiology();
+    expect(store.getState()).toBe(final);
+    store.getState().replayPhysiology();
+    expect(store.getState()).toMatchObject({ physiology: { step: 0, playing: true }, opticsInput: inputs[0] });
+  });
+
+  it('pauses without a history entry and permits a single step while paused', () => {
+    const store = opticsStore(); store.getState().setPhysiology('pupil');
+    const undoCount = store.getState().undoCount;
+    store.getState().playPhysiology(); store.getState().pausePhysiology();
+    expect(store.getState()).toMatchObject({ physiology: { step: 0, playing: false }, undoCount });
+    store.getState().advancePhysiology();
+    expect(store.getState()).toMatchObject({ physiology: { step: 1, playing: false }, opticsInput: normal });
+  });
+
+  it('ignores manual optics and comparison actions throughout a physiology demonstration', () => {
+    const store = opticsStore(); store.getState().setPhysiology('accommodation');
+    const before = store.getState();
+    store.getState().setOptics('myopia'); store.getState().setOpticsExperiment('free'); store.getState().setOpticsInput(combined); store.getState().saveComparison();
+    expect(store.getState()).toBe(before);
+  });
+
+  it('pauses mode drafts immediately and rejects delayed advances in other workspaces', () => {
+    const store = opticsStore(); store.getState().setPhysiology('accommodation'); store.getState().playPhysiology(); store.getState().advancePhysiology();
+    const before = store.getState().physiology;
+    store.getState().setMode('explore');
+    const explore = store.getState();
+    store.getState().advancePhysiology(); store.getState().playPhysiology(); store.getState().replayPhysiology();
+    expect(store.getState()).toBe(explore);
+    store.getState().setLanguage('en'); store.getState().setMode('optics');
+    expect(store.getState()).toMatchObject({ lang: 'en', physiology: { ...before, playing: false }, opticsInput: { ...normal, objectDistance: 'near' } });
+    expect(store.getState().physiology!.returnInput).not.toBe(before!.returnInput);
+  });
+
+  it('undo and reset restore the right step and inputs without reviving playback', () => {
+    const store = opticsStore(); store.getState().setPhysiology('accommodation'); store.getState().playPhysiology();
+    store.getState().advancePhysiology(); store.getState().advancePhysiology(); store.getState().setLanguage('en'); store.getState().undoScene();
+    expect(store.getState()).toMatchObject({ physiology: { step: 1, playing: false }, opticsInput: { ...normal, objectDistance: 'near' }, lang: 'en' });
+    store.getState().playPhysiology(); store.getState().resetScene();
+    expect(store.getState()).toMatchObject({ physiology: null, opticsInput: normal });
+    store.getState().undoScene(); expect(store.getState().physiology).toMatchObject({ step: 1, playing: false });
+    store.getState().setPhysiology(null); store.getState().undoScene(); expect(store.getState().physiology).toMatchObject({ step: 1, playing: false });
+  });
+
+  it('scene and camera actions preserve the demonstration without restarting a paused sequence', () => {
+    const store = opticsStore(); store.getState().setPhysiology('pupil'); store.getState().advancePhysiology();
+    store.getState().setClip({ offset: 0.3 }); store.getState().applyPreset('anterior'); store.getState().resetCamera(); store.getState().setLanguage('en');
+    expect(store.getState()).toMatchObject({ physiology: { step: 1, playing: false }, opticsInput: normal, lang: 'en' });
+    store.getState().playPhysiology(); store.getState().setLabels(true); store.getState().undoScene();
+    expect(store.getState().physiology).toMatchObject({ step: 1, playing: false });
+  });
+
+  it('reuses signal playback in the vision tour and clears it at step boundaries', () => {
+    const store = createEyeStore(); store.getState().startLesson('vision');
+    store.getState().setPhysiology('signal'); store.getState().playPhysiology(); store.getState().advancePhysiology();
+    expect(store.getState()).toMatchObject({ physiology: { kind: 'signal', step: 1, playing: true }, showOptics: true });
+    store.getState().goToStep(1);
+    expect(store.getState()).toMatchObject({ physiology: null, step: 1 });
+    const before = store.getState(); store.getState().advancePhysiology(); expect(store.getState()).toBe(before);
+    store.getState().setPhysiology('pupil'); expect(store.getState()).toBe(before);
+    store.getState().startLesson('anatomy');
+    const anatomy = store.getState(); store.getState().setPhysiology('signal'); expect(store.getState()).toBe(anatomy);
+  });
+
+  it.each([false, true])('restores the source optical visibility %s after changing demonstrations', showOptics => {
+    const store = createEyeStore(); store.getState().startLesson('vision');
+    store.setState({ showOptics });
+    store.getState().setPhysiology('signal');
+    expect(store.getState().showOptics).toBe(true);
+    store.getState().setPhysiology(null); expect(store.getState().showOptics).toBe(showOptics);
+    store.getState().setMode('optics'); store.setState({ showOptics });
+    store.getState().setPhysiology('signal'); store.getState().setPhysiology('pupil'); store.getState().setPhysiology(null);
+    expect(store.getState().showOptics).toBe(showOptics);
+  });
+
+  it('undoes physiology entry to the frozen reference without sharing the saved input', () => {
+    const store = opticsStore(); store.getState().saveComparison();
+    store.getState().setOpticsExperiment('axialIncrement'); store.getState().setOpticsInput({ axialIncrement: 1 });
+    const comparison = store.getState().comparison;
+    store.getState().setPhysiology('pupil'); store.getState().undoScene();
+    expect(store.getState()).toMatchObject({ physiology: null, comparison: { input: normal, showing: 'current' }, opticsInput: { ...normal, axialIncrement: 1 } });
+    expect(store.getState().comparison!.input).not.toBe(comparison!.input);
+  });
+
+  it('rejects invalid kinds, comparison views and inactive controls without mutation', () => {
+    const store = createEyeStore(); const before = store.getState();
+    store.getState().saveComparison(); store.getState().clearComparison(); store.getState().setComparisonView('reference');
+    store.getState().setPhysiology('pupil'); store.getState().pausePhysiology(); store.getState().advancePhysiology(); store.getState().replayPhysiology();
+    expect(store.getState()).toBe(before);
+    store.getState().setMode('optics'); store.getState().saveComparison(); const optics = store.getState();
+    for (const kind of ['invalid', '__proto__', undefined, 1]) store.getState().setPhysiology(kind as PhysiologyKind);
+    store.getState().setComparisonView('invalid' as 'current');
+    expect(store.getState()).toBe(optics);
+  });
+});
 
 describe('observation presets and scene undo', () => {
   const camera: CameraSnapshot = { position: [3, 2, 4], target: [0.1, 0, -0.2], zoom: 1.3 };

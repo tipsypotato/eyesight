@@ -4,6 +4,28 @@
 
 审校角色：独立于解剖内容初稿编写者的 LLM 审校员。本文记录语言一致性与基础术语核对，不构成眼科专家审核、临床认证或患者个体判断。
 
+## T06 追加批次（2026-10-22）
+
+- Batch / contentVersion：`T06-comparison-physiology-2026-10-22`；审校员为 Codex 独立 LLM 上下文 `t06_mechanism_check`，与实现及文案起稿上下文分离；未取得可核验的后端型号，不作推测。
+- 范围：`messages.ts` 新增 **36 对，全部通过，0 问题、0 遗漏、0 未解决项**。当前有效总数 **325 对**（289 + 36；207 对 messages、117 对解剖/导览、1 对画布说明），未修改既有双语内容。
+- 结合 `App.tsx`、`store.ts`、`physiology.ts` 和 `EyeEngine.ts` 核对冻结参考、退出恢复、播放与减少动画、关键帧解释、定性成像及信号图例。重点确认退出演示恢复参数但不恢复已结束的对照；减少动画时“重播”重置到首步并暂停。
+- 按源文件顺序，从 `saveComparison` 至 `retinalConversion` 提取 `[{key,zh,en},…]`，以紧凑 JSON、UTF-8、保留中文序列化。批次 SHA-256：`96adeeb330742884d0e85fa80f769421415e19a4b6b1882802faec777efaca64`。
+- `messages.ts` 整文件 SHA-256：`5afa29ec6c39d00dc0c72c30cab0d9306a3b36996ab4e438eb958490fb757c7b`。
+
+| 范围 | 全部 key | 结论 |
+| --- | --- | --- |
+| 对照操作与差异（7） | saveComparison, exitComparison, referenceView, currentView, comparisonDifference, comparisonSame, comparisonHint | pass：冻结参数、当前值及镜头/观察条件含义一致 |
+| 定性测试图（2） | qualitativeImage, qualitativeNote | pass：由交点离散推导、不代表视力表结果的边界一致 |
+| 演示入口与限制（6） | physiologyTitle, physiologyPupil, physiologyAccommodation, physiologySignal, physiologyStartHint, physiologyNote | pass：载入基准、结束对照、退出恢复及非真实时间说明一致 |
+| 播放操作（6） | play, pause, singleStep, replay, exitPhysiology, reducedPlayback | pass：动作与减少动画行为对应 |
+| 明暗与瞳孔（4） | pupilDark, pupilBrightening, pupilBright, pupilDimming | pass：明亮缩小、变暗扩大，未承诺真实照度或尺寸 |
+| 看远看近（6） | accommodationFar, accommodationNearStart, accommodationNearChanging, accommodationNearFocused, accommodationFarStart, accommodationRelaxing | pass：睫状体、悬韧带张力、晶状体形状及屈光力因果关系一致 |
+| 光与神经信号（5） | signalIncoming, signalConversion, signalOutgoing, neuralSignal, retinalConversion | pass：视网膜转换/处理、神经节细胞轴突和视盘/视神经路径一致；光不进入视神经 |
+
+机制核对来源：沿用 M01 [NEI — How the Eyes Work](https://www.nei.nih.gov/eye-health-information/healthy-vision/how-eyes-work)、M10 [AAO EyeWiki — Reflexes and the Eye](https://eyewiki.aao.org/Reflexes_and_the_Eye)、M07 [Webvision — Simple Anatomy of the Retina](https://www.webvision.pitt.edu/book/part-i-foundations/simple-anatomy-of-the-retina/)，并参考 [UTHealth Neuroscience Online](https://nba.uth.tmc.edu/neuroscience/m/s3/chapter07.html)。这些资料支持基础机制，不标定此模型的播放时间、尺寸、屈光数值或视力。
+
+实际浏览器复验中英文切换保留对照参数与演示状态、英文窄屏说明可访问。状态 `llm-checked`；医学专家审核 pending。没有运行时翻译接口，也未重新审校全部历史文案或验证真实读屏效果。
+
 ## T05 追加批次（2026-10-22）
 
 - Batch / contentVersion：`T05-optical-parameters-2026-10-22`；审校员：Codex 独立 LLM 上下文 `t05_i18n_check`，与文案起稿上下文分离；未取得可核验的具体后端型号，不作推测。

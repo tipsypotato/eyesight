@@ -2,11 +2,12 @@ import { Component, useEffect, useId, useRef, useState, type ReactNode, type Ref
 import { useStore } from 'zustand';
 import { GROUPS, LESSONS, STRUCTURES } from '../anatomy/data';
 import { searchStructures } from '../anatomy/search';
-import { SCENE_PRESETS, type ScenePreset, type ClipAxis, type Mode, type OpticsExperiment, type OpticsInput, type OpticsPreset, type StructureId, type ViewPreset } from '../anatomy/types';
+import { SCENE_PRESETS, type ScenePreset, type ClipAxis, type Mode, type OpticsExperiment, type OpticsInput, type OpticsPreset, type PhysiologyKind, type StructureId, type ViewPreset } from '../anatomy/types';
 import { messages, type MessageKey } from '../content/messages';
 import { EyeEngine } from '../engine/EyeEngine';
 import { traceOptics, type TraceOpticsResult } from '../engine/optics';
 import { currentTarget, quizScore } from '../modes/quiz';
+import { PHYSIOLOGY_LENGTHS } from '../modes/physiology';
 import { eyeStore, QUIZ_POOL } from '../state/store';
 
 const useEye = () => useStore(eyeStore);
@@ -36,10 +37,13 @@ function observeStructure(engine: EyeEngine | null, id: StructureId, focus = fal
   if (focus || !visible) engine.focus(id);
 }
 
-function Viewport({ engine }: { engine: EngineRef }) {
-  const host = useRef<HTMLDivElement>(null);
+function Viewport({ engine, peer, reference = false, narrow = false }: { engine: EngineRef; peer: EngineRef; reference?: boolean; narrow?: boolean }) {
+  const host = useRef<HTMLDivElement>(null); const s = useEye();
+  const options = useRef({ reference, narrow }); options.current = { reference, narrow };
   const t = useText();
   const [failed, setFailed] = useState(false);
+  const scene = (state: ReturnType<typeof eyeStore.getState>) => state.comparison && (options.current.reference || options.current.narrow && state.comparison.showing === 'reference')
+    ? { ...state, opticsInput: state.comparison.input, physiology: null } : state;
   useEffect(() => {
     if (!host.current) return;
     let instance: EyeEngine;
@@ -50,12 +54,19 @@ function Viewport({ engine }: { engine: EngineRef }) {
         end: () => eyeStore.getState().endSceneChange(),
       });
       engine.current = instance;
-      instance.setState(eyeStore.getState());
+      instance.setState(scene(eyeStore.getState()));
+      instance.setCameraListener(camera => peer.current?.syncCamera(camera));
+      if (reference && peer.current) instance.syncCamera(peer.current.captureCamera());
     } catch (error) { console.error('3D initialization failed', error); setFailed(true); return; }
-    const unsubscribe = eyeStore.subscribe(next => instance.setState(next));
+    const unsubscribe = eyeStore.subscribe(next => {
+      instance.setState(scene(next));
+      if (reference && peer.current) instance.syncCamera(peer.current.captureCamera());
+    });
     return () => { unsubscribe(); instance.dispose(); engine.current = null; };
   }, [engine]);
+  useEffect(() => { engine.current?.setState(scene(eyeStore.getState())); }, [narrow, reference, engine]);
   return <div className="viewport" ref={host} role="group" aria-label={`${t('rightEye')} · ${t('schematic')}`}>
+    {!s.comparison && <div className="scene-corner" data-viewport-overlay>01 <span>/ {t(s.mode)}</span></div>}<p className="interaction-hint" data-viewport-overlay>{t(s.mode === 'quiz' ? 'dragQuiz' : 'drag')}</p>
     {failed && <div className="webgl-error" role="alert"><EyeIcon/><p>{t('webglError')}</p></div>}
   </div>;
 }
@@ -92,10 +103,10 @@ function Details({ engine }: { engine: EngineRef }) {
   </article>;
 }
 
-function OpticsDiagram({ result: supplied }: { result?: TraceOpticsResult }) {
+function OpticsDiagram({ result: supplied, input: suppliedInput, matched = false }: { result?: TraceOpticsResult; input?: OpticsInput; matched?: boolean }) {
   const s = useEye(); const t = useText(); const clipId = useId();
-  const result = supplied ?? traceOptics(s.opticsInput);
-  const front = result.objectZ ?? 2.3, back = result.retinaZ - 0.55;
+  const input = suppliedInput ?? s.opticsInput, result = supplied ?? traceOptics(input);
+  const front = matched ? 4 : result.objectZ ?? 2.3, back = matched ? -1.77 : result.retinaZ - 0.55;
   const x = (z: number) => 20 + (front - z) / (front - back) * 290;
   const y = (height: number) => 104 - height * 150;
   const plot = (points: [number, number, number][]) => points.map(p => `${x(p[2])},${y(p[0])}`).join(' ');
@@ -104,14 +115,14 @@ function OpticsDiagram({ result: supplied }: { result?: TraceOpticsResult }) {
     <defs><clipPath id={clipId}><rect x="15" y="26" width="305" height="160"/></clipPath></defs>
     <line x1="15" y1="104" x2="320" y2="104" stroke="#c8d1cc" strokeDasharray="3 4"/>
     <line x1={x(result.corneaZ)} y1="35" x2={x(result.corneaZ)} y2="175" stroke="#83c8cb" strokeWidth="4"/>
-    <ellipse cx={x(result.lensZ)} cy="104" rx={6 + s.opticsInput.accommodation * 4} ry="55" fill="#d8e7c0" stroke="#adc582"/>
+    <ellipse cx={x(result.lensZ)} cy="104" rx={6 + input.accommodation * 4} ry="55" fill="#d8e7c0" stroke="#adc582"/>
     <path d={`M${x(result.pupilZ)},28 V${y(result.pupilRadius)} M${x(result.pupilZ)},${y(-result.pupilRadius)} V180`} fill="none" stroke="#39786c" strokeWidth="4"/>
     {result.correctionPower !== 0 && <path d={`M${x(result.glassesZ)-3},35 Q${x(result.glassesZ)+8},104 ${x(result.glassesZ)-3},175`} fill="none" stroke="#667bc1" strokeWidth="4"/>}
     <line x1={x(result.retinaZ)} y1="28" x2={x(result.retinaZ)} y2="180" stroke="#c75d53" strokeWidth="3"/>
     <g clipPath={`url(#${clipId})`}>
       {result.rays.map((ray, i) => <polyline key={i} points={plot(ray.points)} fill="none" stroke={ray.blocked ? '#687872' : '#a86c17'} strokeWidth={ray.blocked ? '1.2' : '1.8'}/>)}
       {result.extensions.map((ray, i) => <polyline key={i} points={plot(ray.points)} fill="none" stroke="#a86c17" strokeWidth="1.3" strokeDasharray="4 4"/>)}
-      {result.retinalIntersections.map((point, i) => <circle key={i} cx={x(point[2])} cy={y(point[0])} r="2.7" fill="#794599" stroke="white" strokeWidth="0.8"/>)}
+      {result.retinalIntersections.map((point, i) => <rect key={i} x={x(point[2])-2.7} y={y(point[0])-2.7} width="5.4" height="5.4" fill="#794599" stroke="white" strokeWidth="0.8"/>)}
     </g>
     {inViewFocus && <circle cx={x(result.focusZ!)} cy="104" r="4" fill="#214f42" stroke="white" strokeWidth="1.5"/>}
     {result.objectZ !== null && <><circle cx={x(result.objectZ)} cy="104" r="3" fill="#a86c17"/><text x="20" y="195">{t('objectPoint')}</text></>}
@@ -143,7 +154,7 @@ function OpticsControls({ engine }: { engine: EngineRef }) {
   const s = useEye(); const t = useText(); const gesture = useSceneRangeGesture(engine);
   const edit = (action: () => void) => editScene(engine.current, action);
   const expanded = s.opticsExperiment !== 'baseline';
-  return <div className="mode-content"><h2>{t('opticsParameters')}</h2><OpticsPresets engine={engine}/>{!expanded && <p>{t(`${s.opticsPreset}Body` as MessageKey)}</p>}<div className="optics-parameters">
+  return <div className="mode-content"><h2>{t('opticsParameters')}</h2><fieldset className="optics-inputs" disabled={!!s.physiology}><OpticsPresets engine={engine}/>{!expanded && !s.physiology && <p>{t(`${s.opticsPreset}Body` as MessageKey)}</p>}<div className="optics-parameters">
     <label className="optics-mode">{t('opticsMode')}<select value={s.opticsExperiment} onChange={e => edit(() => s.setOpticsExperiment(e.target.value as OpticsExperiment))}>
       <option value="baseline">{t('opticsBaseline')}</option>{opticsFields.map(field => <option key={field.key} value={field.key}>{t(field.label)}</option>)}<option value="free">{t('opticsFree')}</option>
     </select></label><p className="micro">{t('opticsSingleHint')}</p>
@@ -157,13 +168,74 @@ function OpticsControls({ engine }: { engine: EngineRef }) {
         </div>;
       })}
     </>}
-  </div></div>;
+  </div></fieldset><div className="comparison-actions"><button disabled={!!s.physiology} onClick={() => edit(s.saveComparison)}>{t('saveComparison')}</button>{s.comparison && <button onClick={() => edit(s.clearComparison)}>{t('exitComparison')}</button>}</div><PhysiologyControls engine={engine}/></div>;
+}
+
+function TestChart({ result }: { result: TraceOpticsResult }) {
+  const t = useText(); const filterId = useId();
+  // shortcut: an illustrative blur scale, replace only with a separately validated imaging model.
+  const blur = result.retinalSpread === null ? null : Math.min(6, result.retinalSpread * 90);
+  return <figure className="test-chart"><figcaption>{t('qualitativeImage')}</figcaption>{blur === null ? <p>{t('noRaySamples')}</p> : <svg viewBox="0 0 240 130" role="img" aria-label={t('qualitativeImage')}>
+    <defs><filter id={filterId} x="-30%" y="-50%" width="160%" height="200%"><feGaussianBlur stdDeviation={blur}/></filter></defs>
+    <rect width="240" height="130" fill="white"/><g filter={`url(#${filterId})`} fill="#13221b">
+      <path d="M28 22h40v9H38v12h24v9H38v12h30v9H28Z"/><path d="M105 26h30v7h-23v9h19v7h-19v9h23v7h-30Z" transform="rotate(90 120 46)"/>
+      <path d="M177 34h23v5h-17v7h14v5h-14v7h17v5h-23Z" transform="rotate(180 188 48)"/>
+      {[24,40,56,72,88,104,120,136,152,168,184,200].map(x => <rect key={x} x={x} y="94" width="8" height="18"/>)}
+    </g></svg>}<p className="micro">{t('qualitativeNote')}</p></figure>;
+}
+
+function OpticsReading({ input, label, matched = false }: { input: OpticsInput; label?: MessageKey; matched?: boolean }) {
+  const t = useText(); const result = traceOptics(input);
+  const conclusion: MessageKey = !result.validRayCount ? 'noRaySamples' : result.focusKind !== 'real' || result.focusZ === null ? 'noRealFocus' : Math.abs(result.focusZ - result.retinaZ) < 1e-7 ? 'focusOnRetina' : result.focusZ > result.retinaZ ? 'focusBeforeRetina' : 'focusBehindRetina';
+  return <section className="optics-reading">{label && <h3>{t(label)}</h3>}<TestChart result={result}/><p className="summary optics-conclusion" role="status">{t(conclusion)}</p><OpticsDiagram result={result} input={input} matched={matched}/><dl className="optics-metrics"><div><dt>{t('retinalSamples')}</dt><dd>{result.validRayCount} / {result.rays.length}</dd></div><div><dt>{t('retinalSpread')}</dt><dd>{result.retinalSpread === null ? '—' : result.retinalSpread.toFixed(4)}</dd></div></dl></section>;
 }
 
 function OpticsPanel() {
-  const s = useEye(); const t = useText(); const result = traceOptics(s.opticsInput);
-  const conclusion: MessageKey = !result.validRayCount ? 'noRaySamples' : result.focusKind !== 'real' || result.focusZ === null ? 'noRealFocus' : Math.abs(result.focusZ - result.retinaZ) < 1e-7 ? 'focusOnRetina' : result.focusZ > result.retinaZ ? 'focusBeforeRetina' : 'focusBehindRetina';
-  return <div className="mode-content"><span className="eyebrow">{t('optics')}</span><h2>{t('opticsTitle')}</h2><p className="summary optics-conclusion" role="status">{t(conclusion)}</p><OpticsDiagram result={result}/><dl className="optics-metrics"><div><dt>{t('retinalSamples')}</dt><dd>{result.validRayCount} / {result.rays.length}</dd></div><div><dt>{t('retinalSpread')}</dt><dd>{result.retinalSpread === null ? '—' : result.retinalSpread.toFixed(4)}</dd></div></dl><p className="micro note">{t('opticsNote')}</p></div>;
+  const s = useEye(); const t = useText();
+  const narrow = window.matchMedia('(width < 900px)').matches;
+  return <div className="mode-content"><span className="eyebrow">{t('optics')}</span><h2>{t('opticsTitle')}</h2>
+    {s.comparison && (!narrow || s.comparison.showing === 'reference') && <OpticsReading input={s.comparison.input} label="referenceView" matched/>}
+    {(!s.comparison || !narrow || s.comparison.showing === 'current') && <OpticsReading input={s.opticsInput} label={s.comparison ? 'currentView' : undefined} matched={!!s.comparison}/>}
+    <p className="micro note">{t('opticsNote')}</p></div>;
+}
+
+const physiologyExplanations: Record<PhysiologyKind, MessageKey[]> = {
+  pupil: ['pupilDark', 'pupilBrightening', 'pupilBright', 'pupilDimming', 'pupilDark'],
+  accommodation: ['accommodationFar', 'accommodationNearStart', 'accommodationNearChanging', 'accommodationNearFocused', 'accommodationFarStart', 'accommodationRelaxing', 'accommodationFar'],
+  signal: ['signalIncoming', 'signalConversion', 'signalOutgoing'],
+};
+const physiologyNames: Record<PhysiologyKind, MessageKey> = { pupil: 'physiologyPupil', accommodation: 'physiologyAccommodation', signal: 'physiologySignal' };
+
+function useReducedMotion() {
+  const [reduced, setReduced] = useState(() => window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  useEffect(() => {
+    const media = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const update = () => setReduced(media.matches);
+    media.addEventListener('change', update); update();
+    return () => media.removeEventListener('change', update);
+  }, []);
+  return reduced;
+}
+
+function PhysiologyControls({ engine, signalOnly = false }: { engine: EngineRef; signalOnly?: boolean }) {
+  const s = useEye(); const t = useText(); const reduced = useReducedMotion(); const demo = s.physiology;
+  const edit = (action: () => void) => editScene(engine.current, action);
+  const kinds: PhysiologyKind[] = signalOnly ? ['signal'] : ['pupil', 'accommodation', 'signal'];
+  return <section className="physiology-controls"><h3>{t('physiologyTitle')}</h3><div className="physiology-topics">{kinds.map(kind => <button key={kind} aria-pressed={demo?.kind === kind} onClick={() => edit(() => s.setPhysiology(kind))}>{t(physiologyNames[kind])}</button>)}</div>
+    {demo ? <><p className="physiology-explanation" role="status"><b>{demo.step + 1} / {PHYSIOLOGY_LENGTHS[demo.kind]}</b> {t(physiologyExplanations[demo.kind][demo.step])}</p>
+      {demo.kind === 'signal' && <div className="diagram-legend signal-legend"><span><i className="ray-key"/>{t('rays')}</span><span><i className="conversion-key"/>{t('retinalConversion')}</span><span><i className="neural-key"/>{t('neuralSignal')}</span></div>}
+      <div className="playback-actions"><button disabled={!demo.playing && (reduced || demo.step === PHYSIOLOGY_LENGTHS[demo.kind]-1)} onClick={demo.playing ? s.pausePhysiology : s.playPhysiology}>{t(demo.playing ? 'pause' : 'play')}</button><button disabled={demo.step === PHYSIOLOGY_LENGTHS[demo.kind]-1} onClick={() => edit(() => { s.pausePhysiology(); s.advancePhysiology(); })}>{t('singleStep')}</button><button onClick={() => edit(() => { s.replayPhysiology(); if (reduced) s.pausePhysiology(); })}>{t('replay')}</button><button onClick={() => edit(() => s.setPhysiology(null))}>{t('exitPhysiology')}</button></div>
+      {reduced && <p className="micro">{t('reducedPlayback')}</p>}<p className="micro">{t('physiologyNote')}</p></> : <p className="micro">{t('physiologyStartHint')}</p>}
+  </section>;
+}
+
+function ComparisonSummary({ narrow }: { narrow: boolean }) {
+  const s = useEye(); const t = useText(); if (!s.comparison) return null;
+  const differences = opticsFields.filter(field => s.comparison!.input[field.key] !== s.opticsInput[field.key]);
+  const valueLabel = (field: typeof opticsFields[number], input: OpticsInput) => typeof input[field.key] === 'number' ? Number(input[field.key]).toFixed(2) : t(field.options!.find(([value]) => value === input[field.key])![1]);
+  return <div className="comparison-summary">{narrow && <div className="comparison-switch">{(['reference', 'current'] as const).map(view => <button key={view} aria-pressed={s.comparison!.showing === view} onClick={() => s.setComparisonView(view)}>{t(view === 'reference' ? 'referenceView' : 'currentView')}</button>)}</div>}
+    <strong>{t('comparisonDifference')}</strong><p>{differences.length ? differences.map(field => `${t(field.label)}: ${valueLabel(field, s.comparison!.input)} → ${valueLabel(field, s.opticsInput)}`).join(' · ') : t('comparisonSame')}</p><span className="micro">{t('comparisonHint')}</span>
+  </div>;
 }
 
 function TourList() {
@@ -176,7 +248,7 @@ function TourStepPanel({ engine }: { engine: EngineRef }) {
   const lesson = LESSONS.find(item => item.id === s.lessonId);
   if (!lesson) return <div className="welcome-card"><EyeIcon/><h2>{t('toursTitle')}</h2><p>{t('toursBody')}</p></div>;
   const step = lesson.steps[s.step]; const isLast = s.step === lesson.steps.length - 1;
-  return <div className="mode-content"><div className="step-top"><span className="eyebrow">{t('step')} {s.step + 1} / {lesson.steps.length}</span><span className="micro">{lesson.title[s.lang]}</span></div><div className="progress-track">{lesson.steps.map((_, i) => <span key={i} className={i <= s.step ? 'done' : ''}/>)}</div><h2>{step.title[s.lang]}</h2><p className="tour-body">{step.body[s.lang]}</p><button className="target-chip" onClick={() => observeStructure(engine.current, step.target, true)}>{structure(step.target)!.name[s.lang]} ↗</button>{step.optics && <OpticsDiagram/>}<button className="text-button" onClick={s.restartLesson}>{t('restartLesson')}</button>{isLast && <p className="micro note">{t('tourDone')}</p>}</div>;
+  return <div className="mode-content"><div className="step-top"><span className="eyebrow">{t('step')} {s.step + 1} / {lesson.steps.length}</span><span className="micro">{lesson.title[s.lang]}</span></div><div className="progress-track">{lesson.steps.map((_, i) => <span key={i} className={i <= s.step ? 'done' : ''}/>)}</div><h2>{step.title[s.lang]}</h2><p className="tour-body">{step.body[s.lang]}</p><button className="target-chip" onClick={() => observeStructure(engine.current, step.target, true)}>{structure(step.target)!.name[s.lang]} ↗</button>{step.optics && <OpticsDiagram/>}{lesson.id === 'vision' && <PhysiologyControls engine={engine} signalOnly/>}<button className="text-button" onClick={s.restartLesson}>{t('restartLesson')}</button>{isLast && <p className="micro note">{t('tourDone')}</p>}</div>;
 }
 
 function QuizPanel() {
@@ -295,7 +367,18 @@ function MobilePanel({ engine, size, onSize }: { engine: EngineRef; size: PanelS
 }
 
 export default function App() {
-  const s = useEye(); const t = useText(); const engine = useRef<EyeEngine | null>(null);
+  const s = useEye(); const t = useText(); const engine = useRef<EyeEngine | null>(null); const referenceEngine = useRef<EyeEngine | null>(null);
+  const reduced = useReducedMotion();
+  useEffect(() => { if (reduced) eyeStore.getState().pausePhysiology(); }, [reduced]);
+  useEffect(() => {
+    if (!s.physiology?.playing || reduced) return;
+    const playing = s.physiology;
+    const timer = window.setTimeout(() => {
+      const current = eyeStore.getState();
+      if (current.physiology === playing && current.mode === s.mode) editScene(engine.current, current.advancePhysiology);
+    }, 1600);
+    return () => window.clearTimeout(timer);
+  }, [s.mode, s.physiology?.kind, s.physiology?.step, s.physiology?.playing, reduced]);
   const [narrow, setNarrow] = useState(() => window.matchMedia('(width < 900px)').matches);
   const [panelSize, setPanelSize] = useState<PanelSize>('half');
   const [keyboardOpen, setKeyboardOpen] = useState(false);
@@ -325,7 +408,7 @@ export default function App() {
   }, []);
   return <div className={`app ${narrow ? 'narrow' : ''} ${keyboardOpen ? 'keyboard-open' : ''}`}><header className="header"><a className="brand" href="#" onClick={e => { e.preventDefault(); s.setMode('explore', engine.current?.captureCamera()); }} aria-label="eyesight"><span className="brand-icon"><EyeIcon small/></span><b>eyesight</b><span className="brand-tagline">{t('tagline')}</span></a><nav ref={nav} aria-label={t('workspaces')}>{(['explore','optics','tour','quiz'] as Mode[]).map(mode => <button key={mode} className={s.mode === mode ? 'active' : ''} aria-current={s.mode === mode ? 'page' : undefined} onClick={() => s.setMode(mode, engine.current?.captureCamera())}>{t(mode)}</button>)}</nav><div className="language-switch" role="group" aria-label="Language / 语言"><button lang="zh-CN" aria-pressed={s.lang === 'zh'} onClick={() => s.setLanguage('zh')}>中</button><span aria-hidden="true">/</span><button lang="en" aria-pressed={s.lang === 'en'} onClick={() => s.setLanguage('en')}>EN</button></div></header>
     <main className={`workspace mode-${s.mode}`}>
-      <section className="scene-column" inert={narrow && panelSize === 'full' ? true : undefined}><div className="scene-heading"><div><span className="eyebrow">OCULUS DEXTER · OD</span><h1>{t('rightEye')}<span>{t('schematic')}</span></h1></div><div className="scene-actions">{s.mode !== 'quiz' && <button className={s.labels ? 'active' : ''} aria-pressed={s.labels} onClick={() => editScene(engine.current, () => s.setLabels(!s.labels))}>{t('labels')}</button>}<button onClick={s.resetCamera}>{t('resetCamera')}</button><button title={t('resetSceneHint')} onClick={() => editScene(engine.current, s.resetScene)}>{t('reset')}</button></div></div><div className="stage"><div className="stage-grid"/><Viewport engine={engine}/><div className="scene-corner" data-viewport-overlay>01 <span>/ {t(s.mode)}</span></div><p className="interaction-hint" data-viewport-overlay>{t(s.mode === 'quiz' ? 'dragQuiz' : 'drag')}</p></div><div className="observation-actions">{s.revealPreset && <span role="status">{t(s.revealPreset)} <button onClick={() => editScene(engine.current, s.undoReveal)}>{t('undoReveal')}</button></span>}{s.focusReturn && <button onClick={s.returnFocus}>{t('returnFocus')}</button>}</div>{!narrow && <SceneControls engine={engine}/>}</section>
+      <section className="scene-column" inert={narrow && panelSize === 'full' ? true : undefined}><div className="scene-heading"><div><span className="eyebrow">OCULUS DEXTER · OD</span><h1>{t('rightEye')}<span>{t('schematic')}</span></h1></div><div className="scene-actions">{s.mode !== 'quiz' && <button className={s.labels ? 'active' : ''} aria-pressed={s.labels} onClick={() => editScene(engine.current, () => s.setLabels(!s.labels))}>{t('labels')}</button>}<button onClick={s.resetCamera}>{t('resetCamera')}</button><button title={t('resetSceneHint')} onClick={() => editScene(engine.current, s.resetScene)}>{t('reset')}</button></div></div><ComparisonSummary narrow={narrow}/><div className="stage"><div className="stage-grid"/><div className={`model-views ${s.comparison && !narrow ? 'comparison-split' : ''}`}><div className="model-view" data-comparison={s.comparison ? narrow ? s.comparison.showing : 'current' : undefined}><Viewport engine={engine} peer={referenceEngine} narrow={narrow}/>{s.comparison && <span className="model-view-label" data-viewport-overlay>{t(narrow && s.comparison.showing === 'reference' ? 'referenceView' : 'currentView')}</span>}</div>{s.comparison && !narrow && <div className="model-view reference-model" data-comparison="reference"><Viewport engine={referenceEngine} peer={engine} reference/><span className="model-view-label" data-viewport-overlay>{t('referenceView')}</span></div>}</div></div><div className="observation-actions">{s.revealPreset && <span role="status">{t(s.revealPreset)} <button onClick={() => editScene(engine.current, s.undoReveal)}>{t('undoReveal')}</button></span>}{s.focusReturn && <button onClick={s.returnFocus}>{t('returnFocus')}</button>}</div>{!narrow && <SceneControls engine={engine}/>}</section>
       {narrow ? <MobilePanel engine={engine} size={panelSize} onSize={setPanelSize}/> : <>
         <aside className="left-panel">{s.mode === 'explore' ? <StructuresPanel engine={engine}/> : s.mode === 'tour' ? <TourList/> : s.mode === 'optics' ? <OpticsControls engine={engine}/> : <div className="mode-content"><span className="eyebrow">{t('quiz')}</span><h2>{t('quizPanel')}</h2><p>{t('quizHint')}</p><div className="sidebar-illustration"><EyeIcon/></div><p className="micro">{t('score')} · {s.quiz ? quizScore(s.quiz) : 0} / {QUIZ_POOL.length}</p></div>}</aside>
         <aside className="right-panel"><div className="desktop-panel-body">{s.mode === 'explore' ? <Details engine={engine}/> : s.mode === 'optics' ? <OpticsPanel/> : s.mode === 'tour' ? <TourStepPanel engine={engine}/> : <QuizPanel/>}</div>{(s.mode === 'tour' || s.mode === 'quiz') && <div className="panel-actions"><ModeActions engine={engine}/></div>}</aside>

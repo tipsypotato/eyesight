@@ -97,3 +97,17 @@ button.active:not(.eye-label),button.selected:not(.eye-label),.scene-presets but
 .diagram-legend .blocked-key{background:#687872;width:14px;height:2px}
 .diagram-legend .extension-key{background:transparent;border-top:2px dashed #a86c17;width:14px;height:0}
 @media(max-width:899px){.panel-body .optics-parameters{margin-bottom:20px}.panel-body .optics-field{padding:8px 0}.panel-body .optics-field .micro{font-size:12px}}
+
+.model-views{position:absolute;inset:0;display:flex}.model-view{position:relative;flex:1;min-width:0}
+.comparison-split .reference-model{order:-1;border-right:1px solid #75836c}.model-view-label{position:absolute;top:12px;left:14px;z-index:3;background:var(--paper);padding:4px 10px;border:1px solid #75836c;border-radius:5px;font-size:12px;pointer-events:none}
+.comparison-summary{margin:12px 26px 0;padding:10px 12px;border:1px solid #75836c;border-radius:7px;background:var(--paper);font-size:12px;flex:none;max-height:150px;overflow:auto}
+.comparison-summary p{margin:3px 0;line-height:1.6}.comparison-summary .micro{display:block}.comparison-switch,.comparison-actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px}.comparison-actions{margin-top:18px}.comparison-actions button{flex:1;font-size:12px}
+.comparison-switch button{flex:1}.comparison-switch [aria-pressed=true],.physiology-topics [aria-pressed=true]{background:var(--accent);border-color:#496837;font-weight:600}
+.optics-inputs{border:0;padding:0;margin:0;min-width:0}.optics-reading+.optics-reading{border-top:1px solid #75836c;padding-top:20px;margin-top:24px}.optics-reading h3{font-size:15px;margin-top:16px}
+.test-chart{margin:18px 0}.test-chart figcaption{font-size:12px;margin-bottom:8px;font-weight:600}.test-chart svg{width:100%;display:block;border:1px solid #75836c;border-radius:6px}.test-chart .micro{margin:7px 0}
+.physiology-controls{margin-top:20px;border-top:1px solid #75836c;padding-top:18px}.physiology-controls h3{font-size:15px}.physiology-topics{display:flex;flex-direction:column;gap:8px;margin:12px 0}.physiology-topics button{font-size:12px;text-align:left}
+.physiology-explanation{padding:10px;background:#edf2e5;border-left:3px solid #61744e;font-size:12px}.physiology-explanation b{display:block;margin-bottom:6px;font-variant-numeric:tabular-nums}
+.playback-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.playback-actions button{font-size:12px;overflow-wrap:anywhere}
+.signal-legend{justify-content:flex-start;margin:14px 0;font-size:11px}.diagram-legend i{flex:none}.diagram-legend .neural-key{width:18px;border-top:2px dashed #794599;position:relative}.neural-key:after{content:'';position:absolute;left:6px;top:-4px;width:6px;height:6px;background:#794599;border-radius:50%}
+.diagram-legend .conversion-key{width:7px;height:7px;background:#794599;transform:rotate(45deg)}.diagram-legend .retinal-key{border-radius:0}
+@media(max-width:899px){.comparison-summary{margin:4px 12px 0;padding:8px 10px;max-height:138px;font-size:11px}.comparison-summary .micro{display:none}.comparison-switch{margin-bottom:5px}.comparison-switch button{font-size:12px}.physiology-topics{flex-direction:row;flex-wrap:wrap}.physiology-topics button{flex:1;min-width:120px}.comparison-actions{margin-top:12px}}

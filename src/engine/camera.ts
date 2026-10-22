@@ -25,12 +25,11 @@ export class CameraRig {
     controls.rotateSpeed = 0.75;
     controls.zoomSpeed = 0.8;
     controls.panSpeed = 0.65;
-    controls.minDistance = 0.18;
-    controls.maxDistance = 12;
     controls.screenSpacePanning = true;
     controls.addEventListener('start', () => { this.interacting = true; animator.cancel('camera'); });
     controls.addEventListener('end', () => { this.interacting = false; this.applyViewportScale(); });
     this.controls = controls;
+    this.updateDistanceLimits();
   }
   capture(): CameraSnapshot {
     this.applyViewportScale();
@@ -50,6 +49,7 @@ export class CameraRig {
     const view = snapshot.viewOffset;
     if (view) this.camera.setViewOffset(view.fullWidth, view.fullHeight, view.offsetX, view.offsetY, view.width, view.height);
     else this.camera.clearViewOffset();
+    this.updateDistanceLimits();
     this.camera.lookAt(this.controls.target);
     this.controls.update();
   }
@@ -91,9 +91,16 @@ export class CameraRig {
   private applyViewportScale() {
     const scale = this.pendingViewportScale;
     this.pendingViewportScale = 1;
+    this.updateDistanceLimits();
     if (Math.abs(scale - 1) < 1e-10) return;
     this.camera.position.sub(this.controls.target).multiplyScalar(scale).add(this.controls.target);
     this.controls.dispatchEvent({ type: 'change' });
+  }
+  private updateDistanceLimits() {
+    const fullHeightFit = 1.08 / Math.sin(THREE.MathUtils.degToRad(this.camera.fov) / 2);
+    const scale = this.distanceFor(1) / fullHeightFit;
+    this.controls.minDistance = 0.18 * scale;
+    this.controls.maxDistance = 12 * scale;
   }
   distanceFor(radius: number) {
     const tangent = Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2) / this.camera.zoom;

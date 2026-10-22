@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { STRUCTURES } from '../anatomy/data';
-import type { SceneState, StructureId, ViewPreset } from '../anatomy/types';
+import type { CameraSnapshot, SceneState, StructureId, ViewPreset } from '../anatomy/types';
 import { Animator } from './animator';
 import { CameraRig } from './camera';
 import { buildEye, createShellSection, setOpticalGeometry, setPosteriorStretch, type EyePart } from './geometry';
@@ -38,6 +38,11 @@ export class EyeEngine {
   private labels = new Map<StructureId, Label>();
   private caps = new Map<StructureId, THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>>();
   private rays = new THREE.Group();
+  private neural = new THREE.Group();
+  private neuralKey = '';
+  private cameraListener: ((camera: CameraSnapshot) => void) | null = null;
+  private lastCamera: CameraSnapshot | null = null;
+  private syncingCamera = false;
   private raycaster = new THREE.Raycaster();
   private pointer = new THREE.Vector2();
   private pointerDown = new THREE.Vector2(Infinity, Infinity);
@@ -114,7 +119,8 @@ export class EyeEngine {
       this.overlay.append(leader, dot, button);
       this.labels.set(structure.id, { button, dot, leader });
     }
-    this.scene.add(this.eye.root, this.rays, this.section.guide);
+    this.neural.name = 'neural-signal';
+    this.scene.add(this.eye.root, this.rays, this.neural, this.section.guide);
     this.scene.add(new THREE.HemisphereLight('#fff9e8', '#596e79', 1.7));
     const key = new THREE.DirectionalLight('#fff8e6', 2.4);
     key.position.set(3, 5, 6);
@@ -144,7 +150,7 @@ export class EyeEngine {
     this.raycaster.params.Line.threshold = 0.008;
     this.camera.position.set(3.5, 1.4, 3.5);
     this.rig = new CameraRig(this.camera, this.canvas, this.animator);
-    this.rig.controls.addEventListener('change', this.invalidate);
+    this.rig.controls.addEventListener('change', this.handleCameraChange);
     this.canvas.addEventListener('pointerdown', this.handlePointerDown, true);
     this.canvas.addEventListener('pointerup', this.handlePointerUp, true);
     this.canvas.addEventListener('pointermove', this.handlePointerMove, true);
@@ -216,6 +222,7 @@ export class EyeEngine {
       this.opticalGeometryKey = opticalGeometryKey;
     }
     this.eye.root.updateMatrixWorld(true);
+    this.updateNeural();
     this.capKey = '';
     if (sceneChanged && state.camera) this.rig.restore(state.camera);
     else if (sceneChanged || state.view !== previous?.view || state.explode !== previous?.explode || showingOptics !== (previous?.mode === 'optics' || !!previous?.showOptics)) this.setView(state.view);
@@ -284,6 +291,7 @@ export class EyeEngine {
     const fundus = ['macula', 'fovea', 'optic-disc', 'retinal-vessels', 'retina'].includes(id);
     const direction = fundus ? new THREE.Vector3(0, 0, 1) : id === 'optic-nerve' ? new THREE.Vector3(0, 0, -1) : undefined;
     this.rig.focus(sphere.center, Math.max(0.06, sphere.radius / 0.34), direction);
+    this.notifyCamera();
     this.invalidate();
   }
 
@@ -314,12 +322,44 @@ export class EyeEngine {
       this.rig.preset(view, sphere.radius, sphere.center);
     } else this.rig.preset(view, 1.38 + (this.state?.explode ?? 0) * 0.60,
       new THREE.Vector3(0, 0, -0.08 + (this.state?.explode ?? 0) * 0.3));
+    this.notifyCamera();
     this.invalidate();
   }
 
-  zoom(delta: number) { this.rig.zoom(delta); this.invalidate(); }
+  zoom(delta: number) { this.rig.zoom(delta); this.notifyCamera(); this.invalidate(); }
   captureCamera() { return this.rig.capture(); }
   resetCamera() { this.setView(this.state?.view ?? 'oblique'); }
+
+  setCameraListener(listener: ((camera: CameraSnapshot) => void) | null) {
+    this.cameraListener = this.disposed ? null : listener;
+    this.lastCamera = this.rig.capture();
+  }
+
+  syncCamera(snapshot: CameraSnapshot) {
+    if (this.disposed) return;
+    this.syncingCamera = true;
+    try {
+      this.rig.restore(snapshot);
+      this.rig.setViewport(this.width, this.height, this.usableRect);
+      this.lastCamera = this.rig.capture();
+    } finally { this.syncingCamera = false; }
+    this.invalidate();
+  }
+
+  private notifyCamera() {
+    if (this.disposed || this.syncingCamera || !this.cameraListener) return;
+    const snapshot = this.rig.capture(), previous = this.lastCamera;
+    // OrbitControls can round-trip a synchronized pose with sub-pixel floating-point noise.
+    if (previous && snapshot.position.every((value, i) => Math.abs(value - previous.position[i]) < 1e-9)
+      && snapshot.target.every((value, i) => Math.abs(value - previous.target[i]) < 1e-9)
+      && Math.abs(snapshot.zoom - previous.zoom) < 1e-9
+      && JSON.stringify(snapshot.viewport) === JSON.stringify(previous.viewport)
+      && JSON.stringify(snapshot.viewOffset) === JSON.stringify(previous.viewOffset)) return;
+    this.lastCamera = snapshot;
+    this.cameraListener(snapshot);
+  }
+
+  private handleCameraChange = () => { this.notifyCamera(); this.invalidate(); };
 
   private materials(object: Drawable): THREE.Material[] {
     return Array.isArray(object.material) ? object.material : [object.material];
@@ -378,6 +418,42 @@ export class EyeEngine {
       ]), new THREE.LineBasicMaterial({ color: '#56a9b0', depthTest: false }));
       this.rays.add(outline);
     }
+  }
+
+  private updateNeural() {
+    const step = this.state?.physiology?.kind === 'signal' ? this.state.physiology.step : 0;
+    const key = `${step}|${this.posteriorScale}|${this.state?.explode}|${this.eye.root.matrixWorld.elements.join(',')}`;
+    if (key === this.neuralKey) return;
+    this.neuralKey = key;
+    this.disposeGroup(this.neural);
+    this.neural.clear();
+    if (step < 1 || !this.opticsResult) return;
+    const retina = this.eye.parts.get('retina')!, disc = this.eye.parts.get('optic-disc')!;
+    const conversion = retina.group.localToWorld(new THREE.Vector3(0, 0, this.opticsResult.retinaZ));
+    const color = '#7452a8';
+    const addNode = (name: string, point: THREE.Vector3, geometry: THREE.BufferGeometry) => {
+      const node = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({ color, depthTest: false }));
+      node.name = name; node.position.copy(point); node.renderOrder = 14;
+      this.neural.add(node);
+    };
+    addNode('retinal-conversion', conversion, new THREE.OctahedronGeometry(0.055));
+    if (step < 2) return;
+    const discPoint = disc.anchor.clone(); discPoint.z *= this.posteriorScale;
+    disc.group.localToWorld(discPoint);
+    const nerve = this.eye.parts.get('optic-nerve')!.group.children.find(child => child instanceof THREE.Mesh && child.geometry instanceof THREE.TubeGeometry) as THREE.Mesh<THREE.TubeGeometry>;
+    const nervePoints = nerve.geometry.parameters.path.getPoints(24).map(point => {
+      if (point.z < 0) point.z *= this.posteriorScale;
+      return nerve.localToWorld(point);
+    });
+    const addPath = (name: string, points: THREE.Vector3[]) => {
+      const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), new THREE.LineDashedMaterial({ color, dashSize: 0.035, gapSize: 0.025, depthTest: false }));
+      line.name = name; line.computeLineDistances(); line.renderOrder = 13;
+      this.neural.add(line);
+    };
+    addPath('retinal-neural-path', [conversion, discPoint]);
+    addPath('optic-nerve-signal', [discPoint, ...nervePoints]);
+    addNode('optic-disc-signal', discPoint, new THREE.OctahedronGeometry(0.045));
+    addNode('optic-nerve-exit-signal', nervePoints.at(-1)!, new THREE.OctahedronGeometry(0.045));
   }
 
   private updateSections() {
@@ -738,6 +814,7 @@ export class EyeEngine {
     this.measureViewport();
     this.animator.tick(dt);
     const moved = this.rig.controls.update();
+    this.notifyCamera();
     this.updateSections();
     this.updateHover();
     this.renderLabels();
@@ -763,7 +840,8 @@ export class EyeEngine {
     cancelAnimationFrame(this.frame);
     this.resizeObserver.disconnect();
     this.media.removeEventListener('change', this.handleMotion);
-    this.rig.controls.removeEventListener('change', this.invalidate);
+    this.cameraListener = null;
+    this.rig.controls.removeEventListener('change', this.handleCameraChange);
     this.rig.controls.dispose();
     this.canvas.removeEventListener('pointerdown', this.handlePointerDown, true);
     this.canvas.removeEventListener('pointerup', this.handlePointerUp, true);
@@ -778,6 +856,7 @@ export class EyeEngine {
     this.canvas.removeEventListener('webglcontextrestored', this.invalidate);
     this.eye.dispose();
     this.disposeGroup(this.rays);
+    this.disposeGroup(this.neural);
     this.disposeGroup(this.section.guide);
     this.renderer.dispose();
     this.renderer.forceContextLoss();

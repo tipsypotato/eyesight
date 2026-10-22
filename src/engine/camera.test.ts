@@ -242,4 +242,52 @@ describe('workspace camera lifecycle', () => {
       expect(animator.active).toBe(false);
     } finally { rig.controls.dispose(); }
   });
+
+  it.each([170, 250, 295])('fits the complete optical scene after OrbitControls updates in a %s px comparison viewport', width => {
+    const { camera, animator, rig } = setup();
+    animator.reducedMotion = true; camera.fov = 38;
+    const center = new THREE.Vector3(0, 0, 1.115);
+    const available = { x: 8, y: 40, width: width - 16, height: 340 };
+    try {
+      rig.setViewport(width, 420, available);
+      rig.focus(center, 2.9, new THREE.Vector3(1, 0.015, 0.02));
+      const fitted = camera.position.distanceTo(center);
+      for (let i = 0; i < 25; i++) rig.controls.update();
+      expect(camera.position.distanceTo(center)).toBeCloseTo(fitted);
+      camera.updateMatrixWorld(true);
+      for (const z of [4, -1.77]) {
+        const point = new THREE.Vector3(0, 0, z).project(camera);
+        const x = (point.x + 1) * width / 2;
+        expect(x).toBeGreaterThan(available.x);
+        expect(x).toBeLessThan(available.x + available.width);
+        expect(point.z).toBeGreaterThan(-1); expect(point.z).toBeLessThan(1);
+      }
+      rig.zoom(0.15); rig.controls.update();
+      expect(camera.position.distanceTo(center)).toBeCloseTo(fitted * Math.exp(0.15));
+    } finally { rig.controls.dispose(); }
+  });
+
+  it('preserves comparison zoom through width changes and snapshot restoration with viewport-scaled distance limits', () => {
+    const { camera, animator, rig } = setup();
+    animator.reducedMotion = true;
+    const center = new THREE.Vector3(0, 0, 1.115);
+    try {
+      rig.setViewport(600, 420); rig.focus(center, 2.9); rig.zoom(0.15); rig.controls.update();
+      const ratio = camera.position.distanceTo(center) / rig.distanceFor(1);
+      const wideDistance = camera.position.distanceTo(center), wideMax = rig.controls.maxDistance;
+      rig.setViewport(170, 420, { x: 8, y: 40, width: 154, height: 340 }); rig.controls.update();
+      expect(camera.position.distanceTo(center) / rig.distanceFor(1)).toBeCloseTo(ratio);
+      const narrow = rig.capture();
+      rig.setViewport(600, 420); rig.controls.update();
+      expect(camera.position.distanceTo(center)).toBeCloseTo(wideDistance);
+      expect(rig.controls.maxDistance).toBeCloseTo(wideMax);
+      rig.restore(narrow); rig.controls.update();
+      expect(camera.position.distanceTo(center) / rig.distanceFor(1)).toBeCloseTo(ratio);
+      rig.setViewport(600, 420); rig.controls.update();
+      expect(camera.position.distanceTo(center)).toBeCloseTo(wideDistance);
+      rig.zoom(10); rig.controls.update();
+      expect(camera.position.distanceTo(center)).toBeCloseTo(wideMax);
+    } finally { rig.controls.dispose(); }
+  });
+
 });

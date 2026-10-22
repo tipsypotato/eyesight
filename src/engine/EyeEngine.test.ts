@@ -2,11 +2,35 @@ import { expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { createEyeStore } from '../state/store';
 import { EyeEngine } from './EyeEngine';
+import type { CameraSnapshot } from '../anatomy/types';
 import { buildEye } from './geometry';
 import { SectionTool } from './section';
 import { Animator } from './animator';
 import { CameraRig } from './camera';
 import { opticsInputForPreset, traceOptics, type TraceOpticsResult } from './optics';
+
+class EngineElementStub extends EventTarget {
+  style: Record<string, string> = {};
+  classList = { add() {} };
+  clientWidth = 480; clientHeight = 600;
+  parentElement: EngineElementStub | null = null;
+  children: EngineElementStub[] = [];
+  get ownerDocument() { return document; }
+  getRootNode() { return document; }
+  append(...children: EngineElementStub[]) { children.forEach(child => this.appendChild(child)); }
+  appendChild(child: EngineElementStub) { child.parentElement = this; this.children.push(child); }
+  setAttribute() {} remove() {} querySelectorAll() { return []; }
+  getBoundingClientRect() { return { left: 0, top: 0, width: this.clientWidth, height: this.clientHeight, right: this.clientWidth, bottom: this.clientHeight }; }
+  setPointerCapture() {} hasPointerCapture() { return false; } releasePointerCapture() {}
+}
+
+vi.mock('three', async importOriginal => ({
+  ...await importOriginal<typeof import('three')>(),
+  WebGLRenderer: class {
+    domElement = new EngineElementStub();
+    setPixelRatio() {} setSize() {} dispose() {} forceContextLoss() {} render() {}
+  },
+}));
 
 it('reapplies the current viewport after restoring a mode saved before a resize', () => {
   const eye = buildEye(), store = createEyeStore(), document = new EventTarget();
@@ -19,7 +43,7 @@ it('reapplies the current viewport after restoring a mode saved before a resize'
   const host = { getBoundingClientRect: () => ({ top: 0, bottom: 300 }), parentElement: { querySelectorAll: () => [] } };
   const engine = Object.assign(Object.create(EyeEngine.prototype), {
     eye, state: store.getState(), camera, rig, canvas, host, width: 390, height: 300,
-    labels: new Map(), caps: new Map(), section: new SectionTool(), rays: new THREE.Group(), pointerDown: new THREE.Vector2(),
+    labels: new Map(), caps: new Map(), section: new SectionTool(), rays: new THREE.Group(), neural: new THREE.Group(), pointerDown: new THREE.Vector2(),
     posteriorScale: 1, setView: vi.fn(), invalidate: vi.fn(),
   }) as EyeEngine;
   const measure = () => (engine as unknown as { measureViewport(): void }).measureViewport();
@@ -102,7 +126,7 @@ it('cancels a pending focus when a different structure is selected', () => {
   const rig = new CameraRig(camera, canvas as unknown as HTMLElement, animator);
   const engine = Object.assign(Object.create(EyeEngine.prototype), {
     eye, state: store.getState(), canvas, rig, camera, animator,
-    labels: new Map(), caps: new Map(), section: new SectionTool(), rays: new THREE.Group(),
+    labels: new Map(), caps: new Map(), section: new SectionTool(), rays: new THREE.Group(), neural: new THREE.Group(),
     pointerDown: new THREE.Vector2(), posteriorScale: 1, invalidate: vi.fn(),
   }) as EyeEngine;
   const unsubscribe = store.subscribe(state => engine.setState(state));
@@ -130,7 +154,7 @@ it('restores a mode camera and removes optical stretching without rebuilding the
   const rays = new THREE.Group();
   const engine = Object.assign(Object.create(EyeEngine.prototype), {
     eye, state: store.getState(), canvas: { setAttribute: vi.fn(), style: {} },
-    labels: new Map(), caps: new Map(), section: new SectionTool(), rays, rig,
+    labels: new Map(), caps: new Map(), section: new SectionTool(), rays, neural: new THREE.Group(), rig,
     pointerDown: new THREE.Vector2(10, 20), posteriorScale: 1, setView: vi.fn(), invalidate: vi.fn(),
   }) as EyeEngine;
   const savedCamera = { position: [2, 3, 4], target: [0, 0.1, -0.3], zoom: 1.2 } as const;
@@ -173,7 +197,7 @@ it('restores internal tissue materials when the closed eye is exploded or cut', 
   // Exercise actual material updates without a browser-only WebGL renderer or camera animation.
   const engine = Object.assign(Object.create(EyeEngine.prototype), {
     eye, state: store.getState(), canvas: { setAttribute: vi.fn(), style: {} },
-    labels: new Map(), caps: new Map(), section: new SectionTool(), rays: new THREE.Group(),
+    labels: new Map(), caps: new Map(), section: new SectionTool(), rays: new THREE.Group(), neural: new THREE.Group(),
     posteriorScale: 1, setView: vi.fn(), invalidate: vi.fn(),
   }) as EyeEngine;
   const lens = eye.parts.get('lens')!.group.getObjectByName('lens-capsule') as THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhysicalMaterial>;
@@ -217,7 +241,7 @@ function pointerFixture() {
   });
   const engine = Object.assign(Object.create(EyeEngine.prototype), {
     eye, state: store.getState(), camera, canvas: { style: {}, setAttribute: vi.fn(), getBoundingClientRect: () => ({ left: 0, top: 0, width: 600, height: 400 }) },
-    rig: { cancel: vi.fn(), controls: { enabled: true } }, labels: new Map(), caps: new Map(), section: new SectionTool(), rays: new THREE.Group(),
+    rig: { cancel: vi.fn(), controls: { enabled: true } }, labels: new Map(), caps: new Map(), section: new SectionTool(), rays: new THREE.Group(), neural: new THREE.Group(),
     pointer: new THREE.Vector2(), pointerDown: new THREE.Vector2(Infinity, Infinity), raycaster,
     pointerPosition: null, pointerActive: false, hoveredId: null, posteriorScale: 1, setView: vi.fn(), invalidate: vi.fn(),
   }) as EyeEngine;
@@ -612,4 +636,164 @@ it('clears hover during dragging, camera changes and quizzes without changing qu
     expect(internal.hoveredId).toBeNull();
     expect(store.getState().quizRevealed).toBe(false);
   } finally { eye.dispose(); }
+});
+
+
+function comparisonFixture(width = 480, height = 600) {
+  const fixture = pointerFixture();
+  const document = new EventTarget();
+  const canvas = Object.assign(new EventTarget(), { style: {}, setAttribute() {}, clientWidth: width, clientHeight: height,
+    ownerDocument: document, getRootNode: () => document, setPointerCapture() {}, releasePointerCapture() {} });
+  const animator = new Animator(); animator.reducedMotion = true;
+  const rig = new CameraRig(fixture.camera, canvas as unknown as HTMLElement, animator);
+  const usableRect = { x: 8, y: 30, width: width - 16, height: height - 38 };
+  rig.setViewport(width, height, usableRect);
+  Object.assign(fixture.engine, { canvas, rig, animator, width, height, usableRect });
+  const internal = fixture.engine as unknown as { notifyCamera(): void; neural: THREE.Group; rays: THREE.Group };
+  const notify = () => internal.notifyCamera?.();
+  rig.controls.addEventListener('change', notify);
+  return { ...fixture, rig, animator, internal, notify, cleanup: () => { rig.controls.dispose(); fixture.eye.dispose(); } };
+}
+
+it('synchronizes comparison target, direction and relative zoom without recursive notifications across different viewports', () => {
+  const current = comparisonFixture(480, 600), reference = comparisonFixture(390, 400);
+  const updates: CameraSnapshot[] = [], echoes: CameraSnapshot[] = [];
+  try {
+    expect(typeof current.engine.setCameraListener).toBe('function');
+    current.engine.setCameraListener(snapshot => { updates.push(snapshot); reference.engine.syncCamera(snapshot); });
+    reference.engine.setCameraListener(snapshot => { echoes.push(snapshot); current.engine.syncCamera(snapshot); });
+    current.rig.focus(new THREE.Vector3(0.2, -0.1, -0.3), 0.5);
+    current.rig.controls.update(); current.notify();
+    current.engine.zoom(-0.25); current.rig.controls.update(); current.notify();
+    const currentPose = current.engine.captureCamera(), referencePose = reference.engine.captureCamera();
+    expect(updates.length).toBeGreaterThan(0);
+    expect(echoes).toHaveLength(0);
+    expect(referencePose.target).toEqual(currentPose.target);
+    expect(referencePose.zoom).toBe(currentPose.zoom);
+    expect(reference.camera.aspect).toBeCloseTo(390 / 400);
+    const direction = current.camera.position.clone().sub(current.rig.controls.target).normalize();
+    expect(reference.camera.position.clone().sub(reference.rig.controls.target).normalize().dot(direction)).toBeCloseTo(1);
+    expect(reference.camera.position.distanceTo(reference.rig.controls.target) / reference.rig.distanceFor(1))
+      .toBeCloseTo(current.camera.position.distanceTo(current.rig.controls.target) / current.rig.distanceFor(1));
+    const count = updates.length;
+    current.notify(); reference.notify();
+    expect(updates).toHaveLength(count); expect(echoes).toHaveLength(0);
+    current.engine.setCameraListener(null);
+    current.rig.orbit(0.1, 0); current.rig.controls.update(); current.notify();
+    expect(updates).toHaveLength(count);
+  } finally { current.cleanup(); reference.cleanup(); }
+});
+
+it('keeps camera and optical ray resources stable while stepping through paused signal conversion', () => {
+  const { eye, store, engine, rig, animator, internal, sync, cleanup } = comparisonFixture();
+  try {
+    store.setState({ mode: 'optics', opticsInput: opticsInputForPreset('normal') }); sync();
+    rig.focus(new THREE.Vector3(0, 0, -0.2), 1); rig.orbit(0.2, 0.1);
+    const pose = engine.captureCamera();
+    const opticalRay = internal.rays.getObjectByName('optical-ray');
+    for (const step of [0, 1, 2]) {
+      store.setState({ physiology: { kind: 'signal', step, playing: false, returnInput: store.getState().opticsInput, returnExperiment: 'baseline', returnPreset: 'normal', returnShowOptics: false } }); sync();
+      expect(engine.captureCamera()).toEqual(pose);
+      expect(animator.active).toBe(false);
+      expect(internal.rays.getObjectByName('optical-ray')).toBe(opticalRay);
+      expect(internal.neural.getObjectByName('retinal-conversion') !== undefined).toBe(step >= 1);
+      expect(internal.neural.getObjectByName('optic-nerve-signal') !== undefined).toBe(step === 2);
+    }
+    const conversion = internal.neural.getObjectByName('retinal-conversion') as THREE.Mesh;
+    expect(conversion.geometry).toBeInstanceOf(THREE.OctahedronGeometry);
+    const neural = internal.neural.getObjectByName('optic-nerve-signal') as THREE.Line<THREE.BufferGeometry, THREE.LineDashedMaterial>;
+    expect(neural.material).toBeInstanceOf(THREE.LineDashedMaterial);
+    expect(neural.material.color.equals((opticalRay as THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>).material.color)).toBe(false);
+    const position = neural.geometry.getAttribute('position');
+    expect(position.getZ(position.count - 1)).toBeCloseTo(-1.62 / 0.914, 6);
+    const disc = internal.neural.getObjectByName('optic-disc-signal')!;
+    expect(disc.position.x).toBeCloseTo(eye.parts.get('optic-disc')!.anchor.x);
+    for (const child of internal.rays.children.filter(child => child.name === 'optical-ray') as THREE.Line[]) {
+      const vertices = child.geometry.getAttribute('position');
+      for (let i = 0; i < vertices.count; i++) expect(vertices.getZ(i)).toBeGreaterThanOrEqual(-1.000001);
+    }
+  } finally { cleanup(); }
+});
+
+it('follows stretched and transformed anatomy and releases signal resources on replay, mode exit and reset', () => {
+  const { eye, store, engine, internal, sync, cleanup } = comparisonFixture();
+  try {
+    eye.root.position.set(0.4, -0.2, 0.1); eye.root.rotation.y = 0.25;
+    store.setState({ mode: 'optics', opticsInput: opticsInputForPreset('myopia'), explode: 0.3,
+      physiology: { kind: 'signal', step: 2, playing: false, returnInput: opticsInputForPreset('normal'), returnExperiment: 'baseline', returnPreset: 'normal', returnShowOptics: false } }); sync();
+    const path = internal.neural.getObjectByName('optic-nerve-signal') as THREE.Line;
+    expect(path).toBeDefined();
+    const expectedExit = eye.parts.get('optic-nerve')!.group.localToWorld(new THREE.Vector3(0.61, 0.065, -1.62 * 1.22 / 0.914));
+    const vertices = path.geometry.getAttribute('position');
+    expect(new THREE.Vector3().fromBufferAttribute(vertices, vertices.count - 1).distanceTo(expectedExit)).toBeLessThan(1e-6);
+    const geometryDisposed = vi.fn(), materialDisposed = vi.fn();
+    path.geometry.addEventListener('dispose', geometryDisposed);
+    (path.material as THREE.Material).addEventListener('dispose', materialDisposed);
+    store.setState({ lang: 'en' }); sync();
+    expect(internal.neural.getObjectByName('optic-nerve-signal')).toBe(path);
+    expect(geometryDisposed).not.toHaveBeenCalled();
+    store.setState({ physiology: { ...store.getState().physiology!, step: 0 } }); sync();
+    expect(internal.neural.children).toHaveLength(0);
+    expect(geometryDisposed).toHaveBeenCalledOnce(); expect(materialDisposed).toHaveBeenCalledOnce();
+    store.setState({ physiology: { ...store.getState().physiology!, step: 2 } }); sync();
+    expect(internal.neural.children.length).toBeGreaterThan(0);
+    store.setState({ mode: 'explore', physiology: null }); sync();
+    expect(internal.neural.children).toHaveLength(0);
+    expect(internal.rays.visible).toBe(false);
+  } finally { cleanup(); }
+});
+
+
+it('synchronizes real engine focus and orbit frames, settles when paused and unsubscribes on disposal', () => {
+  const frames = new Map<number, FrameRequestCallback>(); let sequence = 0, time = 0;
+  const documentStub = Object.assign(new EventTarget(), { createElement: () => new EngineElementStub(), createElementNS: () => new EngineElementStub() });
+  const media = Object.assign(new EventTarget(), { matches: false });
+  vi.stubGlobal('document', documentStub);
+  vi.stubGlobal('window', Object.assign(new EventTarget(), { devicePixelRatio: 1, matchMedia: () => media }));
+  vi.stubGlobal('getComputedStyle', () => ({ position: 'relative' }));
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.set(++sequence, callback); return sequence; });
+  vi.stubGlobal('cancelAnimationFrame', (id: number) => frames.delete(id));
+  const instances: EyeEngine[] = [];
+  const flush = () => {
+    let count = 0;
+    while (frames.size && count++ < 180) {
+      const callbacks = [...frames.values()]; frames.clear(); time += 16;
+      callbacks.forEach(callback => callback(time));
+    }
+    expect(frames.size, 'paused engines must not keep scheduling comparison frames').toBe(0);
+  };
+  try {
+    const store = createEyeStore(); store.getState().setMode('optics'); store.getState().setPhysiology('signal');
+    for (let i = 0; i < 2; i++) {
+      const host = new EngineElementStub(); host.parentElement = new EngineElementStub();
+      const engine = new EyeEngine(host as unknown as HTMLElement, () => {});
+      Object.assign(engine, { renderLabels() {} });
+      engine.setState(store.getState()); instances.push(engine);
+    }
+    const [current, reference] = instances; flush();
+    const changes: CameraSnapshot[] = [], echoes: CameraSnapshot[] = [];
+    current.setCameraListener(snapshot => { changes.push(snapshot); reference.syncCamera(snapshot); });
+    reference.setCameraListener(snapshot => { echoes.push(snapshot); current.syncCamera(snapshot); });
+    current.focus('lens'); flush();
+    expect(changes.length).toBeGreaterThan(1);
+    expect(echoes).toHaveLength(0);
+    const a = current.captureCamera(), b = reference.captureCamera();
+    a.position.forEach((value, index) => expect(b.position[index]).toBeCloseTo(value, 8));
+    a.target.forEach((value, index) => expect(b.target[index]).toBeCloseTo(value, 8));
+    const before = changes.length;
+    current.canvas.dispatchEvent(Object.assign(new Event('keydown', { cancelable: true }), { key: 'ArrowRight' })); flush();
+    expect(changes.length).toBeGreaterThan(before);
+    expect(echoes).toHaveLength(0);
+    store.setState({ physiology: { ...store.getState().physiology!, step: 2 } }); current.setState(store.getState()); flush();
+    const internal = current as unknown as { neural: THREE.Group; rig: CameraRig };
+    const path = internal.neural.getObjectByName('optic-nerve-signal') as THREE.Line;
+    const disposed = vi.fn(); path.geometry.addEventListener('dispose', disposed);
+    current.dispose();
+    expect(disposed).toHaveBeenCalledOnce();
+    const last = changes.length;
+    internal.rig.controls.dispatchEvent({ type: 'change' });
+    current.syncCamera(b); flush();
+    expect(changes).toHaveLength(last);
+  } finally { instances.forEach(engine => engine.dispose()); vi.unstubAllGlobals(); }
 });

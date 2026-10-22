@@ -184,3 +184,61 @@ describe('optical parameter presentation', () => {
     expect(empty).not.toMatch(/(?:NaN|Infinity)/);
   });
 });
+
+describe('comparison and physiology presentation', () => {
+  function comparison() {
+    store.getState().setMode('optics');
+    store.setState({ comparison: { input: optics.opticsInputForPreset('normal'), showing: 'current' }, opticsInput: optics.opticsInputForPreset('myopia') });
+  }
+  it('shows two desktop models with frozen reference and a parameter difference summary', () => {
+    comparison();
+    const html = renderApp(false);
+    expect(html.match(/class="viewport"/g)).toHaveLength(2);
+    expect(html).toContain('class="comparison-summary"');
+    expect(html).toContain('0.00 → 1.00');
+    expect(html).toContain('data-comparison="reference"');
+    expect(html).toContain('data-comparison="current"');
+  });
+  it('uses a single narrow viewport and labels the selected comparison scene', () => {
+    comparison();
+    store.setState({ comparison: { ...store.getState().comparison!, showing: 'reference' } });
+    const html = renderApp();
+    expect(html.match(/class="viewport"/g)).toHaveLength(1);
+    expect(html).toContain('data-comparison="reference"');
+    expect(html).toContain('0.00 → 1.00');
+    expect(html).toMatch(/aria-pressed="true"[^>]*>对照/);
+  });
+  it('derives qualitative blur from the respective ray result without claiming visual acuity', () => {
+    comparison();
+    const html = renderApp(false);
+    const amounts = [...html.matchAll(/<feGaussianBlur stdDeviation="([^"]+)"/g)].map(m => Number(m[1]));
+    expect(amounts).toHaveLength(2);
+    expect(amounts[0]).toBeLessThan(0.00001);
+    expect(amounts[1]).toBeGreaterThan(0.1);
+    expect(html).toContain('模糊示意，不代表视力表结果');
+  });
+  it('does not depict an empty ray result as a sharply focused chart', () => {
+    store.getState().setMode('optics');
+    const result = optics.traceOptics(store.getState().opticsInput);
+    vi.spyOn(optics, 'traceOptics').mockReturnValue({ ...result, rays: [], extensions: [], retinalIntersections: [], validRayCount: 0, retinalSpread: null });
+    const html = renderApp(false);
+    expect(html).not.toContain('<feGaussianBlur');
+    expect(html).toContain('未得到通过瞳孔的光线样本');
+  });
+  it('keeps manual physiology controls and distinct signal legends while paused', () => {
+    store.getState().setMode('optics');
+    store.setState({ physiology: { kind: 'signal', step: 2, playing: false, returnInput: optics.opticsInputForPreset('normal'), returnExperiment: 'baseline', returnPreset: 'normal', returnShowOptics: false } });
+    const html = renderApp(false);
+    expect(html).toContain('单步');
+    expect(html).toContain('重播');
+    expect(html).toContain('神经信号');
+    expect(html).toContain('class="neural-key"');
+    expect(html).toContain('class="conversion-key"');
+    expect(html).toContain('视神经传出');
+  });
+  it('exposes the signal demonstration within the existing vision tour', () => {
+    store.getState().startLesson('vision');
+    store.getState().goToStep(3);
+    expect(renderApp(false)).toContain('光到神经信号');
+  });
+});
