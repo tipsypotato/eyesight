@@ -74,8 +74,9 @@ describe('procedural iris textures', () => {
     const first = createIrisTextures();
     const second = createIrisTextures();
     for (const key of ['color', 'relief'] as const) {
-      expect(first[key]).not.toBe(second[key]);
-      expect(first[key].image.data).not.toBe(second[key].image.data);
+      // Avoid Vitest's deep-comparison diagnostics for large, equal pixel buffers.
+      expect(Object.is(first[key], second[key])).toBe(false);
+      expect(Object.is(first[key].image.data, second[key].image.data)).toBe(false);
       expect(first[key].image.data!.every((value, i) => value === second[key].image.data![i])).toBe(true);
       first[key].dispose();
       second[key].dispose();
