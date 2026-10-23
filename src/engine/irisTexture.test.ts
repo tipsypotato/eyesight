@@ -3,6 +3,21 @@ import * as THREE from 'three';
 import { createIrisTextures } from './irisTexture';
 
 describe('procedural iris textures', () => {
+  it('preserves the original color and relief pixels after startup optimization', async () => {
+    const textures = createIrisTextures();
+    const hashes = {
+      color: '2c01317f50be6ec9d196aae41419fea65180c007610c638abfe0f8d9b2a3c76d',
+      relief: 'cc6ba941598e64cda0b3586dadc389bcd027d7e8668164c87dfb268bd67cb198',
+    };
+    try {
+      for (const key of ['color', 'relief'] as const) {
+        const bytes = Uint8Array.from(textures[key].image.data!);
+        const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+        expect(Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('')).toBe(hashes[key]);
+      }
+    } finally { Object.values(textures).forEach(texture => texture.dispose()); }
+  });
+
   it('supplies opaque RGBA maps with angular wrapping and separate color/height spaces', () => {
     const textures = createIrisTextures();
     for (const texture of Object.values(textures)) {
@@ -81,5 +96,18 @@ describe('procedural iris textures', () => {
       first[key].dispose();
       second[key].dispose();
     }
+  });
+
+  it('does not let one eye mutate or dispose another eye’s future texture pixels', () => {
+    const first = createIrisTextures();
+    const original = Object.fromEntries(Object.entries(first).map(([key, texture]) => [key, texture.image.data![0]]));
+    for (const texture of Object.values(first)) {
+      texture.image.data![0] = 255;
+      texture.dispose();
+    }
+    const second = createIrisTextures();
+    try {
+      for (const key of ['color', 'relief'] as const) expect(second[key].image.data![0]).toBe(original[key]);
+    } finally { Object.values(second).forEach(texture => texture.dispose()); }
   });
 });

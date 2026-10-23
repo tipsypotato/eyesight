@@ -4,7 +4,8 @@ import { GROUPS, LESSONS, STRUCTURES } from '../anatomy/data';
 import { searchStructures } from '../anatomy/search';
 import { SCENE_PRESETS, type ScenePreset, type ClipAxis, type Mode, type OpticsExperiment, type OpticsInput, type OpticsPreset, type PhysiologyKind, type StructureId, type ViewPreset } from '../anatomy/types';
 import { messages, type MessageKey } from '../content/messages';
-import { EyeEngine } from '../engine/EyeEngine';
+import type { EyeEngine } from '../engine/EyeEngine';
+import { finishStartup, loadEyeEngine, setStartupStage, STARTUP_COMPLETED, STARTUP_TEXT, type StartupStage, yieldToBrowser } from '../startup';
 import { traceOptics, type TraceOpticsResult } from '../engine/optics';
 import { sessionScore } from '../modes/quiz';
 import { RELATIONSHIPS } from '../anatomy/relationships';
@@ -49,12 +50,13 @@ function observeStructure(engine: EyeEngine | null, id: StructureId, focus = fal
   if (focus) state.recordTourAction({ kind: 'focus', id });
 }
 
-function Viewport({ engine, peer, reference = false, narrow = false }: { engine: EngineRef; peer: EngineRef; reference?: boolean; narrow?: boolean }) {
+export function Viewport({ engine, peer, reference = false, narrow = false }: { engine: EngineRef; peer: EngineRef; reference?: boolean; narrow?: boolean }) {
   const host = useRef<HTMLDivElement>(null); const s = useEye();
   const options = useRef({ reference, narrow }); options.current = { reference, narrow };
   const applyingState = useRef(false);
   const t = useText();
-  const [failed, setFailed] = useState(false);
+  const [failed, setFailed] = useState<'load' | 'webgl' | null>(null);
+  const [loading, setLoading] = useState<StartupStage>('engine');
   const scene = (state: ReturnType<typeof eyeStore.getState>) => {
     if (state.mode === 'disease' && options.current.reference) return { ...state, diseaseNormal: true };
     return state.comparison && (options.current.reference || options.current.narrow && state.comparison.showing === 'reference')
@@ -69,37 +71,65 @@ function Viewport({ engine, peer, reference = false, narrow = false }: { engine:
   };
   useEffect(() => {
     if (!host.current) return;
-    let instance: EyeEngine; let saveTimer: number | undefined;
-    try {
-      instance = new EyeEngine(host.current, (id, side) => {
+    const element = host.current;
+    let instance: EyeEngine | undefined, saveTimer: number | undefined;
+    let cancelled = false, loaded = false, unsubscribe: (() => void) | undefined;
+    const progress = (stage: StartupStage) => {
+      setLoading(stage);
+      if (!reference) setStartupStage(stage, eyeStore.getState().lang);
+    };
+    const fail = (error: unknown) => {
+      if (cancelled) return;
+      console.error('3D initialization failed', error);
+      window.clearTimeout(saveTimer); unsubscribe?.(); instance?.dispose(); engine.current = null;
+      setFailed(loaded ? 'webgl' : 'load');
+      if (!reference) finishStartup();
+    };
+    void (async () => {
+      progress('engine');
+      const { EyeEngine } = await loadEyeEngine();
+      if (cancelled) return;
+      loaded = true;
+      progress('model');
+      await yieldToBrowser();
+      if (cancelled) return;
+      const active = new EyeEngine(element, (id, side) => {
         const state = eyeStore.getState();
         if (state.mode === 'disease') state.selectEye(side ?? 'right', id);
         else state.select(id, true);
-      }, id => observeStructure(instance, id, true), {
-        begin: () => eyeStore.getState().beginSceneChange(instance.captureCamera()),
+      }, id => observeStructure(active, id, true), {
+        begin: () => eyeStore.getState().beginSceneChange(active.captureCamera()),
         change: offset => eyeStore.getState().setClip({ offset }),
         end: () => eyeStore.getState().endSceneChange(),
+      }, error => {
+        if (cancelled) return;
+        if (error !== undefined) { fail(error); return; }
+        progress('ready');
+        if (!reference) finishStartup();
       });
-      engine.current = instance;
-      instance.setState(scene(eyeStore.getState()));
-      instance.setCameraListener(camera => {
+      instance = active; engine.current = active;
+      active.setState(scene(eyeStore.getState()));
+      active.setCameraListener(camera => {
         if (applyingState.current) return;
         peer.current?.syncCamera(camera);
-        const active = reference ? peer.current : instance; if (!active) return;
+        const currentEngine = reference ? peer.current : active; if (!currentEngine) return;
         const state = eyeStore.getState(), mode = state.mode, revision = state.sceneRevision;
-        state.rememberCamera(active.captureCamera()); window.clearTimeout(saveTimer);
+        state.rememberCamera(currentEngine.captureCamera()); window.clearTimeout(saveTimer);
         saveTimer = window.setTimeout(() => { const current = eyeStore.getState(); if (current.mode === mode && current.sceneRevision === revision) current.flushProgress(); }, 400);
       });
-      if (reference && peer.current) instance.syncCamera(peer.current.captureCamera());
-    } catch (error) { console.error('3D initialization failed', error); setFailed(true); return; }
-    const unsubscribe = eyeStore.subscribe(next => applyState(instance, next));
-    return () => { window.clearTimeout(saveTimer); unsubscribe(); instance.dispose(); engine.current = null; };
+      if (reference && peer.current) active.syncCamera(peer.current.captureCamera());
+      else if (peer.current) peer.current.syncCamera(active.captureCamera());
+      unsubscribe = eyeStore.subscribe(next => applyState(active, next));
+      progress('render');
+    })().catch(fail);
+    return () => { cancelled = true; window.clearTimeout(saveTimer); unsubscribe?.(); instance?.dispose(); engine.current = null; };
   }, [engine]);
   useEffect(() => { if (engine.current) applyState(engine.current, eyeStore.getState()); }, [narrow, reference, engine]);
   const binocular = s.mode === 'disease' && (s.disease?.id === 'strabismus' || s.disease?.id === 'amblyopia');
-  return <div className="viewport" ref={host} role="group" aria-label={`${t(binocular ? 'bothEyes' : 'rightEye')} · ${t('schematic')}`}>
+  return <div className="viewport" ref={host} role="group" aria-busy={!failed && loading !== 'ready'} aria-label={`${t(binocular ? 'bothEyes' : 'rightEye')} · ${t('schematic')}`}>
     {!s.comparison && !s.diseaseComparison && <div className="scene-corner" data-viewport-overlay>01 <span>/ {t(s.mode)}</span></div>}<p className="interaction-hint" data-viewport-overlay>{s.mode === 'quiz' && s.quiz?.context !== 'structures' ? LEARNING_TEXT.answerHint[s.lang] : t(s.mode === 'quiz' ? 'dragQuiz' : 'drag')}</p>
-    {failed && <div className="webgl-error" role="alert"><EyeIcon/><p>{t('webglError')}</p></div>}
+    {!failed && loading !== 'ready' && <div className="model-loading"><EyeIcon/><p role="status">{STARTUP_TEXT[loading][s.lang]}</p><progress aria-label={STARTUP_TEXT.progress[s.lang]} max="4" value={STARTUP_COMPLETED[loading]}/><small>{STARTUP_COMPLETED[loading]} / 4</small></div>}
+    {failed && <div className="webgl-error" role="alert"><EyeIcon/><p>{failed === 'load' ? STARTUP_TEXT.failure[s.lang] : t('webglError')}</p><button onClick={() => location.reload()}>{t('reload')}</button></div>}
   </div>;
 }
 
@@ -490,5 +520,6 @@ export default function App() {
 export class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() { return { failed: true }; }
+  componentDidCatch() { finishStartup(); }
   render() { return this.state.failed ? <div className="fatal-error"><h1>eyesight</h1><p>{messages.loadError.zh} / {messages.loadError.en}</p><button onClick={() => location.reload()}>{messages.reload.zh} / {messages.reload.en}</button></div> : this.props.children; }
 }

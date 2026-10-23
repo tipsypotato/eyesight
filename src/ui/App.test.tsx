@@ -36,6 +36,15 @@ function expectDockedAction(html: string, label: string) {
 }
 
 describe('responsive workspace markup', () => {
+  it('marks the model busy with a named progress bar before the engine is ready in either language', () => {
+    for (const lang of ['zh', 'en'] as const) {
+      store.getState().setLanguage(lang);
+      const html = renderApp(false);
+      expect(html).toMatch(/class="viewport"[^>]*aria-busy="true"/);
+      expect(html).toMatch(/<progress[^>]*aria-label="[^"]+"[^>]*max="4"[^>]*value="1"/);
+      expect(html).toContain('role="status"');
+    }
+  });
   it('exposes the extraocular preset and selected muscle details in both languages', () => {
     store.getState().applyPreset('extraocular'); store.getState().select('superior-oblique', true);
     for (const lang of ['zh', 'en'] as const) {

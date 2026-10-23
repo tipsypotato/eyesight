@@ -76,9 +76,9 @@ export class EyeEngine {
   private capKey = '';
   private posteriorScale = 1;
   private opticsResult: TraceOpticsResult | null = null;
-  private opticalGeometryKey = '';
+  private opticalGeometryKey = `${BASE_PUPIL_RADIUS}|0`;
 
-  constructor(private host: HTMLElement, private onSelect: (id: StructureId, side?: EyeSide) => void, private onLocate = onSelect, private sectionCallbacks?: SectionCallbacks) {
+  constructor(private host: HTMLElement, private onSelect: (id: StructureId, side?: EyeSide) => void, private onLocate = onSelect, private sectionCallbacks?: SectionCallbacks, private onReady?: (error?: unknown) => void) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.localClippingEnabled = true;
@@ -969,18 +969,25 @@ export class EyeEngine {
   private render = (time: number) => {
     this.frame = 0;
     if (this.disposed) return;
-    const dt = Math.min(0.05, (time - (this.lastFrame || time)) / 1000);
-    this.lastFrame = time;
-    this.measureViewport();
-    this.animator.tick(dt);
-    const moved = this.rig.controls.update();
-    this.notifyCamera();
-    this.updateSections();
-    this.updateHover();
-    this.renderLabels();
-    const flowing = this.animateAqueous(dt);
-    this.renderer.render(this.scene, this.camera);
-    if (this.animator.active || moved || flowing) this.invalidate();
+    try {
+      const dt = Math.min(0.05, (time - (this.lastFrame || time)) / 1000);
+      this.lastFrame = time;
+      this.measureViewport();
+      this.animator.tick(dt);
+      const moved = this.rig.controls.update();
+      this.notifyCamera();
+      this.updateSections();
+      this.updateHover();
+      this.renderLabels();
+      const flowing = this.animateAqueous(dt);
+      this.renderer.render(this.scene, this.camera);
+      const ready = this.onReady; this.onReady = undefined;
+      ready?.();
+      if (this.animator.active || moved || flowing) this.invalidate();
+    } catch (error) {
+      const ready = this.onReady; this.onReady = undefined;
+      if (ready) ready(error); else throw error;
+    }
   };
 
   private disposeGroup(group: THREE.Group) {
@@ -998,6 +1005,7 @@ export class EyeEngine {
     if (this.disposed) return;
     this.endSectionDrag();
     this.disposed = true;
+    this.onReady = undefined;
     cancelAnimationFrame(this.frame);
     this.resizeObserver.disconnect();
     this.media.removeEventListener('change', this.handleMotion);

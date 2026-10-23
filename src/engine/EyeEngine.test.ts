@@ -32,6 +32,63 @@ vi.mock('three', async importOriginal => ({
   },
 }));
 
+function startupEngine(onReady = (_error?: unknown) => {}) {
+  const documentStub = Object.assign(new EventTarget(), { createElement: () => new EngineElementStub(), createElementNS: () => new EngineElementStub() });
+  const media = Object.assign(new EventTarget(), { matches: true });
+  vi.stubGlobal('document', documentStub);
+  vi.stubGlobal('window', Object.assign(new EventTarget(), { devicePixelRatio: 1, matchMedia: () => media }));
+  vi.stubGlobal('getComputedStyle', () => ({ position: 'relative' }));
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
+  vi.stubGlobal('requestAnimationFrame', () => 1); vi.stubGlobal('cancelAnimationFrame', () => {});
+  const host = new EngineElementStub(); host.parentElement = new EngineElementStub();
+  const engine = new EyeEngine(host as unknown as HTMLElement, () => {}, undefined, undefined, onReady);
+  Object.assign(engine, { renderLabels() {} });
+  const internal = engine as unknown as { eye: ReturnType<typeof buildEye>; render(time: number): void };
+  return { engine, internal, cleanup: () => { engine.dispose(); vi.unstubAllGlobals(); } };
+}
+
+it('keeps the initial optical geometry intact but applies saved optical changes and restores the baseline', () => {
+  const { engine, internal, cleanup } = startupEngine();
+  const store = createEyeStore();
+  const iris = internal.eye.parts.get('iris')!.group.getObjectByName('iris-stroma') as THREE.Mesh;
+  const positions = iris.geometry.getAttribute('position') as THREE.BufferAttribute;
+  const original = Array.from(positions.array), version = positions.version;
+  try {
+    engine.setState(store.getState());
+    expect(positions.version).toBe(version);
+    store.getState().setMode('optics'); store.getState().setOpticsExperiment('free'); store.getState().setOpticsInput({ pupil: 'small', accommodation: 1 });
+    engine.setState(store.getState());
+    expect(Array.from(positions.array)).not.toEqual(original);
+    store.getState().setMode('explore'); engine.setState(store.getState());
+    expect(Array.from(positions.array)).toEqual(original);
+  } finally { cleanup(); }
+});
+
+it('reports readiness only after the first rendered scene and never again after disposal', () => {
+  const events: string[] = [];
+  const { engine, internal, cleanup } = startupEngine(error => events.push(error ? 'failed' : 'ready'));
+  vi.spyOn(engine.renderer, 'render').mockImplementation(() => { events.push('render'); });
+  try {
+    engine.setState(createEyeStore().getState());
+    expect(events).toEqual([]);
+    internal.render(16); internal.render(32);
+    expect(events).toEqual(['render', 'ready', 'render']);
+    engine.dispose(); internal.render(48);
+    expect(events).toEqual(['render', 'ready', 'render']);
+  } finally { cleanup(); }
+});
+
+it('reports a first-frame failure instead of leaving startup waiting forever', () => {
+  const failures: unknown[] = [], failure = new Error('GPU rendering failed');
+  const { engine, internal, cleanup } = startupEngine(error => failures.push(error));
+  vi.spyOn(engine.renderer, 'render').mockImplementation(() => { throw failure; });
+  try {
+    engine.setState(createEyeStore().getState());
+    expect(() => internal.render(16)).not.toThrow();
+    expect(failures).toEqual([failure]);
+  } finally { cleanup(); }
+});
+
 it('reapplies the current viewport after restoring a mode saved before a resize', () => {
   const eye = buildEye(), store = createEyeStore(), document = new EventTarget();
   const canvas = Object.assign(new EventTarget(), { style: {}, setAttribute: vi.fn(), clientWidth: 390, clientHeight: 300,
