@@ -47,6 +47,121 @@ function startupEngine(onReady = (_error?: unknown) => {}) {
   return { engine, internal, cleanup: () => { engine.dispose(); vi.unstubAllGlobals(); } };
 }
 
+function touchEngine() {
+  const fixture = startupEngine();
+  const { engine } = fixture;
+  const store = createEyeStore(), captures = new Set<number>(), selected: string[] = [], sections: string[] = [];
+  const internal = engine as unknown as { camera: THREE.PerspectiveCamera; rig: CameraRig };
+  Object.assign(engine.canvas, {
+    setPointerCapture: (id: number) => captures.add(id), hasPointerCapture: (id: number) => captures.has(id),
+    releasePointerCapture: (id: number) => captures.delete(id),
+  });
+  Object.assign(engine, {
+    onSelect: (id: string) => selected.push(id),
+    sectionCallbacks: { begin: () => sections.push('begin'), change: (offset: number) => { store.getState().setClip({ offset }); engine.setState(store.getState()); }, end: () => sections.push('end') },
+  });
+  engine.setState(store.getState());
+  internal.camera.position.set(0, 0, 6); internal.camera.lookAt(0, 0, 0); internal.camera.updateMatrixWorld();
+  const point = (position: THREE.Vector3) => {
+    internal.camera.updateMatrixWorld();
+    const projected = position.project(internal.camera);
+    return { x: (projected.x + 1) * 240, y: (1 - projected.y) * 300 };
+  };
+  const pointer = (type: string, p: { x: number; y: number }, id = 7) => {
+    const event = Object.assign(new Event(type, { cancelable: true }), { pointerId: id, pointerType: 'touch', button: 0,
+      clientX: p.x, clientY: p.y, pageX: p.x, pageY: p.y });
+    engine.canvas.dispatchEvent(event);
+    if (type === 'pointermove' || type === 'pointerup') document.dispatchEvent(event);
+    return event;
+  };
+  return { ...fixture, store, internal, captures, selected, sections, point, pointer };
+}
+
+it('preserves light taps while allowing scroll and cancel gestures without selecting anatomy', () => {
+  const { engine, store, captures, selected, point, pointer, cleanup } = touchEngine();
+  try {
+    store.getState().applyPreset('anterior'); store.getState().setClip({ enabled: false }); engine.setState(store.getState()); engine.setView('front');
+    engine.setInteractionEnabled(false);
+    const p = point(new THREE.Vector3(0.3, 0, 0.7));
+    expect(pointer('pointerdown', p).defaultPrevented).toBe(false);
+    pointer('pointerup', p);
+    expect(selected).toEqual(['iris']);
+    selected.length = 0;
+    pointer('pointerdown', p);
+    const moved = pointer('pointermove', { x: p.x, y: p.y + 40 });
+    pointer('pointermove', p); pointer('pointerup', p);
+    expect(moved.defaultPrevented).toBe(false);
+    expect(selected).toEqual([]);
+    pointer('pointerdown', p); pointer('pointercancel', p); pointer('pointerup', p);
+    expect(selected).toEqual([]);
+    expect(captures.size).toBe(0);
+    expect(engine.canvas.style.touchAction).toBe('pan-y pinch-zoom');
+  } finally { cleanup(); }
+});
+
+it('ignores section-frame drags in browsing mode and releases an active section on exit', () => {
+  const { engine, store, internal, captures, sections, selected, point, pointer, cleanup } = touchEngine();
+  try {
+    const p = point(new THREE.Vector3(0, 1.24, 1.24));
+    engine.setInteractionEnabled(false);
+    expect(pointer('pointerdown', p).defaultPrevented).toBe(false);
+    expect(pointer('pointermove', { x: p.x + 50, y: p.y }).defaultPrevented).toBe(false);
+    pointer('pointerup', p);
+    expect(sections).toEqual([]);
+    expect(store.getState().clip.offset).toBe(0);
+    engine.setInteractionEnabled(true);
+    expect(pointer('pointerdown', p).defaultPrevented).toBe(true);
+    expect(captures.has(7)).toBe(true);
+    expect(sections).toEqual(['begin']);
+    engine.setInteractionEnabled(false);
+    expect(captures.size).toBe(0);
+    expect(sections).toEqual(['begin', 'end']);
+    expect(internal.rig.controls.enabled).toBe(false);
+    expect(pointer('pointermove', { x: p.x + 80, y: p.y }).defaultPrevented).toBe(false);
+    pointer('pointerup', p);
+    expect(store.getState().clip.offset).toBe(0);
+    expect(selected).toEqual([]);
+  } finally { cleanup(); }
+});
+
+it('releases captured orbit pointers and suppresses stale taps when leaving model interaction', () => {
+  const { engine, store, captures, selected, point, pointer, cleanup } = touchEngine();
+  try {
+    store.getState().setClip({ enabled: false }); engine.setState(store.getState());
+    const p = point(new THREE.Vector3(0.3, 0, 0.7));
+    pointer('pointerdown', p);
+    expect(captures.has(7)).toBe(true);
+    pointer('pointermove', { x: p.x + 40, y: p.y + 20 });
+    engine.setInteractionEnabled(false);
+    const pose = engine.captureCamera();
+    expect(captures.size).toBe(0);
+    pointer('pointermove', { x: p.x + 90, y: p.y + 40 }); pointer('pointerup', p);
+    expect(engine.captureCamera()).toEqual(pose);
+    expect(selected).toEqual([]);
+  } finally { cleanup(); }
+});
+
+it('keeps browser gestures and arrow scrolling after scene changes and external camera controls', () => {
+  const { engine, store, internal, cleanup } = touchEngine();
+  try {
+    engine.setInteractionEnabled(false);
+    const snapshot = engine.captureCamera();
+    for (const change of [() => engine.focus('iris'), () => engine.zoom(0.2), () => engine.setView('side'),
+      () => engine.syncCamera(snapshot), () => { store.getState().setMode('optics'); engine.setState(store.getState()); }]) {
+      change();
+      expect(engine.canvas.style.touchAction).toBe('pan-y pinch-zoom');
+      expect(internal.rig.controls.enabled).toBe(false);
+    }
+    const key = () => Object.assign(new Event('keydown', { cancelable: true }), { key: 'ArrowDown' });
+    const browseKey = key(); engine.canvas.dispatchEvent(browseKey);
+    expect(browseKey.defaultPrevented).toBe(false);
+    engine.setInteractionEnabled(true);
+    const modelKey = key(); engine.canvas.dispatchEvent(modelKey);
+    expect(modelKey.defaultPrevented).toBe(true);
+    expect(engine.canvas.style.touchAction).toBe('none');
+  } finally { cleanup(); }
+});
+
 it('keeps the initial optical geometry intact but applies saved optical changes and restores the baseline', () => {
   const { engine, internal, cleanup } = startupEngine();
   const store = createEyeStore();
@@ -300,7 +415,7 @@ function pointerFixture() {
     eye, state: store.getState(), camera, canvas: { style: {}, setAttribute: vi.fn(), getBoundingClientRect: () => ({ left: 0, top: 0, width: 600, height: 400 }) },
     rig: { cancel: vi.fn(), controls: { enabled: true } }, labels: new Map(), caps: new Map(), section: new SectionTool(), rays: new THREE.Group(), neural: new THREE.Group(),
     pointer: new THREE.Vector2(), pointerDown: new THREE.Vector2(Infinity, Infinity), raycaster,
-    pointerPosition: null, pointerActive: false, hoveredId: null, posteriorScale: 1, setView: vi.fn(), invalidate: vi.fn(),
+    pointerPosition: null, pointerActive: false, interactionEnabled: true, hoveredId: null, posteriorScale: 1, setView: vi.fn(), invalidate: vi.fn(),
   }) as EyeEngine;
   const internal = engine as unknown as {
     pointerPosition: THREE.Vector2 | null; pointerActive: boolean; hoveredId: string | null;

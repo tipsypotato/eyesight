@@ -50,9 +50,9 @@ function observeStructure(engine: EyeEngine | null, id: StructureId, focus = fal
   if (focus) state.recordTourAction({ kind: 'focus', id });
 }
 
-export function Viewport({ engine, peer, reference = false, narrow = false }: { engine: EngineRef; peer: EngineRef; reference?: boolean; narrow?: boolean }) {
+export function Viewport({ engine, peer, reference = false, narrow = false, interactionEnabled = !narrow }: { engine: EngineRef; peer: EngineRef; reference?: boolean; narrow?: boolean; interactionEnabled?: boolean }) {
   const host = useRef<HTMLDivElement>(null); const s = useEye();
-  const options = useRef({ reference, narrow }); options.current = { reference, narrow };
+  const options = useRef({ reference, narrow, interactionEnabled }); options.current = { reference, narrow, interactionEnabled };
   const applyingState = useRef(false);
   const t = useText();
   const [failed, setFailed] = useState<'load' | 'webgl' | null>(null);
@@ -108,6 +108,7 @@ export function Viewport({ engine, peer, reference = false, narrow = false }: { 
         if (!reference) finishStartup();
       });
       instance = active; engine.current = active;
+      active.setInteractionEnabled(options.current.interactionEnabled);
       active.setState(scene(eyeStore.getState()));
       active.setCameraListener(camera => {
         if (applyingState.current) return;
@@ -124,10 +125,11 @@ export function Viewport({ engine, peer, reference = false, narrow = false }: { 
     })().catch(fail);
     return () => { cancelled = true; window.clearTimeout(saveTimer); unsubscribe?.(); instance?.dispose(); engine.current = null; };
   }, [engine]);
+  useEffect(() => { engine.current?.setInteractionEnabled(interactionEnabled); }, [engine, interactionEnabled]);
   useEffect(() => { if (engine.current) applyState(engine.current, eyeStore.getState()); }, [narrow, reference, engine]);
   const binocular = s.mode === 'disease' && (s.disease?.id === 'strabismus' || s.disease?.id === 'amblyopia');
   return <div className="viewport" ref={host} role="group" aria-busy={!failed && loading !== 'ready'} aria-label={`${t(binocular ? 'bothEyes' : 'rightEye')} · ${t('schematic')}`}>
-    {!s.comparison && !s.diseaseComparison && <div className="scene-corner" data-viewport-overlay>01 <span>/ {t(s.mode)}</span></div>}<p className="interaction-hint" data-viewport-overlay>{s.mode === 'quiz' && s.quiz?.context !== 'structures' ? LEARNING_TEXT.answerHint[s.lang] : t(s.mode === 'quiz' ? 'dragQuiz' : 'drag')}</p>
+    {!s.comparison && !s.diseaseComparison && <div className="scene-corner" data-viewport-overlay>01 <span>/ {t(s.mode)}</span></div>}{!narrow && <p className="interaction-hint" data-viewport-overlay>{s.mode === 'quiz' && s.quiz?.context !== 'structures' ? LEARNING_TEXT.answerHint[s.lang] : t(s.mode === 'quiz' ? 'dragQuiz' : 'drag')}</p>}
     {!failed && loading !== 'ready' && <div className="model-loading"><EyeIcon/><p role="status">{STARTUP_TEXT[loading][s.lang]}</p><progress aria-label={STARTUP_TEXT.progress[s.lang]} max="4" value={STARTUP_COMPLETED[loading]}/><small>{STARTUP_COMPLETED[loading]} / 4</small></div>}
     {failed && <div className="webgl-error" role="alert"><EyeIcon/><p>{failed === 'load' ? STARTUP_TEXT.failure[s.lang] : t('webglError')}</p><button onClick={() => location.reload()}>{t('reload')}</button></div>}
   </div>;
@@ -412,16 +414,20 @@ function MobilePanel({ engine, size, onSize }: { engine: EngineRef; size: PanelS
   const [tabState, setTab] = useState<{ mode: Mode; tab: PanelTab }>({ mode: s.mode, tab: defaultPanelTab[s.mode] });
   const tab = tabState.mode === s.mode ? tabState.tab : defaultPanelTab[s.mode];
   const tabs = panelTabs[s.mode];
-  const sizeTrigger = useRef<HTMLButtonElement>(null);
   const returnButton = useRef<HTMLButtonElement>(null);
-  const body = useRef<HTMLDivElement>(null);
-  useEffect(() => { body.current?.scrollTo(0, 0); }, [s.mode, tab, s.step, s.quiz?.index, s.disease?.id, s.disease?.step]);
+  const panel = useRef<HTMLElement>(null);
+  const contentKey = [s.mode, tab, s.step, s.quiz?.index, s.disease?.id, s.disease?.step].join(':');
+  const previousContent = useRef({ mode: s.mode, key: contentKey });
+  useEffect(() => {
+    if (previousContent.current.mode === s.mode && previousContent.current.key !== contentKey) panel.current?.scrollIntoView({ block: 'start' });
+    previousContent.current = { mode: s.mode, key: contentKey };
+  }, [s.mode, contentKey]);
   useEffect(() => {
     if (s.mode === 'disease') setTab({ mode: 'disease', tab: 'explanation' });
   }, [s.mode, s.disease?.id, s.disease?.step]);
   const resize = (next: PanelSize) => {
     onSize(next);
-    if (next === 'full' || size === 'full') requestAnimationFrame(() => (next === 'full' ? returnButton.current : sizeTrigger.current)?.focus());
+    if (next === 'full') requestAnimationFrame(() => { returnButton.current?.focus({ preventScroll: true }); panel.current?.scrollIntoView({ block: 'start' }); });
   };
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
@@ -431,20 +437,20 @@ function MobilePanel({ engine, size, onSize }: { engine: EngineRef; size: PanelS
     return () => window.removeEventListener('keydown', escape);
   }, [size]);
   const switchTab = (next: PanelTab) => setTab({ mode: s.mode, tab: next });
-  return <aside className={`mobile-panel panel-${size}`} aria-label={t('workspacePanel')}>
+  return <aside ref={panel} className={`mobile-panel panel-${size}`} aria-label={t('workspacePanel')}>
     <div className="panel-toolbar"><h2>{t(s.mode)}</h2>{size === 'full'
-      ? <button ref={returnButton} onClick={() => resize('half')}>{t('returnModel')} ↓</button>
+      ? <button ref={returnButton} onClick={() => resize('half')}>{t('returnModel')} ↑</button>
       : <div className="panel-sizes" role="group" aria-label={t('panelSize')}>
         <button aria-pressed={size === 'collapsed'} onClick={() => resize('collapsed')}>{t('panelCollapsed')}</button>
         <button aria-pressed={size === 'half'} onClick={() => resize('half')}>{t('panelHalf')}</button>
-        <button ref={sizeTrigger} onClick={() => resize('full')}>{t('panelFull')}</button>
+        <button onClick={() => resize('full')}>{t('panelFull')}</button>
       </div>}</div>
       <div hidden={size === 'collapsed'} className="panel-tabs" role="tablist" aria-label={t('workspacePanel')}>{tabs.map(item => <button key={item} id={`tab-${item}`} role="tab" aria-selected={tab === item} aria-controls={`panel-${item}`} tabIndex={tab === item ? 0 : -1} onClick={() => switchTab(item)} onKeyDown={event => {
         const index = tabs.indexOf(item);
         const next = event.key === 'Home' ? tabs[0] : event.key === 'End' ? tabs[tabs.length - 1] : event.key === 'ArrowRight' ? tabs[(index + 1) % tabs.length] : event.key === 'ArrowLeft' ? tabs[(index + tabs.length - 1) % tabs.length] : null;
         if (next) { event.preventDefault(); switchTab(next); document.getElementById(`tab-${next}`)?.focus(); }
       }}>{t(s.mode === 'disease' ? item === 'structures' ? 'diseaseTopics' : 'diseaseExplanation' : item)}</button>)}</div>
-      <div className="panel-body" hidden={size === 'collapsed'} ref={body}>
+      <div className="panel-body" hidden={size === 'collapsed'}>
         {tabs.includes('structures') && <div id="panel-structures" role="tabpanel" aria-labelledby="tab-structures" hidden={tab !== 'structures'} tabIndex={0}>{s.mode === 'disease' ? <DiseaseNavigation engine={engine}/> : <StructuresPanel engine={engine}/>}</div>}
         {tabs.includes('parameters') && <div id="panel-parameters" role="tabpanel" aria-labelledby="tab-parameters" hidden={tab !== 'parameters'} tabIndex={0}>{s.mode === 'optics' && <><OpticsControls engine={engine}/><OpticsPanel/></>}<SceneControls engine={engine}/></div>}
         <div id="panel-explanation" role="tabpanel" aria-labelledby="tab-explanation" hidden={tab !== 'explanation'} tabIndex={0}>{s.mode === 'explore' ? <Details engine={engine}/> : s.mode === 'optics' ? <OpticsPanel/> : s.mode === 'tour' ? <><details className="tour-picker"><summary>{t('backTours')}</summary><TourList/></details><TourStepPanel engine={engine}/></> : s.mode === 'disease' ? <><DiseasePanel engine={engine}/><SceneControls engine={engine}/></> : <PracticePanel engine={engine}/>}</div>
@@ -468,10 +474,20 @@ export default function App() {
   }, [s.mode, s.physiology?.kind, s.physiology?.step, s.physiology?.playing, reduced]);
   const [narrow, setNarrow] = useState(() => window.matchMedia('(width < 900px)').matches);
   const [panelSize, setPanelSize] = useState<PanelSize>('half');
+  const [activeModelMode, setActiveModelMode] = useState<Mode | null>(null);
+  const modelInteraction = narrow && panelSize !== 'full' && activeModelMode === s.mode;
+  const modelSection = useRef<HTMLElement>(null), modelToggle = useRef<HTMLButtonElement>(null);
+  useEffect(() => { setActiveModelMode(null); }, [narrow, s.mode, s.disease?.id]);
+  const changePanelSize = (next: PanelSize) => {
+    setPanelSize(next);
+    setActiveModelMode(null);
+    if (panelSize === 'full' && next !== 'full') requestAnimationFrame(() => {
+      modelToggle.current?.focus({ preventScroll: true }); modelSection.current?.scrollIntoView({ block: 'start' });
+    });
+  };
   const binocular = s.mode === 'disease' && (s.disease?.id === 'strabismus' || s.disease?.id === 'amblyopia');
   const comparing = !!s.comparison || s.mode === 'disease' && s.diseaseComparison;
   const splitComparison = !narrow && (!!s.comparison || s.mode === 'disease' && s.diseaseComparison && !binocular);
-  const [keyboardOpen, setKeyboardOpen] = useState(false);
   const nav = useRef<HTMLElement>(null);
   const about = useRef<HTMLDetailsElement>(null);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -488,14 +504,14 @@ export default function App() {
     media.addEventListener('change', update); update();
     return () => media.removeEventListener('change', update);
   }, []);
-  useEffect(() => {
-    const viewport = window.visualViewport;
-    const update = () => setKeyboardOpen(!!viewport && window.innerHeight - viewport.height > 150);
-    viewport?.addEventListener('resize', update); update();
-    return () => viewport?.removeEventListener('resize', update);
-  }, []);
   useEffect(() => { document.documentElement.lang = s.lang === 'zh' ? 'zh-CN' : 'en'; document.title = `eyesight · ${t(binocular ? 'bothEyes' : 'rightEye')}`; }, [s.lang, binocular]);
-  useEffect(() => { nav.current?.querySelector('[aria-current]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }, [s.mode, s.lang, narrow]);
+  useEffect(() => {
+    const bar = nav.current, active = bar?.querySelector<HTMLElement>('[aria-current]');
+    if (!bar || !active) return;
+    const item = active.getBoundingClientRect(), viewport = bar.getBoundingClientRect();
+    if (item.left < viewport.left) bar.scrollLeft += item.left - viewport.left;
+    else if (item.right > viewport.right) bar.scrollLeft += item.right - viewport.right;
+  }, [s.mode, s.lang, narrow]);
   useEffect(() => {
     const escape = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
@@ -505,11 +521,11 @@ export default function App() {
     window.addEventListener('keydown', escape);
     return () => window.removeEventListener('keydown', escape);
   }, []);
-  return <div className={`app ${narrow ? 'narrow' : ''} ${keyboardOpen ? 'keyboard-open' : ''}`}><header className="header"><a className="brand" href="#" onClick={e => { e.preventDefault(); s.setMode('explore', engine.current?.captureCamera()); }} aria-label="eyesight"><span className="brand-icon"><EyeIcon small/></span><b>eyesight</b><span className="brand-tagline">{t('tagline')}</span></a><nav ref={nav} aria-label={t('workspaces')}>{(['explore','optics','tour','quiz','disease'] as Mode[]).map(mode => <button key={mode} className={s.mode === mode ? 'active' : ''} aria-current={s.mode === mode ? 'page' : undefined} onClick={() => s.setMode(mode, engine.current?.captureCamera())}>{t(mode)}</button>)}</nav><div className="language-switch" role="group" aria-label="Language / 语言"><button lang="zh-CN" aria-pressed={s.lang === 'zh'} onClick={() => s.setLanguage('zh')}>中</button><span aria-hidden="true">/</span><button lang="en" aria-pressed={s.lang === 'en'} onClick={() => s.setLanguage('en')}>EN</button></div></header>
+  return <div className={`app ${narrow ? 'narrow' : ''}`}><header className="header"><a className="brand" href="#" onClick={e => { e.preventDefault(); s.setMode('explore', engine.current?.captureCamera()); }} aria-label="eyesight"><span className="brand-icon"><EyeIcon small/></span><b>eyesight</b><span className="brand-tagline">{t('tagline')}</span></a><nav ref={nav} aria-label={t('workspaces')}>{(['explore','optics','tour','quiz','disease'] as Mode[]).map(mode => <button key={mode} className={s.mode === mode ? 'active' : ''} aria-current={s.mode === mode ? 'page' : undefined} onClick={() => s.setMode(mode, engine.current?.captureCamera())}>{t(mode)}</button>)}</nav><div className="language-switch" role="group" aria-label="Language / 语言"><button lang="zh-CN" aria-pressed={s.lang === 'zh'} onClick={() => s.setLanguage('zh')}>中</button><span aria-hidden="true">/</span><button lang="en" aria-pressed={s.lang === 'en'} onClick={() => s.setLanguage('en')}>EN</button></div></header>
     {s.storageNotice && <div className="storage-notice" role="status"><p>{t(s.storageNotice === 'unavailable' ? 'storageUnavailable' : 'storageRecovered')}</p><button onClick={s.dismissStorageNotice}>{t('dismissNotice')}</button></div>}
     <main className={`workspace mode-${s.mode}`}>
-      <section className="scene-column" inert={narrow && panelSize === 'full' ? true : undefined}><div className="scene-heading"><div><span className="eyebrow">{binocular ? 'OD · OS' : 'OCULUS DEXTER · OD'}</span><h1>{t(binocular ? 'bothEyes' : 'rightEye')}<span>{t('schematic')}</span></h1></div><div className="scene-actions">{s.mode !== 'quiz' && <button className={s.labels ? 'active' : ''} aria-pressed={s.labels} onClick={() => editScene(engine.current, () => s.setLabels(!s.labels))}>{t('labels')}</button>}<button onClick={s.resetCamera}>{t('resetCamera')}</button>{s.mode !== 'disease' && <button title={t('resetSceneHint')} onClick={() => editScene(engine.current, s.resetScene)}>{t('reset')}</button>}</div></div>{s.mode === 'disease' && <DiseaseStatus/>}<ComparisonSummary narrow={narrow}/><div className="stage"><div className="stage-grid"/><div className={`model-views ${splitComparison ? 'comparison-split' : ''}`}><div className="model-view" data-comparison={comparing ? s.mode === 'disease' ? s.diseaseNormal ? 'reference' : 'current' : narrow ? s.comparison!.showing : 'current' : undefined}><Viewport engine={engine} peer={referenceEngine} narrow={narrow}/>{comparing && <span className="model-view-label" data-viewport-overlay>{t(s.mode === 'disease' ? s.diseaseNormal || s.disease?.step === 0 ? 'referenceView' : 'currentView' : narrow && s.comparison?.showing === 'reference' ? 'referenceView' : 'currentView')}</span>}</div>{splitComparison && <div className="model-view reference-model" data-comparison="reference"><Viewport engine={referenceEngine} peer={engine} reference/><span className="model-view-label" data-viewport-overlay>{t('referenceView')}</span></div>}</div></div><div className="observation-actions">{s.practiceObservation && <button onClick={s.continuePractice}>{t('continuePractice')}</button>}{s.revealPreset && <span role="status">{t(s.revealPreset)} <button onClick={() => editScene(engine.current, s.undoReveal)}>{t('undoReveal')}</button></span>}{s.focusReturn && <button onClick={s.returnFocus}>{t('returnFocus')}</button>}</div>{!narrow && <SceneControls engine={engine}/>}</section>
-      {narrow ? <MobilePanel engine={engine} size={panelSize} onSize={setPanelSize}/> : <>
+      <section ref={modelSection} className={modelInteraction ? "scene-column model-interaction-active" : "scene-column"} hidden={narrow && panelSize === 'full'}><div className="scene-heading"><div><span className="eyebrow">{binocular ? 'OD · OS' : 'OCULUS DEXTER · OD'}</span><h1>{t(binocular ? 'bothEyes' : 'rightEye')}<span>{t('schematic')}</span></h1></div><div className="scene-actions">{s.mode !== 'quiz' && <button className={s.labels ? 'active' : ''} aria-pressed={s.labels} onClick={() => editScene(engine.current, () => s.setLabels(!s.labels))}>{t('labels')}</button>}<button onClick={s.resetCamera}>{t('resetCamera')}</button>{s.mode !== 'disease' && <button title={t('resetSceneHint')} onClick={() => editScene(engine.current, s.resetScene)}>{t('reset')}</button>}</div></div>{s.mode === 'disease' && <DiseaseStatus/>}<ComparisonSummary narrow={narrow}/>{narrow && <div className="mobile-model-controls"><button ref={modelToggle} aria-pressed={modelInteraction} aria-describedby="model-touch-hint" onClick={() => setActiveModelMode(modelInteraction ? null : s.mode)}>{t(modelInteraction ? 'stopModelInteraction' : 'interactModel')}</button><p id="model-touch-hint" role="status">{t(modelInteraction ? 'modelTouchHint' : 'scrollPageHint')}</p></div>}<div className="stage"><div className="stage-grid"/><div className={`model-views ${splitComparison ? 'comparison-split' : ''}`}><div className="model-view" data-comparison={comparing ? s.mode === 'disease' ? s.diseaseNormal ? 'reference' : 'current' : narrow ? s.comparison!.showing : 'current' : undefined}><Viewport engine={engine} peer={referenceEngine} narrow={narrow} interactionEnabled={!narrow || modelInteraction}/>{comparing && <span className="model-view-label" data-viewport-overlay>{t(s.mode === 'disease' ? s.diseaseNormal || s.disease?.step === 0 ? 'referenceView' : 'currentView' : narrow && s.comparison?.showing === 'reference' ? 'referenceView' : 'currentView')}</span>}</div>{splitComparison && <div className="model-view reference-model" data-comparison="reference"><Viewport engine={referenceEngine} peer={engine} reference/><span className="model-view-label" data-viewport-overlay>{t('referenceView')}</span></div>}</div></div><div className="observation-actions">{s.practiceObservation && <button onClick={s.continuePractice}>{t('continuePractice')}</button>}{s.revealPreset && <span role="status">{t(s.revealPreset)} <button onClick={() => editScene(engine.current, s.undoReveal)}>{t('undoReveal')}</button></span>}{s.focusReturn && <button onClick={s.returnFocus}>{t('returnFocus')}</button>}</div>{!narrow && <SceneControls engine={engine}/>}</section>
+      {narrow ? <MobilePanel engine={engine} size={panelSize} onSize={changePanelSize}/> : <>
         <aside className="left-panel">{s.mode === 'explore' ? <StructuresPanel engine={engine}/> : s.mode === 'tour' ? <TourList/> : s.mode === 'optics' ? <OpticsControls engine={engine}/> : s.mode === 'disease' ? <DiseaseNavigation engine={engine}/> : <div className="mode-content"><span className="eyebrow">{t('quiz')}</span><h2>{s.quiz?.context === 'structures' ? t('quizPanel') : LESSONS.find(lesson => lesson.id === s.quiz?.context)?.title[s.lang]}</h2><p>{s.quiz?.context === 'structures' ? t('quizHint') : LEARNING_TEXT.optional[s.lang]}</p><div className="sidebar-illustration"><EyeIcon/></div><p className="micro">{t('score')} · {s.quiz ? sessionScore(s.quiz) : 0} / {(s.quiz?.order.length ?? 6)}</p></div>}</aside>
         <aside className="right-panel"><div className="desktop-panel-body">{s.mode === 'explore' ? <Details engine={engine}/> : s.mode === 'optics' ? <OpticsPanel/> : s.mode === 'tour' ? <TourStepPanel engine={engine}/> : s.mode === 'disease' ? <DiseasePanel engine={engine}/> : <PracticePanel engine={engine}/>}</div>{(s.mode === 'tour' || s.mode === 'quiz' || s.mode === 'disease') && <div className="panel-actions"><ModeActions engine={engine}/></div>}</aside>
       </>}

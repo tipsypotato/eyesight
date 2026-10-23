@@ -17,6 +17,7 @@ export class CameraRig {
   readonly controls: OrbitControls;
   private usableFraction = new THREE.Vector2(1, 1);
   private interacting = false;
+  private interactionEnabled = true;
   private pendingViewportScale = 1;
   constructor(readonly camera: THREE.PerspectiveCamera, canvas: HTMLElement, private animator: Animator) {
     const controls = new OrbitControls(camera, canvas);
@@ -66,8 +67,15 @@ export class CameraRig {
     this.controls.update();
     this.apply(snapshot);
     this.controls.enableDamping = damping;
-    this.controls.connect(element);
+    if (this.interactionEnabled) this.controls.connect(element);
+    else element.style.touchAction = 'pan-y pinch-zoom';
     element.style.cursor = cursor;
+  }
+  setInteractionEnabled(enabled: boolean) {
+    if (enabled === this.interactionEnabled) return;
+    this.interactionEnabled = enabled;
+    this.controls.enabled = enabled;
+    this.cancel();
   }
   restore(snapshot: CameraSnapshot) {
     this.cancel();

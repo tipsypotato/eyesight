@@ -57,6 +57,7 @@ export class EyeEngine {
   private pointerDown = new THREE.Vector2(Infinity, Infinity);
   private pointerPosition: THREE.Vector2 | null = null;
   private pointerActive = false;
+  private interactionEnabled = true;
   private pointerDragged = false;
   private activePointers = new Set<number>();
   private tapPointerId: number | null = null;
@@ -176,6 +177,33 @@ export class EyeEngine {
     this.invalidate();
   }
 
+  setInteractionEnabled(enabled: boolean) {
+    if (this.disposed || enabled === this.interactionEnabled) return;
+    this.interactionEnabled = enabled;
+    const pointers = [...this.activePointers];
+    this.activePointers.clear();
+    this.endSectionDrag();
+    this.sectionGesture = false;
+    this.pointerActive = false;
+    this.pointerPosition = null;
+    this.pointerDown.set(Infinity, Infinity);
+    this.tapPointerId = null;
+    this.pointerDragged = true;
+    this.rig.setInteractionEnabled(enabled);
+    for (const pointerId of pointers) if (this.canvas.hasPointerCapture(pointerId)) this.canvas.releasePointerCapture(pointerId);
+    this.updateCanvasDescription();
+    this.updateHover();
+    this.invalidate();
+  }
+
+  private updateCanvasDescription() {
+    if (!this.state) return;
+    const binocular = this.state.mode === 'disease' && (this.state.disease?.id === 'strabismus' || this.state.disease?.id === 'amblyopia');
+    this.canvas.setAttribute('aria-label', this.state.lang === 'zh'
+      ? `${binocular ? '双眼' : '右眼'}三维模型。${this.interactionEnabled ? '方向键旋转，加减键缩放。' : '单指上下滑动浏览页面，轻触选择结构。进入“操作模型”后可旋转与剖切。'}`
+      : `3D ${binocular ? 'binocular model' : 'right eye'}. ${this.interactionEnabled ? 'Arrow keys rotate; plus and minus zoom.' : 'Swipe vertically to scroll the page; tap to select anatomy. Choose “Interact with model” to rotate and drag the section plane.'}`);
+  }
+
   setState(state: SceneState) {
     if (this.disposed) return;
     const previous = this.state;
@@ -208,11 +236,9 @@ export class EyeEngine {
     }
     const quizHidden = (state.mode === 'quiz' || state.mode === 'disease' && state.disease?.step === 3) && !state.quizRevealed;
     if (this.locateButton) this.locateButton.textContent = quizHidden ? '' : messages.occludedTarget[state.lang];
-    this.canvas.setAttribute('aria-label', state.lang === 'zh'
-      ? binocular ? '可旋转的双眼三维模型。方向键旋转，加减键缩放。' : '可旋转的右眼三维模型。方向键旋转，加减键缩放。'
-      : binocular ? 'Rotatable 3D binocular model. Arrow keys rotate; plus and minus zoom.' : 'Rotatable 3D right eye. Arrow keys rotate; plus and minus zoom.');
+    this.updateCanvasDescription();
     if (sceneChanged) { this.pointerActive = false; this.hoveredId = null; }
-    this.canvas.style.cursor = this.pointerActive ? 'grabbing' : 'grab';
+    this.canvas.style.cursor = this.interactionEnabled ? this.pointerActive ? 'grabbing' : 'grab' : 'auto';
     for (const eye of this.eyes()) for (const [id, part] of eye.parts) {
       part.group.visible = state.layers[id] !== 'off' && (!state.isolateId || state.isolateId === id);
       part.group.position.copy(part.explode).multiplyScalar(state.explode);
@@ -778,7 +804,7 @@ export class EyeEngine {
       this.hoveredId = id; this.hoveredSide = this.pickedSide;
       this.updateMaterials();
     }
-    this.canvas.style.cursor = this.pointerActive ? 'grabbing' : sectionHovered ? 'move' : id ? 'pointer' : 'grab';
+    this.canvas.style.cursor = this.pointerActive && this.interactionEnabled ? 'grabbing' : sectionHovered ? 'move' : id ? 'pointer' : this.interactionEnabled ? 'grab' : 'auto';
   }
 
   private setPointerRay(clientX: number, clientY: number) {
@@ -790,7 +816,7 @@ export class EyeEngine {
   }
 
   private pickSectionFrame(clientX: number, clientY: number) {
-    if (this.leftEye || !this.sectionCallbacks || !this.state?.clip.enabled || this.state.mode === 'quiz') return null;
+    if (!this.interactionEnabled || this.leftEye || !this.sectionCallbacks || !this.state?.clip.enabled || this.state.mode === 'quiz') return null;
     const rect = this.setPointerRay(clientX, clientY);
     this.section.update(this.state.clip);
     this.section.guide.updateMatrixWorld(true);
@@ -842,7 +868,7 @@ export class EyeEngine {
     this.pointerActive = false;
     this.pointerPosition = null;
     this.pointerDown.set(Infinity, Infinity);
-    this.rig.controls.enabled = this.sectionControlsEnabled;
+    this.rig.controls.enabled = this.sectionControlsEnabled && this.interactionEnabled;
     if (this.canvas.hasPointerCapture(pointerId)) this.canvas.releasePointerCapture(pointerId);
     this.sectionCallbacks!.end();
     this.updateHover(); this.invalidate();
@@ -934,6 +960,7 @@ export class EyeEngine {
   };
 
   private handleKeyDown = (event: KeyboardEvent) => {
+    if (!this.interactionEnabled) return;
     if (this.sectionPointerId != null) {
       if (event.key === 'Escape') { event.preventDefault(); this.endSectionDrag(); }
       return;

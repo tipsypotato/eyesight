@@ -24,6 +24,49 @@ function setup() {
 const expectVector = (actual: THREE.Vector3, expected: number[]) => actual.toArray().forEach((value, i) => expect(value).toBeCloseTo(expected[i], 12));
 
 describe('workspace camera lifecycle', () => {
+  it('leaves page scrolling available through camera changes and reconnects only in interaction mode', () => {
+    const { camera, animator, rig, canvas, document, pointer } = setup();
+    animator.reducedMotion = true;
+    try {
+      rig.setInteractionEnabled(false);
+      const before = camera.position.clone();
+      pointer(canvas, 'pointerdown', 100, 100);
+      pointer(document, 'pointermove', 180, 140);
+      pointer(document, 'pointerup', 180, 140);
+      const wheel = Object.assign(new Event('wheel', { cancelable: true }), { deltaY: 200, deltaMode: 0 });
+      canvas.dispatchEvent(wheel);
+      expect(wheel.defaultPrevented).toBe(false);
+      expectVector(camera.position, before.toArray());
+      const saved = rig.capture();
+      for (const change of [() => rig.cancel(), () => rig.focus(new THREE.Vector3(), 0.4), () => rig.preset('front'),
+        () => rig.zoom(0.2), () => rig.restore(saved)]) {
+        change();
+        expect(canvas.style.touchAction).toBe('pan-y pinch-zoom');
+        expect(rig.controls.enabled).toBe(false);
+      }
+      expectVector(camera.position, saved.position);
+      rig.setInteractionEnabled(true);
+      expect(canvas.style.touchAction).toBe('none');
+      pointer(canvas, 'pointerdown', 100, 100);
+      pointer(document, 'pointermove', 180, 140);
+      expect(camera.position.distanceTo(before)).toBeGreaterThan(0.01);
+    } finally { rig.controls.dispose(); }
+  });
+
+  it('stops an ongoing orbit and its damping when returning to page browsing', () => {
+    const { camera, rig, canvas, document, pointer } = setup();
+    try {
+      pointer(canvas, 'pointerdown', 100, 100);
+      pointer(document, 'pointermove', 160, 130);
+      const position = camera.position.clone();
+      rig.setInteractionEnabled(false);
+      pointer(document, 'pointermove', 300, 240);
+      for (let i = 0; i < 25; i++) rig.controls.update();
+      expectVector(camera.position, position.toArray());
+      expect(canvas.style.touchAction).toBe('pan-y pinch-zoom');
+    } finally { rig.controls.dispose(); }
+  });
+
   it.each([['fovea', 0.06], ['lens', 0.55]] as const)('preserves the %s focus and user zoom through panel resizing', (_name, radius) => {
     const { camera, animator, rig } = setup();
     animator.reducedMotion = true;

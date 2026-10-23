@@ -6,14 +6,30 @@ import { loadEyeEngine } from '../startup';
 import { Viewport } from './App';
 
 const hooks = vi.hoisted(() => ({
-  effects: [] as (() => void | (() => void))[],
+  current: null as null | {
+    refs: { current: unknown }[]; refIndex: number; effectIndex: number;
+    effects: { deps?: readonly unknown[]; cleanup?: () => void }[];
+    pending: (() => void)[];
+  },
   host: {} as HTMLElement,
 }));
 
 vi.mock('react', async importOriginal => ({
   ...await importOriginal<typeof import('react')>(),
-  useRef: (initial: unknown) => ({ current: initial === null ? hooks.host : initial }),
-  useEffect: (effect: () => void | (() => void)) => { hooks.effects.push(effect); },
+  useRef: (initial: unknown) => {
+    const current = hooks.current!;
+    return current.refs[current.refIndex++] ??= { current: initial === null ? hooks.host : initial };
+  },
+  useEffect: (effect: () => void | (() => void), deps?: readonly unknown[]) => {
+    const current = hooks.current!, index = current.effectIndex++, previous = current.effects[index];
+    if (!previous || !deps || !previous.deps || deps.length !== previous.deps.length || deps.some((value, i) => !Object.is(value, previous.deps![i]))) {
+      current.pending.push(() => {
+        previous?.cleanup?.();
+        const cleanup = effect();
+        current.effects[index] = { deps: deps?.slice(), cleanup: typeof cleanup === 'function' ? cleanup : undefined };
+      });
+    }
+  },
   useState: (initial: unknown) => [initial, () => {}],
 }));
 vi.mock('zustand', () => ({
@@ -37,6 +53,7 @@ class EngineStub {
   static stateFailure: Error | undefined;
   states: SceneState[] = [];
   disposed = false;
+  interactionEnabled = true;
   camera: CameraSnapshot = { position: [3, 2, 5], target: [0, 0, 0], zoom: 1 };
   cameraListener: ((camera: CameraSnapshot) => void) | null = null;
   ready: ((error?: unknown) => void) | undefined;
@@ -48,6 +65,7 @@ class EngineStub {
     if (EngineStub.stateFailure) throw EngineStub.stateFailure;
     this.states.push(state);
   }
+  setInteractionEnabled(enabled: boolean) { this.interactionEnabled = enabled; }
   captureCamera() { return structuredClone(this.camera); }
   syncCamera(camera: CameraSnapshot) { this.camera = structuredClone(camera); }
   setCameraListener(listener: (camera: CameraSnapshot) => void) { this.cameraListener = listener; }
@@ -65,13 +83,18 @@ function deferredEngine() {
   return { promise, resolve: () => resolve(engineModule), reject };
 }
 function mount(props: Parameters<typeof Viewport>[0]) {
-  hooks.effects = [];
-  Viewport(props);
-  const effects = hooks.effects.map(effect => effect()).filter((cleanup): cleanup is () => void => typeof cleanup === 'function');
+  const current: NonNullable<typeof hooks.current> = { refs: [], effects: [], pending: [], refIndex: 0, effectIndex: 0 };
+  const rerender = (next: Parameters<typeof Viewport>[0]) => {
+    current.refIndex = 0; current.effectIndex = 0; current.pending = [];
+    hooks.current = current;
+    try { Viewport(next); } finally { hooks.current = null; }
+    current.pending.forEach(effect => effect());
+  };
+  rerender(props);
   let mounted = true;
-  const unmount = () => { if (mounted) { mounted = false; effects.reverse().forEach(cleanup => cleanup()); } };
+  const unmount = () => { if (mounted) { mounted = false; [...current.effects].reverse().forEach(effect => effect.cleanup?.()); } };
   cleanups.push(unmount);
-  return unmount;
+  return Object.assign(unmount, { rerender });
 }
 async function paint() {
   expect(frames).toHaveLength(1);
@@ -92,6 +115,55 @@ beforeEach(() => {
   vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => { frames.push(callback); return frames.length; });
 });
 afterEach(() => { cleanups.reverse().forEach(cleanup => cleanup()); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+
+it.each([
+  { narrow: true, interactionEnabled: undefined, expected: false },
+  { narrow: true, interactionEnabled: true, expected: true },
+  { narrow: false, interactionEnabled: undefined, expected: true },
+])('applies the current gesture mode before a late engine starts: $narrow/$interactionEnabled', async ({ narrow, interactionEnabled, expected }) => {
+  const engine = engineRef();
+  vi.mocked(loadEyeEngine).mockResolvedValue(engineModule);
+  mount({ engine, peer: engineRef(), narrow, interactionEnabled });
+  await settle(); await paint();
+  expect(EngineStub.instances[0].interactionEnabled).toBe(expected);
+  eyeStore.getState().setMode('optics');
+  expect(EngineStub.instances[0].interactionEnabled).toBe(expected);
+});
+
+it('uses the latest interaction mode when it changes while the engine import is pending', async () => {
+  const pending = deferredEngine(), engine = engineRef(), peer = engineRef();
+  vi.mocked(loadEyeEngine).mockReturnValue(pending.promise);
+  const viewport = mount({ engine, peer, narrow: true, interactionEnabled: false });
+  viewport.rerender({ engine, peer, narrow: true, interactionEnabled: true });
+  pending.resolve(); await settle(); await paint();
+  expect(EngineStub.instances).toHaveLength(1);
+  expect(engine.current).toBe(EngineStub.instances[0]);
+  expect(EngineStub.instances[0].interactionEnabled).toBe(true);
+  expect(loadEyeEngine).toHaveBeenCalledOnce();
+});
+
+it('updates interaction mode on the same loaded engine without reapplying its scene or moving its camera', async () => {
+  const engine = engineRef(), peer = engineRef();
+  vi.mocked(loadEyeEngine).mockResolvedValue(engineModule);
+  const viewport = mount({ engine, peer, narrow: true, interactionEnabled: false });
+  await settle(); await paint();
+  const instance = EngineStub.instances[0], states = [...instance.states];
+  instance.camera = { position: [5, 1, 2], target: [0.2, 0, 0], zoom: 1.4 };
+  const camera = structuredClone(instance.camera);
+  for (const interactionEnabled of [true, false]) {
+    viewport.rerender({ engine, peer, narrow: true, interactionEnabled });
+    expect(instance.interactionEnabled).toBe(interactionEnabled);
+    expect(engine.current).toBe(instance);
+    expect(instance.states).toEqual(states);
+    expect(instance.camera).toEqual(camera);
+    expect(instance.disposed).toBe(false);
+  }
+  expect(EngineStub.instances).toHaveLength(1);
+  expect(loadEyeEngine).toHaveBeenCalledOnce();
+  viewport();
+  expect(instance.disposed).toBe(true);
+  expect(engine.current).toBeNull();
+});
 
 it('does not construct a model when its import resolves after the viewport unmounts', async () => {
   const pending = deferredEngine(), engine = engineRef();

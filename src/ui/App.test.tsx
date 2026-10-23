@@ -36,6 +36,14 @@ function expectDockedAction(html: string, label: string) {
 }
 
 describe('responsive workspace markup', () => {
+  it.each(['zh', 'en'] as const)('starts mobile browsing with an explicit model interaction control in %s', lang => {
+    store.getState().setLanguage(lang);
+    const html = renderApp(true);
+    expect(html).toMatch(/<button[^>]*aria-pressed="false"[^>]*aria-describedby="model-touch-hint"/);
+    expect(html).toContain(lang === 'zh' ? '操作模型' : 'Interact with model');
+    expect(html).toContain(lang === 'zh' ? '上下滑动浏览页面' : 'Swipe up or down to scroll the page');
+    expect(renderApp(false)).not.toContain('id="model-touch-hint"');
+  });
   it('marks the model busy with a named progress bar before the engine is ready in either language', () => {
     for (const lang of ['zh', 'en'] as const) {
       store.getState().setLanguage(lang);
