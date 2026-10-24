@@ -383,31 +383,54 @@ function useSceneRangeGesture(engine: EngineRef) {
 function SceneControls({ engine }: { engine: EngineRef }) {
   const s = useEye(); const t = useText(); const rangeGesture = useSceneRangeGesture(engine);
   const edit = (action: () => void) => editScene(engine.current, action);
+  const compact = s.mode === 'explore';
+  const presetPicker = useRef<HTMLDetailsElement>(null);
+  const closePresets = () => {
+    if (!presetPicker.current) return;
+    presetPicker.current.open = false;
+    presetPicker.current.querySelector('summary')?.focus({ preventScroll: true });
+  };
   const axis = { sagittal: 'x', axial: 'y', coronal: 'z' }[s.clip.axis];
   const clipLimit = sectionLimit(s);
   const flatLayout = s.explode >= FLAT_LAYOUT_START;
   const explodeId = useId();
-  const explodeHintId = `${explodeId}-hint`;
+  const explodeHintId = `${explodeId}-hint`, sectionHintId = `${explodeId}-section-hint`;
   const explodeValue = `${t(flatLayout ? 'flatLayout' : 'separatedLayers')} · ${Math.round(s.explode * 100)}%`;
+  const retainedSide = `${axis} ${s.clip.keepSide === 'negative' ? '≤' : '≥'} ${s.clip.offset.toFixed(2)}`;
+  const presets = <div className="scene-presets" role="group" aria-label={t('scenePresets')}>{SCENE_PRESETS.filter(preset => (s.mode !== 'optics' || preset !== 'extraocular') && (s.mode === 'explore' || (preset !== 'eyelids' && preset !== 'orbit'))).map(preset => <button key={preset} className={s.presetId === preset ? 'active' : ''} aria-pressed={s.presetId === preset} onClick={() => { edit(() => s.applyPreset(preset)); if (compact) closePresets(); }}>{t(presetMessages[preset])}</button>)}</div>;
+  const views = <div className="view-controls" role="group" aria-label={t('view')}>{(['oblique','front','side','back'] as ViewPreset[]).map(view => <button key={view} className={s.view === view ? 'active' : ''} aria-pressed={s.view === view} onClick={() => s.setView(view)}>{t(view)}</button>)}<span className="spacer"/><button className="square" aria-label={t('zoomOut')} onClick={() => engine.current?.zoom(0.15)}>−</button><button className="square" aria-label={t('zoomIn')} onClick={() => engine.current?.zoom(-0.15)}>+</button></div>;
+  const undo = <button className="undo-scene" disabled={s.undoCount === 0} aria-label={`${t('undoScene')}${s.undoCount > 0 ? ` (${s.undoCount})` : ''}`} title={t('undoScene')} onClick={s.undoScene}>↶ {t(compact ? 'undoShort' : 'undoScene')}{s.undoCount > 0 && ` (${s.undoCount})`}</button>;
+  const opticalLink = s.mode === 'explore' && s.showOptics && <button onClick={() => s.setMode('optics', engine.current?.captureCamera())}>{t('enterOptics')} →</button>;
+  const clipToggle = <label className="check"><input type="checkbox" checked={s.clip.enabled} onChange={e => edit(() => s.setClip({ enabled: e.target.checked }))}/>{t('clip')}</label>;
+  const clipAxis = <select aria-label={t('clip')} value={s.clip.axis} onChange={e => edit(() => s.setClip({ axis: e.target.value as ClipAxis }))}>{(['sagittal','axial','coronal'] as ClipAxis[]).map(axis => <option value={axis} key={axis}>{t(axis)}</option>)}</select>;
+  const clipRange = <input className="section-range" aria-label={t('sectionPosition')} aria-describedby={compact ? sectionHintId : undefined} aria-valuetext={`${t(s.clip.axis)} ${s.clip.offset.toFixed(2)} · ${t('retainedSide')} ${retainedSide}`} type="range" min={-clipLimit} max={clipLimit} step="0.01" value={s.clip.offset} disabled={!s.clip.enabled} {...rangeGesture} onChange={e => s.setClip({ offset: Number(e.target.value) })}/>;
+  const clipFlip = <button className="flip-section" aria-label={t('flipSection')} title={t('flipSection')} disabled={!s.clip.enabled} onClick={() => edit(() => s.setClip({ keepSide: s.clip.keepSide === 'negative' ? 'positive' : 'negative' }))}>{t(compact ? 'flipShort' : 'flipSection')}</button>;
+  const explodeControl = <div className="explode-control">
+    <span className="explode-heading"><label htmlFor={explodeId}>{t('explode')}</label><output htmlFor={explodeId}>{explodeValue}</output></span>
+    <span className="explode-slider"><span className="explode-threshold" aria-hidden="true" style={{ left: `${FLAT_LAYOUT_START * 100}%` }}/><input id={explodeId} aria-label={t('explode')} aria-valuetext={explodeValue} aria-describedby={explodeHintId} type="range" min="0" max="1" step="0.01" value={s.explode} {...rangeGesture} onChange={e => s.setExplode(Number(e.target.value))}/></span>
+    {!compact && <span className="explode-hint" id={explodeHintId}>{t('explodeHint')}</span>}
+  </div>;
+  const opticalHint = flatLayout && (s.mode === 'optics' || s.showOptics || s.physiology?.kind === 'signal') && <p className="section-status">{t('flatOpticsHint')}</p>;
+  if (compact) return <div className="scene-controls compact-controls">
+    <div className="scene-toolbar">
+      <details ref={presetPicker} className="preset-picker" onKeyDown={event => { if (event.key === 'Escape' && event.currentTarget.open) { event.preventDefault(); closePresets(); } }}>
+        <summary><span>{t('scenePresets')}</span><strong>{s.presetId ? t(presetMessages[s.presetId]) : t('customView')}</strong></summary>{presets}
+      </details>{undo}{views}
+    </div>
+    <div className="scene-adjustments">
+      <div className="section-controls"><div className="section-heading">{clipToggle}{clipAxis}{clipFlip}</div><div className="section-slider">{clipRange}<output className="section-value" aria-label={t('retainedSide')}>{retainedSide}</output></div></div>
+      {explodeControl}
+    </div>
+    <div className="control-footer"><details className="control-help"><summary>{t('controlHelp')}</summary><p id={explodeHintId}>{t('explodeHint')}</p><p id={sectionHintId}>{t(flatLayout ? 'flatSectionHint' : 'sectionLocked')}</p></details>{opticalLink}</div>
+    {opticalHint}
+  </div>;
   return <div className="scene-controls">
     {s.mode !== 'quiz' && s.mode !== 'disease' && <>
-      <div className="scene-presets" role="group" aria-label={t('scenePresets')}>{SCENE_PRESETS.filter(preset => (s.mode !== 'optics' || preset !== 'extraocular') && (s.mode === 'explore' || (preset !== 'eyelids' && preset !== 'orbit'))).map(preset => <button key={preset} className={s.presetId === preset ? 'active' : ''} aria-pressed={s.presetId === preset} onClick={() => edit(() => s.applyPreset(preset))}>{t(presetMessages[preset])}</button>)}</div>
-      <div className="section-controls">
-        <label className="check"><input type="checkbox" checked={s.clip.enabled} onChange={e => edit(() => s.setClip({ enabled: e.target.checked }))}/>{t('clip')}</label>
-        <select aria-label={t('clip')} value={s.clip.axis} onChange={e => edit(() => s.setClip({ axis: e.target.value as ClipAxis }))}>{(['sagittal','axial','coronal'] as ClipAxis[]).map(axis => <option value={axis} key={axis}>{t(axis)}</option>)}</select>
-        <input className="section-range" aria-label={t('sectionPosition')} aria-valuetext={`${t(s.clip.axis)} ${s.clip.offset.toFixed(2)} · ${t('retainedSide')} ${axis} ${s.clip.keepSide === 'negative' ? '≤' : '≥'} ${s.clip.offset.toFixed(2)}`} type="range" min={-clipLimit} max={clipLimit} step="0.01" value={s.clip.offset} disabled={!s.clip.enabled} {...rangeGesture} onChange={e => s.setClip({ offset: Number(e.target.value) })}/>
-        <button className="flip-section" disabled={!s.clip.enabled} onClick={() => edit(() => s.setClip({ keepSide: s.clip.keepSide === 'negative' ? 'positive' : 'negative' }))}>{t('flipSection')}</button>
-        <div className="explode-control">
-          <span className="explode-heading"><label htmlFor={explodeId}>{t('explode')}</label><output htmlFor={explodeId}>{explodeValue}</output></span>
-          <span className="explode-slider"><span className="explode-threshold" aria-hidden="true" style={{ left: `${FLAT_LAYOUT_START * 100}%` }}/><input id={explodeId} aria-label={t('explode')} aria-valuetext={explodeValue} aria-describedby={explodeHintId} type="range" min="0" max="1" step="0.01" value={s.explode} {...rangeGesture} onChange={e => s.setExplode(Number(e.target.value))}/></span>
-          <span className="explode-hint" id={explodeHintId}>{t('explodeHint')}</span>
-        </div>
-      </div>
-      {s.clip.enabled && <p className="section-status"><span>{t('retainedSide')}: {axis} {s.clip.keepSide === 'negative' ? '≤' : '≥'} {s.clip.offset.toFixed(2)}</span><span>{t(flatLayout ? 'flatSectionHint' : 'sectionLocked')}</span></p>}
-      {flatLayout && (s.mode === 'optics' || s.showOptics || s.physiology?.kind === 'signal') && <p className="section-status">{t('flatOpticsHint')}</p>}
-      <div className="scene-history"><button disabled={s.undoCount === 0} onClick={s.undoScene}>↶ {t('undoScene')}{s.undoCount > 0 && ` (${s.undoCount})`}</button>{s.mode === 'explore' && s.showOptics && <button onClick={() => s.setMode('optics', engine.current?.captureCamera())}>{t('enterOptics')} →</button>}</div>
-    </>}
-    <div className="view-controls" role="group" aria-label={t('view')}>{(['oblique','front','side','back'] as ViewPreset[]).map(view => <button key={view} className={s.view === view ? 'active' : ''} onClick={() => s.setView(view)}>{t(view)}</button>)}<span className="spacer"/><button className="square" aria-label={t('zoomOut')} onClick={() => engine.current?.zoom(0.15)}>−</button><button className="square" aria-label={t('zoomIn')} onClick={() => engine.current?.zoom(-0.15)}>+</button></div>
+      {presets}
+      <div className="section-controls">{clipToggle}{clipAxis}{clipRange}{clipFlip}{explodeControl}</div>
+      {s.clip.enabled && <p className="section-status"><span>{t('retainedSide')}: {retainedSide}</span><span>{t(flatLayout ? 'flatSectionHint' : 'sectionLocked')}</span></p>}
+      {opticalHint}<div className="scene-history">{undo}{opticalLink}</div>
+    </>}{views}
   </div>;
 }
 

@@ -43,7 +43,6 @@ export class EyeEngine {
   private resizeObserver: ResizeObserver;
   private overlay = document.createElement('div');
   private locateButton = document.createElement('button');
-  private outline = document.createElement('div');
   private compass = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
   private labels = new Map<StructureId, Label>();
   private caps = new Map<StructureId, THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>>();
@@ -102,14 +101,12 @@ export class EyeEngine {
     this.locateButton.type = 'button';
     this.locateButton.style.display = 'none';
     this.locateButton.addEventListener('click', () => { if (this.state?.selectedId && this.state.mode !== 'quiz') this.onLocate(this.state.selectedId, this.state.selectedEye); });
-    this.outline.className = 'target-outline';
-    this.outline.style.display = 'none';
     this.compass.classList.add('eye-compass');
     this.compass.setAttribute('viewBox', '0 0 140 110');
     this.compass.setAttribute('role', 'img');
     this.compass.setAttribute('data-viewport-overlay', '');
     this.compass.innerHTML = '<text x="70" y="14" text-anchor="middle">OD</text>' + ANATOMICAL_AXES.map(() => '<g><line x1="70" y1="65" stroke="#809575"/><text text-anchor="middle" dominant-baseline="middle"/></g>').join('');
-    this.overlay.append(this.locateButton, this.outline, this.compass);
+    this.overlay.append(this.locateButton, this.compass);
     for (const structure of STRUCTURES) {
       const button = document.createElement('button');
       button.type = 'button';
@@ -702,7 +699,7 @@ export class EyeEngine {
     const priority = (id: StructureId) => id === state.selectedId ? 3 : related.includes(id) ? 2 : references.includes(id) ? 1 : 0;
     const occupied: { x: number; y: number; w: number; h: number }[] = [];
     const ids = [...this.labels.keys()].sort((a, b) => priority(b) - priority(a));
-    this.locateButton.style.display = this.outline.style.display = 'none';
+    this.locateButton.style.display = 'none';
     const area = this.usableRect;
     for (const id of ids) {
       const { button, dot, leader, outline: secondaryOutline } = this.labels.get(id)!;
@@ -717,8 +714,7 @@ export class EyeEngine {
       const point = world.clone().project(this.camera);
       const x = (point.x + 1) * this.width / 2;
       const y = (1 - point.y) * this.height / 2;
-      if (id === state.selectedId || related.includes(id)) {
-        const outline = id === state.selectedId ? this.outline : secondaryOutline;
+      if (id !== state.selectedId && related.includes(id)) {
         const bounds = this.boundsFor(part);
         const projected = new THREE.Box2();
         for (const bx of [bounds.min.x, bounds.max.x]) for (const by of [bounds.min.y, bounds.max.y]) for (const bz of [bounds.min.z, bounds.max.z]) {
@@ -726,7 +722,7 @@ export class EyeEngine {
           projected.expandByPoint(new THREE.Vector2((p.x + 1) * this.width / 2, (1 - p.y) * this.height / 2));
         }
         const size = projected.getSize(new THREE.Vector2());
-        Object.assign(outline.style, { display: 'block', left: `${projected.min.x - 5}px`, top: `${projected.min.y - 5}px`, width: `${size.x + 10}px`, height: `${size.y + 10}px` });
+        Object.assign(secondaryOutline.style, { display: 'block', left: `${projected.min.x - 5}px`, top: `${projected.min.y - 5}px`, width: `${size.x + 10}px`, height: `${size.y + 10}px` });
       }
       button.style.display = 'block';
       const w = button.offsetWidth, h = button.offsetHeight;

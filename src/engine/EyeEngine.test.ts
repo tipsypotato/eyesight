@@ -998,7 +998,7 @@ it('fits the union of visible related anatomy without changing selection or focu
   } finally { cleanup(); }
 });
 
-it('renders related labels and secondary outlines only for visible anatomy, with no quiz leakage or retained overlays', () => {
+it('labels the selected anatomy without a ring, preserving related outlines and occluded-target fallback without quiz leakage', () => {
   const documentStub = Object.assign(new EventTarget(), { createElement: () => new EngineElementStub(), createElementNS: () => new EngineElementStub() });
   const media = Object.assign(new EventTarget(), { matches: true });
   vi.stubGlobal('document', documentStub);
@@ -1012,15 +1012,18 @@ it('renders related labels and secondary outlines only for visible anatomy, with
     const store = createEyeStore();
     engine = new EyeEngine(host as unknown as HTMLElement, () => {});
     Object.assign(engine, { renderCompass() {} });
-    const internal = engine as unknown as { labels: Map<string, { button: EngineElementStub; outline?: EngineElementStub }>; outline: EngineElementStub; overlay: EngineElementStub; renderLabels(): void };
+    const internal = engine as unknown as { labels: Map<string, { button: EngineElementStub; dot: EngineElementStub; leader: EngineElementStub; outline: EngineElementStub }>; locateButton: EngineElementStub; overlay: EngineElementStub; renderLabels(): void };
     const sync = () => { engine!.setState(store.getState()); internal.renderLabels(); };
     store.getState().applyPreset('fundus');
     store.setState({ selectedId: 'macula', relatedIds: ['macula', 'fovea', 'optic-disc'] }); sync();
     engine.focusStructures(['macula', 'optic-disc']); internal.renderLabels();
     expect(internal.labels.get('optic-disc')!.button.style.display).toBe('block');
     expect(internal.labels.get('optic-disc')!.outline?.style.display).toBe('block');
+    expect(internal.labels.get('macula')!.button.style.display).toBe('block');
+    expect(internal.labels.get('macula')!.dot.style.display).toBe('block');
+    expect(internal.labels.get('macula')!.leader.style.display).toBe('block');
     expect(internal.labels.get('macula')!.outline?.style.display).toBe('none');
-    expect(internal.outline.style.display).toBe('block');
+    expect(internal.overlay.children.some(child => (child as EngineElementStub & { className?: string }).className === 'target-outline')).toBe(false);
     const overlayCount = internal.overlay.children.length;
     store.setState({ lang: 'en' }); sync();
     expect(internal.overlay.children).toHaveLength(overlayCount);
@@ -1030,11 +1033,16 @@ it('renders related labels and secondary outlines only for visible anatomy, with
     expect(engine.isStructureVisible('lens')).toBe(false);
     expect(internal.labels.get('lens')!.button.style.display).toBe('none');
     expect(internal.labels.get('lens')!.outline?.style.display).toBe('none');
+    store.setState({ selectedId: 'lens', relatedIds: [] }); sync();
+    expect(internal.locateButton.style.display).toBe('block');
+    expect(internal.labels.get('lens')!.outline.style.display).toBe('none');
     store.getState().applyPreset('fundus');
     store.setState({ selectedId: 'macula', relatedIds: ['optic-disc'] }); sync();
     store.setState({ mode: 'quiz', quizRevealed: true }); sync();
     expect(internal.labels.get('optic-disc')!.button.style.display).toBe('none');
     expect(internal.labels.get('optic-disc')!.outline?.style.display).toBe('none');
+    expect(internal.labels.get('macula')!.button.style.display).toBe('none');
+    expect(internal.locateButton.style.display).toBe('none');
     store.setState({ mode: 'explore', relatedIds: [] }); sync();
     expect(internal.labels.get('optic-disc')!.outline?.style.display).toBe('none');
     engine.dispose();

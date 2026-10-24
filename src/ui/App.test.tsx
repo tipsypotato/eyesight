@@ -253,10 +253,36 @@ describe('responsive workspace markup', () => {
     expect(renderApp(false)).not.toContain(hint);
   });
 
+  it.each(['zh', 'en'] as const)('keeps compact exploration tools accessible while presets and help start collapsed in %s', lang => {
+    store.getState().setLanguage(lang); store.getState().applyPreset('orbit'); store.getState().setExplode(0.8);
+    for (const narrow of [false, true]) {
+      const html = renderApp(narrow);
+      const picker = html.match(/<details[^>]*class="preset-picker"[^>]*>([\s\S]*?)<\/details>/);
+      expect(picker).not.toBeNull();
+      expect(picker![0].split('>')[0]).not.toContain('open');
+      expect(picker![1].match(/<button\b/g)).toHaveLength(9);
+      expect(picker![1]).toContain(messages.presetOrbit[lang].replace('&', '&amp;'));
+      const help = html.match(/<details[^>]*class="control-help"[^>]*>([\s\S]*?)<\/details>/);
+      expect(help).not.toBeNull();
+      expect(help![0].split('>')[0]).not.toContain('open');
+      expect(help![1]).toContain(messages.explodeHint[lang]);
+      const visibleControls = html.replace(picker![0], '').replace(help![0], '');
+      expect(visibleControls).toContain(`${messages.flatLayout[lang]} · 80%`);
+      expect(visibleControls).toMatch(/<button[^>]*aria-label="(?:撤销场景操作|Undo scene change)[^"]*"/);
+      expect(visibleControls).toContain(`aria-label="${messages.sectionPosition[lang]}"`);
+      expect(visibleControls).toContain(`aria-label="${messages.flipSection[lang]}"`);
+      expect(visibleControls).toContain(`aria-label="${messages.zoomIn[lang]}"`);
+      expect(visibleControls).toContain(`aria-label="${messages.zoomOut[lang]}"`);
+    }
+    store.getState().setMode('optics');
+    expect(renderApp(false)).not.toContain('class="preset-picker"');
+    expect(renderApp(false)).not.toContain('class="control-help"');
+  });
+
   it('orders desktop scene tools before side panels and mounts a single viewport', () => {
     const html = renderApp(false);
     const scene = html.indexOf('<section class="scene-column"');
-    const controls = html.indexOf('class="scene-controls"');
+    const controls = html.indexOf('class="scene-controls');
     const left = html.indexOf('<aside class="left-panel"');
     const right = html.indexOf('<aside class="right-panel"');
     expect(scene).toBeGreaterThan(html.indexOf('<nav'));

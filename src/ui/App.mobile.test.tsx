@@ -7,6 +7,7 @@ type Slot = { value?: unknown; deps?: readonly unknown[]; cleanup?: () => void }
 const hooks = vi.hoisted(() => ({ slots: [] as Slot[], cursor: 0, pending: [] as (() => void)[], dirty: false }));
 vi.mock('react', async original => ({
   ...await original<typeof import('react')>(),
+  useId: () => `test-id-${hooks.cursor++}`,
   useRef: (initial: unknown) => {
     const slot = hooks.slots[hooks.cursor++] ??= {};
     return slot.value ??= { current: initial };
@@ -63,6 +64,19 @@ const scene = () => find(node => node.type === 'section' && String(node.props.cl
 const click = (node: Element) => { (node.props.onClick as () => void)(); render(); };
 const resize = (value: boolean) => { narrow = value; mediaListeners.forEach(listener => listener()); render(); };
 const size = (value: 'half' | 'full') => { (find(node => typeof node.props.onSize === 'function').props.onSize as (size: string) => void)(value); render(); };
+
+function presetMenu() {
+  resize(false);
+  const component = find(node => typeof node.type === 'function' && node.type.name === 'SceneControls');
+  hooks.pending = [];
+  const controls = elements((component.type as (props: Record<string, unknown>) => ReactNode)(component.props));
+  hooks.pending.forEach(effect => effect());
+  const details = controls.find(node => node.type === 'details' && node.props.className === 'preset-picker')!;
+  const summary = { focus: vi.fn() };
+  const picker = { open: true, querySelector: vi.fn((selector: string) => selector === 'summary' ? summary : null) };
+  (details.props.ref as { current: typeof picker }).current = picker;
+  return { controls, details, picker, summary };
+}
 
 beforeEach(() => {
   hooks.slots = []; hooks.cursor = 0; hooks.pending = []; hooks.dirty = false;
@@ -125,4 +139,33 @@ it('keeps the model mounted while focusing on content and restores model access 
   expect(viewport().props.interactionEnabled).toBe(false);
   expect(button.focus).toHaveBeenCalledWith({ preventScroll: true });
   expect(section.scrollIntoView).toHaveBeenCalledWith({ block: 'start' });
+});
+
+it('applies an exploration preset, closes the picker and restores focus to its summary', () => {
+  const { controls, picker, summary } = presetMenu();
+  expect(store.getState().layers['orbital-roof']).toBe('off');
+  const orbit = controls.find(node => node.type === 'button' && node.key === 'orbit')!;
+  (orbit.props.onClick as () => void)();
+  expect(store.getState().presetId).toBe('orbit');
+  expect(store.getState().layers['orbital-roof']).toBe('ghost');
+  expect(store.getState().layers['oculomotor-nerve']).toBe('on');
+  expect(store.getState().undoCount).toBe(1);
+  expect(picker.open).toBe(false);
+  expect(summary.focus).toHaveBeenCalledWith({ preventScroll: true });
+});
+
+it('dismisses an open preset picker with Escape without changing the observation', () => {
+  const { details, picker, summary } = presetMenu();
+  const state = store.getState(), preventDefault = vi.fn();
+  const keyDown = details.props.onKeyDown as (event: { key: string; currentTarget: typeof picker; preventDefault: () => void }) => void;
+  keyDown({ key: 'ArrowDown', currentTarget: picker, preventDefault });
+  expect(picker.open).toBe(true);
+  expect(preventDefault).not.toHaveBeenCalled();
+  keyDown({ key: 'Escape', currentTarget: picker, preventDefault });
+  expect(picker.open).toBe(false);
+  expect(store.getState()).toBe(state);
+  expect(summary.focus).toHaveBeenCalledWith({ preventScroll: true });
+  keyDown({ key: 'Escape', currentTarget: picker, preventDefault });
+  expect(preventDefault).toHaveBeenCalledTimes(1);
+  expect(summary.focus).toHaveBeenCalledTimes(1);
 });
