@@ -24,6 +24,50 @@ function setup() {
 const expectVector = (actual: THREE.Vector3, expected: number[]) => actual.toArray().forEach((value, i) => expect(value).toBeCloseTo(expected[i], 12));
 
 describe('workspace camera lifecycle', () => {
+  it.each([600, 170])('fits a large separated scene without clipping or zoom clamps in a %s px viewport', width => {
+    const { camera, animator, rig } = setup();
+    animator.reducedMotion = true;
+    const center = new THREE.Vector3(1, -2, 0.3), radius = 12;
+    const available = { x: 8, y: 40, width: width - 16, height: 340 };
+    try {
+      rig.setViewport(width, 420, available);
+      rig.preset('front', radius, center);
+      const fitted = camera.position.distanceTo(center);
+      for (let i = 0; i < 25; i++) rig.controls.update();
+      expect(camera.position.distanceTo(center)).toBeCloseTo(fitted);
+      for (const zoom of [0, 10]) {
+        rig.zoom(zoom); rig.controls.update(); camera.updateMatrixWorld(true);
+        for (let latitude = 0; latitude <= 8; latitude++) for (let longitude = 0; longitude < 16; longitude++) {
+          const point = new THREE.Vector3().setFromSphericalCoords(radius, latitude * Math.PI / 8, longitude * Math.PI / 8).add(center).project(camera);
+          const x = (point.x + 1) * width / 2, y = (1 - point.y) * 420 / 2;
+          expect(x).toBeGreaterThan(available.x); expect(x).toBeLessThan(available.x + available.width);
+          expect(y).toBeGreaterThan(available.y); expect(y).toBeLessThan(available.y + available.height);
+          expect(point.z).toBeGreaterThan(-1); expect(point.z).toBeLessThan(1);
+        }
+      }
+      expect(camera.position.distanceTo(center)).toBeGreaterThan(fitted);
+    } finally { rig.controls.dispose(); }
+  });
+
+  it('restores a distant layout in a fresh rig and preserves its zoom through resizing', () => {
+    const original = setup(), restored = setup();
+    original.animator.reducedMotion = true;
+    const center = new THREE.Vector3(0.3, 1, 0), radius = 12;
+    try {
+      original.rig.setViewport(170, 420, { x: 8, y: 40, width: 154, height: 340 });
+      original.rig.preset('front', radius, center); original.rig.zoom(0.2);
+      const snapshot = original.rig.capture();
+      const ratio = original.camera.position.distanceTo(center) / original.rig.distanceFor(radius);
+      restored.rig.restore(snapshot); restored.rig.controls.update();
+      expectVector(restored.camera.position, snapshot.position);
+      for (const [width, height] of [[600, 420], [170, 600]]) {
+        restored.rig.setViewport(width, height); restored.rig.controls.update();
+        expect(restored.camera.position.distanceTo(center) / restored.rig.distanceFor(radius)).toBeCloseTo(ratio);
+        expect(restored.camera.far).toBeGreaterThan(restored.camera.position.distanceTo(center) + radius);
+      }
+    } finally { original.rig.controls.dispose(); restored.rig.controls.dispose(); }
+  });
+
   it('leaves page scrolling available through camera changes and reconnects only in interaction mode', () => {
     const { camera, animator, rig, canvas, document, pointer } = setup();
     animator.reducedMotion = true;

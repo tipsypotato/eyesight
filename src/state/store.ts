@@ -2,7 +2,7 @@ import { createStore } from 'zustand/vanilla';
 import { RELATIONSHIPS } from '../anatomy/relationships';
 import { advanceTask, type TaskProgress, type TourAction } from '../modes/tourTasks';
 import { LESSONS } from '../anatomy/data';
-import { ADNEXAL_IDS, EXTRAOCULAR_IDS, ORBITAL_IDS, SCENE_PRESETS, STRUCTURE_IDS, sectionLimit, type ScenePreset, type CameraSnapshot, type EyeSide, type Lang, type LayerMode, type Mode, type OpticsExperiment, type OpticsInput, type OpticsPreset, type PhysiologyKind, type SceneState, type StructureId, type ViewPreset } from '../anatomy/types';
+import { ADNEXAL_IDS, EXTRAOCULAR_IDS, ORBITAL_IDS, FLAT_LAYOUT_START, SCENE_PRESETS, STRUCTURE_IDS, sectionLimit, type ScenePreset, type CameraSnapshot, type EyeSide, type Lang, type LayerMode, type Mode, type OpticsExperiment, type OpticsInput, type OpticsPreset, type PhysiologyKind, type SceneState, type StructureId, type ViewPreset } from '../anatomy/types';
 import { opticsInputForPreset, validateOpticsInput } from '../engine/optics';
 import { PHYSIOLOGY_LENGTHS, physiologyInput } from '../modes/physiology';
 import { createSession, currentQuestion, nextSessionQuestion, revealSessionAnswer, submitSessionAnswer, wrongQuestionIds, type PracticeSession } from '../modes/quiz';
@@ -373,7 +373,7 @@ export function createEyeStore(storage?: StorageLike) {
     setExplode: value => {
       if (!Number.isFinite(value)) return;
       const explode = Math.max(0, Math.min(1, value));
-      if (explode !== get().explode) changeScene({ explode });
+      if (explode !== get().explode) changeScene({ explode, ...(explode >= FLAT_LAYOUT_START && get().explode < FLAT_LAYOUT_START ? { view: 'front' as const, camera: null } : {}) });
     },
     setLabels: labels => changeScene({ labels }),
     setView: view => set(s => ({ view, camera: null, sceneRevision: (s.sceneRevision ?? 0) + 1 })),
@@ -527,6 +527,7 @@ export function createEyeStore(storage?: StorageLike) {
       const extraocular = EXTRAOCULAR_IDS.some(muscle => muscle === id);
       const adnexal = ADNEXAL_IDS.some(part => part === id);
       const orbital = ORBITAL_IDS.some(part => part === id);
+      const flat = explode >= FLAT_LAYOUT_START;
       const revealed = defaultLayers();
       if (fundus) for (const part of STRUCTURE_IDS) revealed[part] = ['macula', 'fovea', 'optic-disc', 'optic-nerve', 'retinal-vessels'].includes(part) ? 'on' : part === 'retina' ? 'ghost' : 'off';
       if (anterior) Object.assign(revealed, { sclera: 'ghost', choroid: 'ghost', retina: 'ghost', iris: 'off', vitreous: 'off', 'anterior-chamber': 'off', 'posterior-chamber': 'off' });
@@ -535,12 +536,12 @@ export function createEyeStore(storage?: StorageLike) {
       if (orbital) for (const part of STRUCTURE_IDS) revealed[part] = ORBITAL_IDS.some(context => context === part) || EXTRAOCULAR_IDS.some(context => context === part) || ['sclera', 'cornea', 'optic-nerve', 'levator-palpebrae'].includes(part) ? 'ghost' : ['choroid', 'retina', 'iris', 'pupil'].includes(part) ? 'on' : 'off';
       revealed[id] = 'on';
       get().recordTourAction({ kind: 'select', id });
-      changeScene({ ...clearedRelationship, selectedId: id, presetId: null, showOptics: false, layers: isolateId ? { ...layers, [id]: 'on' } : revealed, isolateId: isolateId ? id : null,
-        clip: { enabled: !(fundus || front || extraocular || adnexal || orbital || isolateId), axis: 'sagittal', offset: 0, keepSide: 'negative' }, explode: 0,
-        view: fundus ? id === 'optic-nerve' ? 'back' : 'front' : front ? 'front' : extraocular || adnexal || orbital ? 'oblique' : 'side',
+      changeScene({ ...clearedRelationship, selectedId: id, presetId: null, showOptics: flat ? showOptics : false, layers: isolateId || flat ? { ...layers, [id]: 'on' } : revealed, isolateId: isolateId ? id : null,
+        clip: flat ? { ...clip, enabled: false } : { enabled: !(fundus || front || extraocular || adnexal || orbital || isolateId), axis: 'sagittal', offset: 0, keepSide: 'negative' }, explode: flat ? explode : 0,
+        view: flat ? 'front' : fundus ? id === 'optic-nerve' ? 'back' : 'front' : front ? 'front' : extraocular || adnexal || orbital ? 'oblique' : 'side',
         camera: null, sceneRevision: (s.sceneRevision ?? 0) + 1,
         focusReturn: camera ? structuredClone(camera) : null,
-        revealPreset: orbital ? 'orbitalView' : adnexal ? 'adnexalView' : extraocular ? 'extraocularView' : fundus ? id === 'optic-nerve' ? 'nerveView' : 'fundusView' : anterior ? 'anteriorView' : front ? 'frontView' : 'sectionView',
+        revealPreset: flat ? 'frontView' : orbital ? 'orbitalView' : adnexal ? 'adnexalView' : extraocular ? 'extraocularView' : fundus ? id === 'optic-nerve' ? 'nerveView' : 'fundusView' : anterior ? 'anteriorView' : front ? 'frontView' : 'sectionView',
         revealReturn: { selectedId, layers: { ...layers }, isolateId, clip: { ...clip }, explode, labels, view, isolationLayers, presetId, showOptics, relatedIds, relationshipId, relationshipReturn,
           camera: camera ? structuredClone(camera) : null },
       });
@@ -564,7 +565,7 @@ export function createEyeStore(storage?: StorageLike) {
       return [mode, { ...scene, ...(quiz && mode === 'quiz' ? { quizSessionId: quiz.sessionId } : {}) }];
     }));
     const diseaseDrafts = { ...s.diseaseDrafts, ...(s.mode === 'disease' && s.disease ? { [s.disease.id]: pauseDisease({ ...s.disease, selectedEye: s.selectedEye, selectedId: s.selectedId }, liveCamera ?? s.camera) } : {}) };
-    const payload: SavedProgress = { schemaVersion: 2, contentVersion: CONTENT_VERSION, mode: s.mode, drafts: sceneDrafts, lessonPositions: s.lessonPositions, tourTasks: s.tourTasks, sessions: s.sessions, activeSessions: s.activeSessions, activeQuizId: s.activeQuizId, diseaseDrafts, activeDiseaseId: lastDiseaseId, diseaseReturnMode: s.diseaseReturnMode };
+    const payload: SavedProgress = { schemaVersion: 3, contentVersion: CONTENT_VERSION, mode: s.mode, drafts: sceneDrafts, lessonPositions: s.lessonPositions, tourTasks: s.tourTasks, sessions: s.sessions, activeSessions: s.activeSessions, activeQuizId: s.activeQuizId, diseaseDrafts, activeDiseaseId: lastDiseaseId, diseaseReturnMode: s.diseaseReturnMode };
     try { storage.setItem(PROGRESS_KEY, JSON.stringify(payload)); }
     catch { storageFailed = true; store.setState({ storageNotice: 'unavailable' }); }
   };

@@ -1,5 +1,5 @@
 import { LESSONS } from '../anatomy/data';
-import { ADNEXAL_IDS, EXTRAOCULAR_IDS, ORBITAL_IDS, SCENE_PRESETS, STRUCTURE_IDS, type CameraSnapshot, type Mode, type OpticsInput, type PhysiologyState, type SceneState } from '../anatomy/types';
+import { ADNEXAL_IDS, EXTRAOCULAR_IDS, ORBITAL_IDS, EXPLODE_SCALE, SCENE_PRESETS, STRUCTURE_IDS, type CameraSnapshot, type Mode, type OpticsInput, type PhysiologyState, type SceneState } from '../anatomy/types';
 import { CONTENT_VERSION } from '../content/questions';
 import { validateOpticsInput } from '../engine/optics';
 import { PHYSIOLOGY_LENGTHS, physiologyInput } from '../modes/physiology';
@@ -7,12 +7,13 @@ import { isSupportedContentVersion, restoreSession, type PracticeSession } from 
 import { TOUR_TASKS, type TaskProgress } from '../modes/tourTasks';
 import { isDiseaseId, parseDiseaseDraft, type DiseaseDraft, type DiseaseId } from '../modes/disease';
 
+// Keep the original storage key so existing scenes are found and migrated.
 export const PROGRESS_KEY = 'eyesight.progress.v2';
 export type PersistedDraft = Pick<SceneState, 'selectedId' | 'layers' | 'isolateId' | 'clip' | 'presetId' | 'explode' | 'labels' | 'view' | 'opticsPreset' | 'opticsInput' | 'opticsExperiment' | 'comparison' | 'physiology' | 'showOptics' | 'camera'> & {
   isolationLayers: SceneState['layers'] | null; lessonId: string | null; step: number; selectedEye?: SceneState['selectedEye']; quizSessionId?: string;
 };
 export type SavedProgress = {
-  schemaVersion: 2; contentVersion: string; mode: Mode;
+  schemaVersion: 3; contentVersion: string; mode: Mode;
   drafts: Partial<Record<Mode, PersistedDraft>>;
   lessonPositions: Record<string, number>; tourTasks: Record<string, TaskProgress>;
   sessions: Record<string, PracticeSession>; activeSessions: Record<string, string>; activeQuizId: string | null;
@@ -77,7 +78,7 @@ function parseDraft(value: unknown, mode: Mode): PersistedDraft | null {
     || (value.showOptics !== undefined && typeof value.showOptics !== 'boolean')) return null;
   const parsedLayers = layers(value.layers), input = optics(value.opticsInput), clip = value.clip;
   if (!parsedLayers || !input || !record(clip) || typeof clip.enabled !== 'boolean' || !member(clip.axis, ['sagittal', 'axial', 'coronal'])
-    || !finite(clip.offset, -4, 4) || !member(clip.keepSide, ['negative', 'positive'])) return null;
+    || !finite(clip.offset, -6, 6) || !member(clip.keepSide, ['negative', 'positive'])) return null;
   const isolationLayers = value.isolationLayers === null ? null : layers(value.isolationLayers);
   if (value.isolationLayers !== null && !isolationLayers) return null;
   const lesson = LESSONS.find(item => item.id === value.lessonId);
@@ -119,7 +120,7 @@ export function parseProgress(raw: string | null): { value: SavedProgress | null
   if (raw === null) return { value: null, discarded: false };
   let source: unknown;
   try { source = JSON.parse(raw); } catch { return { value: null, discarded: true }; }
-  if (!record(source) || source.schemaVersion !== 2 || typeof source.contentVersion !== 'string' || !source.contentVersion.trim()) return { value: null, discarded: true };
+  if (!record(source) || (source.schemaVersion !== 2 && source.schemaVersion !== 3) || typeof source.contentVersion !== 'string' || !source.contentVersion.trim()) return { value: null, discarded: true };
   let discarded = source.contentVersion !== CONTENT_VERSION;
   function entries<T>(value: unknown, parse: (key: string, entry: unknown) => T | null): Record<string, T> {
     if (!record(value)) { discarded = true; return {}; }
@@ -132,6 +133,7 @@ export function parseProgress(raw: string | null): { value: SavedProgress | null
   const mode = member(source.mode, modes) ? source.mode : 'explore';
   if (mode !== source.mode) discarded = true;
   const drafts = entries(source.drafts, (key, value) => member(key, modes) ? parseDraft(value, key) : null);
+  if (source.schemaVersion === 2) for (const draft of Object.values(drafts)) draft.explode /= EXPLODE_SCALE;
   const diseaseDrafts = source.diseaseDrafts === undefined ? {} : entries(source.diseaseDrafts, (key, value) => {
     const parsed = parseDiseaseDraft(value);
     if (!isDiseaseId(key) || parsed?.id !== key || !record(value)) return null;
@@ -149,7 +151,7 @@ export function parseProgress(raw: string | null): { value: SavedProgress | null
   if (source.activeDiseaseId != null && activeDiseaseId === null || source.diseaseReturnMode !== undefined && diseaseReturnMode !== source.diseaseReturnMode) discarded = true;
   const diseases = { diseaseDrafts, activeDiseaseId, diseaseReturnMode };
   if (!isSupportedContentVersion(source.contentVersion)) return {
-    value: { schemaVersion: 2, contentVersion: CONTENT_VERSION, mode, drafts, lessonPositions: {}, tourTasks: {}, sessions: {}, activeSessions: {}, activeQuizId: null, ...diseases },
+    value: { schemaVersion: 3, contentVersion: CONTENT_VERSION, mode, drafts, lessonPositions: {}, tourTasks: {}, sessions: {}, activeSessions: {}, activeQuizId: null, ...diseases },
     discarded: true,
   };
   const lessonPositions = entries(source.lessonPositions, (key, value) => {
@@ -169,5 +171,5 @@ export function parseProgress(raw: string | null): { value: SavedProgress | null
   const activeSessions = entries(source.activeSessions, (context, id) => typeof id === 'string' && Object.hasOwn(sessions, id) && sessions[id].context === context ? id : null);
   const activeQuizId = typeof source.activeQuizId === 'string' && Object.hasOwn(sessions, source.activeQuizId) ? source.activeQuizId : null;
   if (source.activeQuizId !== activeQuizId) discarded = true;
-  return { value: { schemaVersion: 2, contentVersion: CONTENT_VERSION, mode, drafts, lessonPositions, tourTasks, sessions, activeSessions, activeQuizId, ...diseases }, discarded };
+  return { value: { schemaVersion: 3, contentVersion: CONTENT_VERSION, mode, drafts, lessonPositions, tourTasks, sessions, activeSessions, activeQuizId, ...diseases }, discarded };
 }

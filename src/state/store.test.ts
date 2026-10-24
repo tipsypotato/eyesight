@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createEyeStore } from './store';
+import { PROGRESS_KEY } from './progress';
 import { ADNEXAL_IDS, ORBITAL_IDS, SCENE_PRESETS, STRUCTURE_IDS, type CameraSnapshot, type LayerMode, type OpticsExperiment, type OpticsInput, type OpticsPreset, type PhysiologyKind } from '../anatomy/types';
 
 describe('learning state', () => {
@@ -708,6 +709,77 @@ describe('observation presets and scene undo', () => {
     store.getState().applyPreset('wall-cut');
     expect(store.getState().layers.retina).toBe('on');
   });
+  it('switches to the front only when separation crosses into the final third', () => {
+    const store = createEyeStore();
+    store.getState().setView('side');
+    store.getState().setMode('optics', camera); store.getState().setMode('explore');
+    store.getState().setExplode(0.66);
+    expect(store.getState()).toMatchObject({ explode: 0.66, view: 'side', camera });
+    store.getState().setExplode(0.67);
+    expect(store.getState()).toMatchObject({ explode: 0.67, view: 'front', camera: null });
+    store.getState().setView('back'); store.getState().setExplode(0.95);
+    expect(store.getState()).toMatchObject({ explode: 0.95, view: 'back' });
+    store.getState().setExplode(0.66);
+    expect(store.getState().view).toBe('back');
+    store.getState().setExplode(0.67);
+    expect(store.getState().view).toBe('front');
+  });
+  it('undoes an entire drag into the flat layout while preserving the latest language', () => {
+    const store = createEyeStore();
+    store.getState().applyPreset('orbit'); store.getState().setView('side');
+    store.getState().select('lacrimal-gland', true); store.getState().cycleLayer('frontal-nerve');
+    store.getState().setClip({ enabled: true, axis: 'coronal', offset: -2.1, keepSide: 'positive' });
+    store.getState().setExplode(0.4);
+    const before = store.getState();
+    store.getState().beginSceneChange(camera);
+    for (const value of [0.6, 0.66, 0.67, 0.8, 1]) store.getState().setExplode(value);
+    store.getState().endSceneChange();
+    expect(store.getState()).toMatchObject({ explode: 1, view: 'front', undoCount: before.undoCount + 1 });
+    expect(store.getState().layers).toEqual(before.layers);
+    expect(store.getState().clip).toEqual(before.clip);
+    store.getState().setLanguage('en'); store.getState().undoScene();
+    expect(store.getState()).toMatchObject({ explode: before.explode, view: before.view, layers: before.layers, clip: before.clip, selectedId: before.selectedId, camera, lang: 'en', undoCount: before.undoCount });
+  });
+  it('retains a flat scene and its actual camera through workspace changes and refresh', () => {
+    const data = new Map<string, string>();
+    const storage = { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => { data.set(key, value); } };
+    const store = createEyeStore(storage);
+    store.getState().applyPreset('orbit'); store.getState().setExplode(0.83);
+    store.getState().select('ciliary-ganglion', true); store.getState().setView('oblique');
+    store.getState().setClip({ enabled: true, axis: 'axial', offset: 0.4 });
+    const layers = store.getState().layers;
+    const flatCamera: CameraSnapshot = { position: [14, 10, 30], target: [0.5, 0.3, 0], zoom: 1.2 };
+    store.getState().setMode('optics', flatCamera); store.getState().setLanguage('en');
+    store.getState().setExplode(0.2); store.getState().setMode('explore', camera);
+    expect(store.getState()).toMatchObject({ mode: 'explore', explode: 0.83, view: 'oblique', camera: flatCamera, lang: 'en', layers });
+    store.getState().flushProgress(flatCamera);
+    const restored = createEyeStore(storage);
+    expect(restored.getState()).toMatchObject({ mode: 'explore', explode: 0.83, view: 'oblique', camera: flatCamera, lang: 'en', layers, selectedId: 'ciliary-ganglion', clip: { enabled: true, axis: 'axial', offset: 0.4 }, storageNotice: null });
+    restored.getState().setMode('optics');
+    expect(restored.getState()).toMatchObject({ explode: 0.2, camera, lang: 'en' });
+  });
+  it('finds legacy progress under the same storage key and upgrades it once on saving', () => {
+    const data = new Map<string, string>();
+    const storage = { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => { data.set(key, value); } };
+    const store = createEyeStore(storage);
+    store.getState().setLanguage('en'); store.getState().setView('side'); store.getState().flushProgress(camera);
+    const legacy = JSON.parse(data.get(PROGRESS_KEY)!);
+    legacy.schemaVersion = 2; legacy.drafts.explore.explode = 0.8;
+    data.set(PROGRESS_KEY, JSON.stringify(legacy));
+    const restored = createEyeStore(storage);
+    expect(restored.getState()).toMatchObject({ explode: 0.8 / 4.5, view: 'side', camera, lang: 'en', storageNotice: null });
+    restored.getState().flushProgress(camera);
+    expect(JSON.parse(data.get(PROGRESS_KEY)!).schemaVersion).toBe(3);
+    expect(createEyeStore(storage).getState()).toMatchObject({ explode: 0.8 / 4.5, view: 'side', camera, lang: 'en', storageNotice: null });
+  });
+  it('allows extended orbital sections, preserves them on entering flat layout, and then uses native limits', () => {
+    const store = createEyeStore(); store.getState().applyPreset('orbit'); store.getState().setExplode(0.66);
+    for (const offset of [-5.9, 5.9]) { store.getState().setClip({ offset }); expect(store.getState().clip.offset).toBe(offset); }
+    store.getState().setExplode(0.67);
+    expect(store.getState().clip.offset).toBe(5.9);
+    store.getState().setClip({ offset: 0 }); store.getState().setClip({ offset: -20 });
+    expect(store.getState().clip.offset).toBe(-3);
+  });
   it('undoes an entire continuous gesture once and restores the actual starting camera', () => {
     const store = createEyeStore();
     store.getState().beginSceneChange(camera);
@@ -720,9 +792,18 @@ describe('observation presets and scene undo', () => {
   it('does not record unchanged values, a gesture returning to its start, selection, view or language changes', () => {
     const store = createEyeStore();
     store.getState().setClip({ offset: 0 }); store.getState().setExplode(0);
-    store.getState().beginSceneChange(camera); store.getState().setExplode(0.7); store.getState().setExplode(0); store.getState().endSceneChange();
+    store.getState().beginSceneChange(camera); store.getState().setExplode(0.6); store.getState().setExplode(0); store.getState().endSceneChange();
     store.getState().select('lens', true); store.getState().setView('back'); store.getState().setLanguage('en');
     expect(store.getState().undoCount).toBe(0);
+  });
+  it('records a drag back to zero if entering the flat stage changed the viewing direction', () => {
+    const store = createEyeStore();
+    store.getState().beginSceneChange(camera);
+    store.getState().setExplode(0.67); store.getState().setExplode(0);
+    store.getState().endSceneChange();
+    expect(store.getState()).toMatchObject({ explode: 0, view: 'front', undoCount: 1 });
+    store.getState().undoScene();
+    expect(store.getState()).toMatchObject({ explode: 0, view: 'oblique', camera, undoCount: 0 });
   });
   it('keeps only the latest twenty scene changes in each workspace', () => {
     const store = createEyeStore();
@@ -788,4 +869,15 @@ describe('observation presets and scene undo', () => {
     store.getState().setClip({ offset: -2 }); store.getState().setExplode(3);
     expect(store.getState()).toMatchObject({ clip: { offset: -1 }, explode: 1 });
   });
+});
+
+it('reveals a hidden flat tile without closing the grid and can undo that reveal', () => {
+  const store = createEyeStore();
+  store.getState().applyPreset('wall-cut'); store.getState().setExplode(0.8);
+  const before = store.getState();
+  store.getState().revealStructure('moll-glands');
+  expect(store.getState()).toMatchObject({ explode: 0.8, selectedId: 'moll-glands', view: 'front', clip: { enabled: false } });
+  expect(store.getState().layers).toEqual({ ...before.layers, 'moll-glands': 'on' });
+  store.getState().undoReveal();
+  expect(store.getState()).toMatchObject({ explode: 0.8, clip: before.clip, layers: before.layers });
 });

@@ -2,7 +2,7 @@ import { Component, useEffect, useId, useRef, useState, type ReactNode, type Ref
 import { useStore } from 'zustand';
 import { GROUPS, LESSONS, STRUCTURES } from '../anatomy/data';
 import { searchStructures } from '../anatomy/search';
-import { SCENE_PRESETS, sectionLimit, type ScenePreset, type ClipAxis, type Mode, type OpticsExperiment, type OpticsInput, type OpticsPreset, type PhysiologyKind, type StructureId, type ViewPreset } from '../anatomy/types';
+import { FLAT_LAYOUT_START, SCENE_PRESETS, sectionLimit, type ScenePreset, type ClipAxis, type Mode, type OpticsExperiment, type OpticsInput, type OpticsPreset, type PhysiologyKind, type StructureId, type ViewPreset } from '../anatomy/types';
 import { messages, type MessageKey } from '../content/messages';
 import type { EyeEngine } from '../engine/EyeEngine';
 import { finishStartup, loadEyeEngine, setStartupStage, STARTUP_COMPLETED, STARTUP_TEXT, type StartupStage, yieldToBrowser } from '../startup';
@@ -385,6 +385,10 @@ function SceneControls({ engine }: { engine: EngineRef }) {
   const edit = (action: () => void) => editScene(engine.current, action);
   const axis = { sagittal: 'x', axial: 'y', coronal: 'z' }[s.clip.axis];
   const clipLimit = sectionLimit(s);
+  const flatLayout = s.explode >= FLAT_LAYOUT_START;
+  const explodeId = useId();
+  const explodeHintId = `${explodeId}-hint`;
+  const explodeValue = `${t(flatLayout ? 'flatLayout' : 'separatedLayers')} · ${Math.round(s.explode * 100)}%`;
   return <div className="scene-controls">
     {s.mode !== 'quiz' && s.mode !== 'disease' && <>
       <div className="scene-presets" role="group" aria-label={t('scenePresets')}>{SCENE_PRESETS.filter(preset => (s.mode !== 'optics' || preset !== 'extraocular') && (s.mode === 'explore' || (preset !== 'eyelids' && preset !== 'orbit'))).map(preset => <button key={preset} className={s.presetId === preset ? 'active' : ''} aria-pressed={s.presetId === preset} onClick={() => edit(() => s.applyPreset(preset))}>{t(presetMessages[preset])}</button>)}</div>
@@ -393,9 +397,14 @@ function SceneControls({ engine }: { engine: EngineRef }) {
         <select aria-label={t('clip')} value={s.clip.axis} onChange={e => edit(() => s.setClip({ axis: e.target.value as ClipAxis }))}>{(['sagittal','axial','coronal'] as ClipAxis[]).map(axis => <option value={axis} key={axis}>{t(axis)}</option>)}</select>
         <input className="section-range" aria-label={t('sectionPosition')} aria-valuetext={`${t(s.clip.axis)} ${s.clip.offset.toFixed(2)} · ${t('retainedSide')} ${axis} ${s.clip.keepSide === 'negative' ? '≤' : '≥'} ${s.clip.offset.toFixed(2)}`} type="range" min={-clipLimit} max={clipLimit} step="0.01" value={s.clip.offset} disabled={!s.clip.enabled} {...rangeGesture} onChange={e => s.setClip({ offset: Number(e.target.value) })}/>
         <button className="flip-section" disabled={!s.clip.enabled} onClick={() => edit(() => s.setClip({ keepSide: s.clip.keepSide === 'negative' ? 'positive' : 'negative' }))}>{t('flipSection')}</button>
-        <label className="explode-control">{t('explode')}<input aria-label={t('explode')} aria-valuetext={`${Math.round(s.explode * 100)}%`} type="range" min="0" max="1" step="0.01" value={s.explode} {...rangeGesture} onChange={e => s.setExplode(Number(e.target.value))}/></label>
+        <div className="explode-control">
+          <span className="explode-heading"><label htmlFor={explodeId}>{t('explode')}</label><output htmlFor={explodeId}>{explodeValue}</output></span>
+          <span className="explode-slider"><span className="explode-threshold" aria-hidden="true" style={{ left: `${FLAT_LAYOUT_START * 100}%` }}/><input id={explodeId} aria-label={t('explode')} aria-valuetext={explodeValue} aria-describedby={explodeHintId} type="range" min="0" max="1" step="0.01" value={s.explode} {...rangeGesture} onChange={e => s.setExplode(Number(e.target.value))}/></span>
+          <span className="explode-hint" id={explodeHintId}>{t('explodeHint')}</span>
+        </div>
       </div>
-      {s.clip.enabled && <p className="section-status"><span>{t('retainedSide')}: {axis} {s.clip.keepSide === 'negative' ? '≤' : '≥'} {s.clip.offset.toFixed(2)}</span><span>{t('sectionLocked')}</span></p>}
+      {s.clip.enabled && <p className="section-status"><span>{t('retainedSide')}: {axis} {s.clip.keepSide === 'negative' ? '≤' : '≥'} {s.clip.offset.toFixed(2)}</span><span>{t(flatLayout ? 'flatSectionHint' : 'sectionLocked')}</span></p>}
+      {flatLayout && (s.mode === 'optics' || s.showOptics || s.physiology?.kind === 'signal') && <p className="section-status">{t('flatOpticsHint')}</p>}
       <div className="scene-history"><button disabled={s.undoCount === 0} onClick={s.undoScene}>↶ {t('undoScene')}{s.undoCount > 0 && ` (${s.undoCount})`}</button>{s.mode === 'explore' && s.showOptics && <button onClick={() => s.setMode('optics', engine.current?.captureCamera())}>{t('enterOptics')} →</button>}</div>
     </>}
     <div className="view-controls" role="group" aria-label={t('view')}>{(['oblique','front','side','back'] as ViewPreset[]).map(view => <button key={view} className={s.view === view ? 'active' : ''} onClick={() => s.setView(view)}>{t(view)}</button>)}<span className="spacer"/><button className="square" aria-label={t('zoomOut')} onClick={() => engine.current?.zoom(0.15)}>−</button><button className="square" aria-label={t('zoomIn')} onClick={() => engine.current?.zoom(-0.15)}>+</button></div>

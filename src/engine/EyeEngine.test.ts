@@ -1129,7 +1129,7 @@ it('fits the visible orbital walls and contents, and sizes the section guide for
   try {
     const section = (engine as unknown as { section: SectionTool; updateSections(): void });
     store.getState().applyPreset('orbit');
-    for (const explode of [0, 1]) {
+    for (const explode of [0, 0.66, 1]) {
       store.getState().setExplode(explode); sync();
       for (const view of ['front', 'side', 'back', 'oblique'] as const) {
         engine.setView(view); internal.rig.controls.update(); internal.camera.updateMatrixWorld();
@@ -1143,6 +1143,7 @@ it('fits the visible orbital walls and contents, and sizes the section guide for
         }
       }
     }
+    store.getState().setExplode(0.66);
     store.getState().setClip({ enabled: true, axis: 'coronal', offset: -2.1 }); sync(); section.updateSections();
     expect(section.section.guide.position.z).toBe(-2.1);
     expect(section.section.guide.scale.x).toBeGreaterThan(1);
@@ -1451,5 +1452,136 @@ it('magnifies the lens detail and applies explicit camera direction changes with
     const front = internal.camera.position.clone().sub(target).normalize();
     expect(front.z).toBeGreaterThan(0.99);
     expect(internal.camera.position.distanceTo(target)).toBeLessThan(contextDistance * 0.8);
+  } finally { cleanup(); }
+});
+
+it('increases separation then lays out visible parts without overlap and returns to the native model', () => {
+  const { engine, internal, store, sync, cleanup } = diseaseEngineFixture();
+  try {
+    store.getState().applyPreset('intact'); sync();
+    store.getState().setExplode(0.66); sync();
+    const cornea = internal.eye.parts.get('cornea')!;
+    expect(cornea.group.position.length() / cornea.explode.length()).toBeCloseTo(2.97);
+    const layers = { ...store.getState().layers };
+    store.getState().setExplode(0.67); sync(); internal.rig.controls.update(); internal.camera.updateMatrixWorld();
+    expect(store.getState().view).toBe('front');
+    const boxes = [...internal.eye.parts.values()].filter(part => part.group.visible).map(part => new THREE.Box3().setFromObject(part.group));
+    for (const [index, box] of boxes.entries()) {
+      expect(box.getCenter(new THREE.Vector3()).z).toBeCloseTo(0, 5);
+      for (const other of boxes.slice(index + 1)) expect(box.max.x < other.min.x || other.max.x < box.min.x || box.max.y < other.min.y || other.max.y < box.min.y).toBe(true);
+      for (const point of [box.min.clone(), box.max.clone()]) {
+        point.project(internal.camera);
+        expect(Math.abs(point.x)).toBeLessThan(1); expect(Math.abs(point.y)).toBeLessThan(1); expect(Math.abs(point.z)).toBeLessThan(1);
+      }
+    }
+    store.getState().setExplode(0); sync();
+    expect(store.getState().layers).toEqual(layers);
+    for (const part of internal.eye.parts.values()) expect(part.group.position.length()).toBe(0);
+  } finally { cleanup(); }
+});
+
+it('keeps native per-structure cuts, picking and cap placement in the flat layout', () => {
+  const { engine, internal, store, sync, cleanup } = diseaseEngineFixture();
+  const cuts = engine as unknown as { section: SectionTool; caps: Map<string, THREE.Mesh>; updateSections(): void; pickSectionFrame(x: number, y: number): unknown };
+  try {
+    store.getState().applyPreset('wall-cut'); store.getState().setExplode(0.8);
+    for (const axis of ['sagittal', 'axial', 'coronal'] as const) for (const keepSide of ['negative', 'positive'] as const) {
+      store.getState().setClip({ enabled: true, axis, offset: 0.1, keepSide }); sync(); cuts.updateSections();
+      expect(cuts.section.guide.visible).toBe(false);
+      expect(cuts.pickSectionFrame(240, 300)).toBeNull();
+      const normal = axis === 'sagittal' ? new THREE.Vector3(1, 0, 0) : axis === 'axial' ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0, 0, 1);
+      for (const part of internal.eye.parts.values()) if (part.group.visible) {
+        const mesh = part.group.children.find(object => object instanceof THREE.Mesh && !object.userData.cap) as THREE.Mesh | undefined;
+        if (!mesh) continue;
+        const material = (Array.isArray(mesh.material) ? mesh.material[0] : mesh.material);
+        if (!material.clippingPlanes?.length) continue;
+        const point = part.group.position.clone().addScaledVector(normal, 0.1);
+        expect(material.clippingPlanes[0].distanceToPoint(point), part.id).toBeCloseTo(0);
+        expect(material.clippingPlanes[0].distanceToPoint(point.addScaledVector(normal, keepSide === 'positive' ? 0.2 : -0.2)), part.id).toBeGreaterThan(0);
+      }
+      expect(cuts.caps.get('sclera')!.position.dot(normal)).toBeCloseTo(0.1);
+    }
+    store.getState().setClip({ enabled: false }); sync();
+    engine.focus('lens'); internal.camera.updateMatrixWorld();
+    const surface = visibleSurface(internal.eye.parts.get('lens')!, internal.eye.parts, store.getState(), internal.camera);
+    expect(surface).not.toBeNull();
+    const point = surface!.project(internal.camera);
+    expect(internal.pickStructure((point.x + 1) * 240, (1 - point.y) * 300)).toBe('lens');
+  } finally { cleanup(); }
+});
+
+it('keeps all 51 flat tiles separate in the fitted front projection, including a narrow viewport', () => {
+  const { engine, internal, store, sync, cleanup } = diseaseEngineFixture();
+  try {
+    store.setState(s => ({ layers: Object.fromEntries(Object.keys(s.layers).map(id => [id, 'on'])) as SceneState['layers'] }));
+    store.getState().setClip({ enabled: false });
+    for (const explode of [0.67, 1]) {
+      store.getState().setExplode(explode); sync();
+      for (const width of [900, 320]) {
+        internal.rig.setViewport(width, 600); engine.setView('front'); internal.rig.controls.update(); internal.camera.updateMatrixWorld();
+        const boxes = [...internal.eye.parts.values()].map(part => {
+          const box = new THREE.Box3().setFromObject(part.group), projected = new THREE.Box2();
+          for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
+            const point = new THREE.Vector3(x, y, z).project(internal.camera);
+            expect(Math.max(Math.abs(point.x), Math.abs(point.y), Math.abs(point.z)), part.id).toBeLessThan(1);
+            projected.expandByPoint(new THREE.Vector2(point.x, point.y));
+          }
+          return { id: part.id, projected };
+        });
+        for (const [index, box] of boxes.entries()) for (const other of boxes.slice(index + 1)) expect(box.projected.intersectsBox(other.projected), `${width}/${explode}/${box.id}/${other.id}`).toBe(false);
+      }
+    }
+  } finally { cleanup(); }
+});
+
+it('hides flat optical overlays and restores them without changing optical settings', () => {
+  const { engine, store, sync, cleanup } = diseaseEngineFixture();
+  const overlays = engine as unknown as { rays: THREE.Group; neural: THREE.Group };
+  try {
+    store.getState().setMode('optics'); store.getState().setOptics('myopia'); store.getState().setPhysiology('signal'); sync();
+    const input = { ...store.getState().opticsInput };
+    expect(overlays.rays.visible).toBe(true);
+    store.getState().setExplode(0.8); sync();
+    expect(overlays.rays.visible).toBe(false); expect(overlays.neural.visible).toBe(false);
+    expect(store.getState().opticsInput).toEqual(input);
+    store.getState().setExplode(0); sync();
+    expect(overlays.rays.visible).toBe(true); expect(overlays.neural.visible).toBe(true);
+    expect(store.getState().opticsInput).toEqual(input);
+  } finally { cleanup(); }
+});
+
+it('allows sections to sweep the enlarged model including cornea and eyelid skin', () => {
+  const { internal, store, sync, cleanup } = diseaseEngineFixture();
+  try {
+    for (const preset of ['intact', 'eyelids', 'orbit'] as const) for (const explode of [0.01, 0.66]) {
+      store.getState().applyPreset(preset); store.getState().setExplode(explode); sync();
+      store.getState().setClip({ offset: 100 }); const limit = store.getState().clip.offset;
+      for (const part of internal.eye.parts.values()) if (part.group.visible) {
+        const box = new THREE.Box3().setFromObject(part.group);
+        expect(Math.max(...box.min.toArray().map(Math.abs), ...box.max.toArray().map(Math.abs)), `${preset}/${explode}/${part.id}`).toBeLessThanOrEqual(limit);
+      }
+    }
+  } finally { cleanup(); }
+});
+
+it('repacks flat visibility and isolation changes while preserving selection camera and hidden layers', () => {
+  const { engine, internal, store, sync, cleanup } = diseaseEngineFixture();
+  try {
+    store.getState().applyPreset('eyelids'); store.getState().cycleLayer('lens'); store.getState().setExplode(0.85); sync();
+    expect(internal.eye.parts.get('lens')!.group.visible).toBe(true);
+    engine.focus('lens'); const camera = engine.captureCamera();
+    store.getState().select('lens', true); sync();
+    expect(engine.captureCamera()).toEqual(camera);
+    const layers = { ...store.getState().layers };
+    store.getState().toggleIsolate(); sync();
+    expect([...internal.eye.parts.values()].filter(part => part.group.visible).map(part => part.id)).toEqual(['lens']);
+    expect(new THREE.Box3().setFromObject(internal.eye.parts.get('lens')!.group).getCenter(new THREE.Vector3()).length()).toBeLessThan(1e-6);
+    store.getState().toggleIsolate(); sync();
+    expect(store.getState().layers).toEqual(layers);
+    expect(internal.eye.parts.get('orbital-roof')!.group.visible).toBe(false);
+    store.getState().revealStructure('orbital-roof'); sync();
+    expect(store.getState().explode).toBe(0.85);
+    expect(internal.eye.parts.get('orbital-roof')!.group.visible).toBe(true);
+    expect(new THREE.Box3().setFromObject(internal.eye.parts.get('orbital-roof')!.group).getCenter(new THREE.Vector3()).z).toBeCloseTo(0, 6);
   } finally { cleanup(); }
 });

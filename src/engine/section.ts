@@ -10,6 +10,12 @@ export const SECTION_AXES: Record<ClipAxis, THREE.Vector3> = {
   coronal: new THREE.Vector3(0, 0, 1),
 };
 
+export function sectionPlane(clip: SceneState['clip'], translation = new THREE.Vector3()): THREE.Plane {
+  const axis = SECTION_AXES[clip.axis];
+  return new THREE.Plane().setFromNormalAndCoplanarPoint(axis.clone().multiplyScalar(clip.keepSide === 'positive' ? 1 : -1),
+    axis.clone().multiplyScalar(clip.offset).add(translation));
+}
+
 /** Three's raycaster ignores both visibility and shader clipping; apply the rendered constraints. */
 export function intersectionSurvives(hit: THREE.Intersection): boolean {
   let ancestor: THREE.Object3D | null = hit.object;
@@ -90,9 +96,7 @@ export class SectionTool {
   }
 
   update(clip: SceneState['clip'], _camera?: THREE.Camera, limit = 1, extent = 1.24) {
-    const axis = SECTION_AXES[clip.axis];
-    const normal = axis.clone().multiplyScalar(clip.keepSide === 'positive' ? 1 : -1);
-    this.plane.setFromNormalAndCoplanarPoint(normal, axis.clone().multiplyScalar(clip.offset));
+    this.plane.copy(sectionPlane(clip));
     this.enabled = clip.enabled;
     this.limit = limit;
     this.extent = extent;

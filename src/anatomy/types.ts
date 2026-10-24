@@ -56,9 +56,15 @@ export interface SceneState {
   camera?: CameraSnapshot | null;
   sceneRevision?: number;
 }
+export const FLAT_LAYOUT_START = 2 / 3;
+export const EXPLODE_SCALE = 3 / FLAT_LAYOUT_START;
+
 export function sectionLimit(scene: Pick<SceneState, 'layers' | 'isolateId' | 'clip' | 'explode'>): number {
   const orbital = ORBITAL_IDS.some(id => scene.layers[id] !== 'off' && (!scene.isolateId || scene.isolateId === id));
-  return Math.max(orbital ? 3 + scene.explode : 1, Math.abs(scene.clip.offset));
+  const separation = scene.explode < FLAT_LAYOUT_START ? scene.explode * EXPLODE_SCALE : 0;
+  // Expanded adnexa and the optic nerve extend beyond the globe's unit radius.
+  const extent = orbital ? 3 + separation : scene.explode > 0 ? 2.3 + 1.2 * separation : 1;
+  return Math.max(extent, Math.abs(scene.clip.offset));
 }
 export interface TourStep {
   title: Localized; body: Localized; target: StructureId; view: ViewPreset;

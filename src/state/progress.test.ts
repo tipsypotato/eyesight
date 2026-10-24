@@ -14,7 +14,7 @@ const draft = (): PersistedDraft => ({
     viewport: { aspect: 1.6, usableFraction: [0.8, 0.7] }, viewOffset: { fullWidth: 1000, fullHeight: 625, offsetX: -40, offsetY: 20, width: 1000, height: 625 } },
   isolationLayers: null, lessonId: null, step: 0,
 });
-const saved = (): SavedProgress => ({ schemaVersion: 2, contentVersion: CONTENT_VERSION, mode: 'explore', drafts: { explore: draft() }, lessonPositions: {}, tourTasks: {}, sessions: {}, activeSessions: {}, activeQuizId: null });
+const saved = (): SavedProgress => ({ schemaVersion: 3, contentVersion: CONTENT_VERSION, mode: 'explore', drafts: { explore: draft() }, lessonPositions: {}, tourTasks: {}, sessions: {}, activeSessions: {}, activeQuizId: null });
 it('migrates pre-orbit scenes and isolation snapshots without discarding their scene or answers', () => {
   const value = saved(), scene = value.drafts.explore!;
   scene.isolateId = 'lens'; scene.isolationLayers = { ...scene.layers };
@@ -106,6 +106,34 @@ describe('saved progress boundary', () => {
     }
   });
 
+  it.each([0.8, 1])('migrates legacy separation %s without changing its displacement, camera, cut or answers', explode => {
+    const old = { ...saved(), schemaVersion: 2 };
+    old.drafts.explore!.explode = explode;
+    old.drafts.explore!.isolateId = 'lens';
+    old.drafts.explore!.isolationLayers = { ...old.drafts.explore!.layers };
+    old.drafts.optics = { ...draft(), explode: 1 };
+    const question = questionsFor('structures')[0];
+    const session = submitSessionAnswer(createSession('structures', [question]), question.correctOptionId);
+    old.sessions[session.sessionId] = session; old.activeSessions.structures = session.sessionId;
+    const result = parse(old);
+    expect(result.discarded).toBe(false);
+    expect(result.value?.schemaVersion).toBe(3);
+    expect(result.value?.drafts.explore).toEqual({ ...old.drafts.explore, explode: explode / 4.5 });
+    expect(result.value?.drafts.optics).toEqual({ ...old.drafts.optics, explode: 1 / 4.5 });
+    expect(result.value?.sessions).toEqual(old.sessions);
+    expect(result.value?.activeSessions).toEqual(old.activeSessions);
+    expect(parse(result.value)).toEqual(result);
+  });
+  it('preserves a new flat layout and its fitted camera without applying legacy scaling', () => {
+    const value = saved(), scene = value.drafts.explore!;
+    scene.explode = 0.83; scene.view = 'front';
+    scene.camera = { position: [0, 0, 35], target: [0, 0, 0], zoom: 1 };
+    const result = parse(value);
+    expect(result.discarded).toBe(false);
+    expect(result.value?.schemaVersion).toBe(3);
+    expect(result.value?.drafts.explore).toEqual(scene);
+  });
+
   it('restores allowed scene fields, drops transient fields, and pauses a valid demonstration', () => {
     const value = saved(); const optics = draft();
     optics.physiology = { kind: 'signal', step: 1, playing: true, returnInput: { ...optics.opticsInput }, returnPreset: 'normal', returnExperiment: 'free', returnShowOptics: false };
@@ -145,7 +173,7 @@ describe('saved progress boundary', () => {
 
   it.each([
     ['structure', { selectedId: 'unknown' }], ['layer', { layers: { sclera: 'on' } }],
-    ['clip', { clip: { enabled: true, axis: 'sagittal', offset: 5, keepSide: 'negative' } }],
+    ['clip', { clip: { enabled: true, axis: 'sagittal', offset: 6.01, keepSide: 'negative' } }],
     ['explode', { explode: -1 }], ['optics', { opticsInput: { axialIncrement: 1.1, accommodation: 0, objectDistance: 'far', pupil: 'medium', externalLens: 'off' } }],
     ['preset', { opticsPreset: 'surgery' }], ['camera zoom', { camera: { position: [3, 2, 4], target: [0, 0, 0], zoom: 0 } }],
     ['camera overflow', { camera: { position: [1e308, 2, 4], target: [0, 0, 0], zoom: 1 } }],
@@ -160,6 +188,27 @@ describe('saved progress boundary', () => {
     expect(result.discarded).toBe(true);
     expect(result.value?.drafts.optics).toBeUndefined();
     expect(result.value?.drafts.explore).toEqual(value.drafts.explore);
+  });
+
+  it.each([-6, -5.9, 5.9, 6])('restores expanded separation clipping at %s without changing saved scene data', offset => {
+    const value = saved();
+    const scene = value.drafts.explore!;
+    scene.explode = 0.66; scene.presetId = 'orbit'; scene.clip.offset = offset;
+    const result = parse(value);
+    expect(result.discarded).toBe(false);
+    expect(result.value?.drafts.explore).toEqual(scene);
+    scene.explode = 0.83; scene.view = 'front';
+    const flat = parse(value);
+    expect(flat.discarded).toBe(false);
+    expect(flat.value?.drafts.explore).toEqual(scene);
+  });
+  it.each([-6.01, 6.01, NaN, Infinity, -Infinity])('rejects invalid expanded clipping offset %s without discarding other workspaces', offset => {
+    const value = saved(); value.drafts.optics = draft();
+    value.drafts.explore!.clip.offset = offset;
+    const result = parse(value);
+    expect(result.discarded).toBe(true);
+    expect(result.value?.drafts.explore).toBeUndefined();
+    expect(result.value?.drafts.optics).toEqual(value.drafts.optics);
   });
 
   it('recovers independent modules while rejecting mismatched references', () => {

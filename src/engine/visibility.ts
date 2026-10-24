@@ -1,7 +1,7 @@
 import * as THREE from 'three';
-import { ADNEXAL_IDS, EXTRAOCULAR_IDS, ORBITAL_IDS, type SceneState, type StructureId } from '../anatomy/types';
+import { ADNEXAL_IDS, EXTRAOCULAR_IDS, ORBITAL_IDS, FLAT_LAYOUT_START, type SceneState, type StructureId } from '../anatomy/types';
 import type { EyePart } from './geometry';
-import { intersectionSurvives, SectionTool } from './section';
+import { intersectionSurvives, sectionPlane } from './section';
 
 export function visibleSurface(part: EyePart, parts: Map<StructureId, EyePart>, state: SceneState, camera: THREE.PerspectiveCamera, posteriorScale = 1, selectTarget = false): THREE.Vector3 | null {
   if (selectTarget) state = { ...state, layers: { ...state.layers, [part.id]: 'on' }, isolateId: state.isolateId ? part.id : null };
@@ -17,9 +17,9 @@ export function visibleSurface(part: EyePart, parts: Map<StructureId, EyePart>, 
   const candidates = [...parts.values()].filter(shown);
   for (const item of candidates) item.group.updateWorldMatrix(true, true);
   const frustum = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
-  const section = new SectionTool();
-  section.update(state.clip, camera);
-  const survives = (hit: THREE.Intersection) => intersectionSurvives(hit) && (!state.clip.enabled || section.keeps(hit.point));
+  const planes = new Map(candidates.map(item => [item, sectionPlane(state.clip, state.explode >= FLAT_LAYOUT_START ? item.group.position : undefined)]));
+  const keeps = (point: THREE.Vector3, item = part) => !state.clip.enabled || planes.get(item)!.distanceToPoint(point) >= -1e-5;
+  const survives = (hit: THREE.Intersection, item = part) => intersectionSurvives(hit) && keeps(hit.point, item);
   const targetSurvives = (hit: THREE.Intersection) => {
     if (!selectTarget || part.group.visible) return survives(hit);
     // Candidate selection ignores only the target group's current hidden state without mutating it.
@@ -29,16 +29,16 @@ export function visibleSurface(part: EyePart, parts: Map<StructureId, EyePart>, 
     if (!(hit.object instanceof THREE.Mesh || hit.object instanceof THREE.Line)) return false;
     const material: THREE.Material = Array.isArray(hit.object.material) ? hit.object.material[hit.face?.materialIndex ?? 0] : hit.object.material;
     return material.visible && material.opacity > 0 && !material.clippingPlanes?.some(plane => plane.distanceToPoint(hit.point) < -1e-5)
-      && (!state.clip.enabled || section.keeps(hit.point));
+      && keeps(hit.point);
   };
   const origin = camera.getWorldPosition(new THREE.Vector3());
   const ray = new THREE.Raycaster();
   ray.params.Line.threshold = 0.008;
   const unobstructed = (point: THREE.Vector3) => {
-    if (!frustum.containsPoint(point) || (state.clip.enabled && !section.keeps(point))) return false;
+    if (!frustum.containsPoint(point) || !keeps(point)) return false;
     const distance = origin.distanceTo(point);
     return !candidates.some(item => item !== part && ray.intersectObject(item.group, true)
-      .some(hit => hit.distance < distance - 1e-4 && survives(hit)));
+      .some(hit => hit.distance < distance - 1e-4 && survives(hit, item)));
   };
   const cast = (point: THREE.Vector3) => {
     ray.set(origin, point.clone().sub(origin).normalize());

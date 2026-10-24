@@ -87,14 +87,16 @@ describe('responsive workspace markup', () => {
       expect(renderApp(false)).not.toContain(`>${label}</button>`);
     }
   });
-  it('extends the section slider to the orbital apex while preserving the original eye range', () => {
+  it('extends the section slider to the orbital apex and restores native coordinates when tiled', () => {
     const range = () => [...renderApp(false).matchAll(/<input\b[^>]*>/g)].find(([tag]) => tag.includes('class="section-range"'))?.[0];
     expect(range()).toContain('min="-1" max="1"');
     store.getState().applyPreset('orbit'); store.getState().setClip({ enabled: true, axis: 'coronal', offset: -2.1 });
     expect(range()).toContain('min="-3" max="3"');
     expect(range()).toContain('value="-2.1"');
+    store.getState().setExplode(0.5);
+    expect(range()).toContain('min="-5.25" max="5.25"');
     store.getState().setExplode(1);
-    expect(range()).toContain('min="-4" max="4"');
+    expect(range()).toContain('min="-3" max="3"');
   });
   it.each(['zh', 'en'] as const)('keeps gland details and observation actions available in %s', lang => {
     store.getState().setLanguage(lang); store.getState().applyPreset('eyelids');
@@ -213,8 +215,42 @@ describe('responsive workspace markup', () => {
     expect(section).toContain(`aria-valuetext="${messages.coronal[lang]} -0.25 · ${messages.retainedSide[lang]} z ≥ -0.25"`);
     expect(section).toContain('value="-0.25"');
     const separation = ranges.find(tag => tag.includes(`aria-label="${messages.explode[lang]}"`));
-    expect(separation).toContain('aria-valuetext="37%"');
+    expect(separation).toContain(`aria-valuetext="${lang === 'zh' ? '分层分离' : 'Separated layers'} · 37%"`);
     expect(separation).toContain('value="0.37"');
+  });
+
+  it.each(['zh', 'en'] as const)('marks the final third as a flat layout and describes its section controls in %s', lang => {
+    store.getState().setLanguage(lang);
+    store.getState().setClip({ enabled: true });
+    for (const narrow of [false, true]) {
+      store.getState().setExplode(0.66);
+      let html = renderApp(narrow);
+      expect(html).toContain(`aria-valuetext="${lang === 'zh' ? '分层分离' : 'Separated layers'} · 66%"`);
+      expect(html).toContain(messages.sectionLocked[lang]);
+      store.getState().setExplode(0.67);
+      html = renderApp(narrow);
+      expect(html).toContain(`aria-valuetext="${lang === 'zh' ? '平铺展示' : 'Flat layout'} · 67%"`);
+      expect(html).toContain(lang === 'zh' ? '平铺可见结构' : 'lay out visible structures');
+      expect(html).toContain(lang === 'zh' ? '平铺时逐个结构剖切，请使用位置滑块。' : 'Each structure is sectioned separately in the flat layout. Use the position slider.');
+      expect(html).not.toContain(messages.sectionLocked[lang]);
+      const range = [...html.matchAll(/<input\b[^>]*type="range"[^>]*>/g)].find(([tag]) => tag.includes(`aria-label="${messages.explode[lang]}"`))?.[0];
+      expect(range).toContain('min="0" max="1" step="0.01"');
+      const hintId = range?.match(/aria-describedby="([^"]+)"/)?.[1];
+      expect(hintId).toBeTruthy();
+      expect(html).toContain(`id="${hintId}"`);
+      expect(html).toMatch(/class="explode-threshold"[^>]*aria-hidden="true"/);
+    }
+  });
+
+  it.each(['zh', 'en'] as const)('explains hidden 3D optical overlays only while a flat optical scene is displayed in %s', lang => {
+    store.getState().setLanguage(lang);
+    const hint = lang === 'zh' ? '平铺时暂隐三维光路与信号，返回分层后恢复。' : '3D light paths and signals are hidden in the flat layout and return when you leave it.';
+    store.getState().setExplode(0.8);
+    expect(renderApp(false)).not.toContain(hint);
+    store.getState().setMode('optics'); store.getState().setExplode(0.8);
+    expect(renderApp(false)).toContain(hint);
+    store.getState().setExplode(0.66);
+    expect(renderApp(false)).not.toContain(hint);
   });
 
   it('orders desktop scene tools before side panels and mounts a single viewport', () => {

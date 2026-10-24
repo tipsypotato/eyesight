@@ -19,6 +19,7 @@ export class CameraRig {
   private interacting = false;
   private interactionEnabled = true;
   private pendingViewportScale = 1;
+  private distanceRadius = 0;
   constructor(readonly camera: THREE.PerspectiveCamera, canvas: HTMLElement, private animator: Animator) {
     const controls = new OrbitControls(camera, canvas);
     controls.enableDamping = true;
@@ -50,6 +51,7 @@ export class CameraRig {
     const view = snapshot.viewOffset;
     if (view) this.camera.setViewOffset(view.fullWidth, view.fullHeight, view.offsetX, view.offsetY, view.width, view.height);
     else this.camera.clearViewOffset();
+    this.distanceRadius = Math.max(this.distanceRadius, this.camera.position.distanceTo(this.controls.target) / this.distanceFor(1));
     this.updateDistanceLimits();
     this.camera.lookAt(this.controls.target);
     this.controls.update();
@@ -108,7 +110,12 @@ export class CameraRig {
     const fullHeightFit = 1.08 / Math.sin(THREE.MathUtils.degToRad(this.camera.fov) / 2);
     const scale = this.distanceFor(1) / fullHeightFit;
     this.controls.minDistance = 0.18 * scale;
-    this.controls.maxDistance = 12 * scale;
+    this.controls.maxDistance = Math.max(12 * scale, this.distanceFor(this.distanceRadius));
+    const far = this.controls.maxDistance + this.distanceRadius;
+    if (far > this.camera.far) {
+      this.camera.far = far;
+      this.camera.updateProjectionMatrix();
+    }
   }
   distanceFor(radius: number) {
     const tangent = Math.tan(THREE.MathUtils.degToRad(this.camera.fov) / 2) / this.camera.zoom;
@@ -119,6 +126,8 @@ export class CameraRig {
     const startTarget = this.controls.target.clone();
     const start = new THREE.Spherical().setFromVector3(this.camera.position.clone().sub(startTarget));
     const initialFit = this.distanceFor(1);
+    this.distanceRadius = Math.max(radius * 2, start.radius / initialFit);
+    this.updateDistanceLimits();
     const endDirection = direction?.clone() ?? this.camera.position.clone().sub(startTarget);
     const end = new THREE.Spherical().setFromVector3(endDirection.normalize().multiplyScalar(this.distanceFor(radius)));
     let theta = end.theta - start.theta;
