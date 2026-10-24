@@ -87,6 +87,7 @@ export const messages = {
   controlHelp: { zh: '操作说明', en: 'Control help' },
   undoShort: { zh: '撤销', en: 'Undo' },
   flipShort: { zh: '翻转', en: 'Flip' },
+  presetAll: { zh: '全部结构', en: 'All structures' },
   presetIntact: { zh: '完整眼球', en: 'Whole eye' },
   presetWall: { zh: '眼球壁剖面', en: 'Eye wall section' },
   presetAnterior: { zh: '前段观察', en: 'Anterior segment' },

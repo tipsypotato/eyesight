@@ -111,6 +111,7 @@ function questionScene(quiz: PracticeSession) {
 
 function sceneFor(mode: Mode, lessonId: string | null = null, index = 0, quiz: PracticeSession | null = null): SceneState {
   const scene = { ...initialScene(), mode };
+  if (mode === 'explore') return { ...scene, ...presetScene('all', scene) };
   if (mode === 'optics') return { ...scene, view: 'side' };
   if (mode === 'quiz' && quiz) return { ...scene, ...questionScene(quiz) };
   const step = mode === 'tour' ? LESSONS.find(lesson => lesson.id === lessonId)?.steps[index] : null;
@@ -137,6 +138,7 @@ function sameScene(a: SceneSnapshot, b: SceneSnapshot) {
 }
 function presetScene(presetId: ScenePreset, s: Pick<SceneState, 'mode' | 'selectedId' | 'sceneRevision'>): Partial<EyeState> {
   const layers = defaultLayers();
+  if (presetId === 'all') for (const id of STRUCTURE_IDS) layers[id] = 'on';
   if (presetId === 'anterior' || presetId === 'chambers') Object.assign(layers, { sclera: 'ghost', choroid: 'ghost', retina: 'ghost' });
   if (presetId === 'anterior') for (const id of ['macula', 'fovea', 'optic-disc', 'retinal-vessels'] as const) layers[id] = 'off';
   if (presetId === 'fundus') for (const id of STRUCTURE_IDS) layers[id] = ['macula', 'fovea', 'optic-disc', 'optic-nerve', 'retinal-vessels'].includes(id) ? 'on' : id === 'retina' ? 'ghost' : 'off';
@@ -153,8 +155,8 @@ function presetScene(presetId: ScenePreset, s: Pick<SceneState, 'mode' | 'select
   if (s.mode !== 'optics' && (presetId === 'extraocular' || presetId === 'intact')) for (const id of EXTRAOCULAR_IDS) layers[id] = 'on';
   return { presetId, layers, selectedId: s.selectedId && layers[s.selectedId] !== 'off' ? s.selectedId : null,
     isolateId: null, isolationLayers: null, explode: 0, labels: false,
-    clip: { enabled: !['intact', 'fundus', 'extraocular', 'eyelids', 'orbit'].includes(presetId), axis: 'sagittal', offset: 0, keepSide: 'negative' },
-    view: presetId === 'fundus' ? 'front' : ['intact', 'anterior', 'extraocular', 'eyelids', 'orbit'].includes(presetId) ? 'oblique' : 'side',
+    clip: { enabled: !['all', 'intact', 'fundus', 'extraocular', 'eyelids', 'orbit'].includes(presetId), axis: 'sagittal', offset: 0, keepSide: 'negative' },
+    view: presetId === 'fundus' ? 'front' : ['all', 'intact', 'anterior', 'extraocular', 'eyelids', 'orbit'].includes(presetId) ? 'oblique' : 'side',
     showOptics: presetId === 'optical-path', camera: null, ...clearedObservation, sceneRevision: (s.sceneRevision ?? 0) + 1 };
 }
 
@@ -302,7 +304,7 @@ export function createEyeStore(storage?: StorageLike) {
     rememberCamera: camera => { liveCamera = structuredClone(camera); },
     clearLocalProgress: () => {
       drafts.clear(); histories.clear(); gesture = null; liveCamera = null; storageFailed = false; lastDiseaseId = 'cataract';
-      set(s => ({ ...initialScene(), disease: null, diseaseNormal: false, selectedEye: 'right', diseaseDrafts: createDiseaseDrafts(), diseaseComparison: false, diseaseReturnMode: 'explore', ...clearedObservation, lang: s.lang, sceneRevision: (s.sceneRevision ?? 0) + 1, isolationLayers: null, undoCount: 0, lessonId: null, step: 0, quiz: null, sessions: {}, activeSessions: {}, activeQuizId: null, tourTasks: {}, lessonPositions: {}, relationshipId: null, relationshipReturn: null, practiceObservation: null, storageNotice: null }));
+      set(s => ({ ...sceneFor('explore'), disease: null, diseaseNormal: false, selectedEye: 'right', diseaseDrafts: createDiseaseDrafts(), diseaseComparison: false, diseaseReturnMode: 'explore', ...clearedObservation, lang: s.lang, sceneRevision: (s.sceneRevision ?? 0) + 1, isolationLayers: null, undoCount: 0, lessonId: null, step: 0, quiz: null, sessions: {}, activeSessions: {}, activeQuizId: null, tourTasks: {}, lessonPositions: {}, relationshipId: null, relationshipReturn: null, practiceObservation: null, storageNotice: null }));
     },
     recordTourAction: event => {
       const s = get(); if (s.mode !== 'tour' || !s.lessonId) return;
@@ -321,7 +323,7 @@ export function createEyeStore(storage?: StorageLike) {
       set({ ...patch, layers, selectedId: s.selectedId, relatedIds: relationship.members.map(member => member.id), relationshipId: id, relationshipReturn: previous });
     },
     exitRelationship: () => { const s = get(); if (s.relationshipReturn) { clearRelationshipHistory(); set({ ...s.relationshipReturn, ...clearedRelationship, sceneRevision: (s.sceneRevision ?? 0) + 1 }); } },
-    applyPreset: preset => { if (get().mode !== 'quiz' && !(get().mode === 'optics' && preset === 'extraocular') && !(get().mode !== 'explore' && (preset === 'eyelids' || preset === 'orbit')) && SCENE_PRESETS.includes(preset)) changeScene({ ...presetScene(preset, get()), ...clearedRelationship }); },
+    applyPreset: preset => { if (get().mode !== 'quiz' && !(get().mode === 'optics' && preset === 'extraocular') && !(get().mode !== 'explore' && (preset === 'all' || preset === 'eyelids' || preset === 'orbit')) && SCENE_PRESETS.includes(preset)) changeScene({ ...presetScene(preset, get()), ...clearedRelationship }); },
     beginSceneChange: camera => { if (!gesture) gesture = { mode: get().mode, before: captureScene(get(), camera), changed: false }; },
     endSceneChange: finishGesture,
     undoScene: () => {

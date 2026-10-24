@@ -103,6 +103,8 @@ it('preserves light taps while allowing scroll and cancel gestures without selec
 it('ignores section-frame drags in browsing mode and releases an active section on exit', () => {
   const { engine, store, internal, captures, sections, selected, point, pointer, cleanup } = touchEngine();
   try {
+    store.getState().applyPreset('wall-cut'); engine.setState(store.getState());
+    internal.camera.position.set(0, 0, 6); internal.camera.lookAt(0, 0, 0); internal.camera.updateMatrixWorld();
     const p = point(new THREE.Vector3(0, 1.24, 1.24));
     engine.setInteractionEnabled(false);
     expect(pointer('pointerdown', p).defaultPrevented).toBe(false);
@@ -662,6 +664,7 @@ it('makes a selected tissue clearly distinct and restores its original appearanc
 
 it('drags a section frame through the shared clip state and releases camera controls on cancellation', () => {
   const { eye, store, engine, camera, sync } = pointerFixture();
+  store.getState().applyPreset('wall-cut');
   camera.position.z = 6; camera.updateMatrixWorld();
   const capture = new Set<number>(), gestures: string[] = [];
   Object.assign(engine.canvas, {
@@ -704,6 +707,7 @@ it('drags a section frame through the shared clip state and releases camera cont
 
 it('ends a captured section gesture when leaving its scene and hides the guide in quizzes', () => {
   const { eye, store, engine, camera, sync } = pointerFixture();
+  store.getState().applyPreset('wall-cut');
   const ended: boolean[] = [];
   Object.assign(engine.canvas, { setPointerCapture() {}, hasPointerCapture: () => true, releasePointerCapture() {} });
   Object.assign(engine, { sectionCallbacks: { begin() {}, change() {}, end: () => ended.push(true) } });
@@ -733,7 +737,7 @@ it('shows chambers as boundaries and restores tissue appearance and positions af
     }),
   }));
   try {
-    store.setState({ presetId: 'chambers' }); sync();
+    store.getState().applyPreset('chambers'); sync();
     for (const id of ['anterior-chamber', 'posterior-chamber', 'vitreous'] as const) {
       const part = eye.parts.get(id)!;
       const mesh = part.group.children.find(child => child instanceof THREE.Mesh) as THREE.Mesh<THREE.BufferGeometry, THREE.Material>;
@@ -741,7 +745,7 @@ it('shows chambers as boundaries and restores tissue appearance and positions af
       expect(mesh.material.opacity).toBe(0);
       expect(boundary?.geometry.getAttribute('position').count).toBeGreaterThan(6);
     }
-    store.setState({ presetId: 'wall-cut' }); sync();
+    store.getState().applyPreset('wall-cut'); sync();
     const before = snapshot();
     store.getState().setExplode(0.7); store.getState().select('lens', true); store.getState().toggleIsolate(); sync();
     store.getState().setClip({ enabled: false }); sync();
@@ -1132,11 +1136,11 @@ it('frames the eyelid layers at a readable scale and fits their exploded extent'
   } finally { cleanup(); }
 });
 
-it('fits the visible orbital walls and contents, and sizes the section guide for the orbit', () => {
+it.each(['orbit', 'all'] as const)('fits every visible structure in the %s preset and sizes the section guide for the orbit', preset => {
   const { engine, internal, store, sync, cleanup } = diseaseEngineFixture();
   try {
     const section = (engine as unknown as { section: SectionTool; updateSections(): void });
-    store.getState().applyPreset('orbit');
+    store.getState().applyPreset(preset);
     for (const explode of [0, 0.66, 1]) {
       store.getState().setExplode(explode); sync();
       for (const view of ['front', 'side', 'back', 'oblique'] as const) {
@@ -1521,8 +1525,7 @@ it('keeps native per-structure cuts, picking and cap placement in the flat layou
 it('keeps all 51 flat tiles separate in the fitted front projection, including a narrow viewport', () => {
   const { engine, internal, store, sync, cleanup } = diseaseEngineFixture();
   try {
-    store.setState(s => ({ layers: Object.fromEntries(Object.keys(s.layers).map(id => [id, 'on'])) as SceneState['layers'] }));
-    store.getState().setClip({ enabled: false });
+    store.getState().applyPreset('all');
     for (const explode of [0.67, 1]) {
       store.getState().setExplode(explode); sync();
       for (const width of [900, 320]) {

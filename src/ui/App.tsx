@@ -364,7 +364,7 @@ function ModeActions({ engine }: { engine: EngineRef }) {
 }
 
 const presetMessages: Record<ScenePreset, MessageKey> = {
-  intact: 'presetIntact', 'wall-cut': 'presetWall', anterior: 'presetAnterior', fundus: 'presetFundus', chambers: 'presetChambers', 'optical-path': 'presetOptical', extraocular: 'presetExtraocular', eyelids: 'presetEyelids', orbit: 'presetOrbit',
+  all: 'presetAll', intact: 'presetIntact', 'wall-cut': 'presetWall', anterior: 'presetAnterior', fundus: 'presetFundus', chambers: 'presetChambers', 'optical-path': 'presetOptical', extraocular: 'presetExtraocular', eyelids: 'presetEyelids', orbit: 'presetOrbit',
 };
 const rangeKeys = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown']);
 function useSceneRangeGesture(engine: EngineRef) {
@@ -397,7 +397,7 @@ function SceneControls({ engine }: { engine: EngineRef }) {
   const explodeHintId = `${explodeId}-hint`, sectionHintId = `${explodeId}-section-hint`;
   const explodeValue = `${t(flatLayout ? 'flatLayout' : 'separatedLayers')} · ${Math.round(s.explode * 100)}%`;
   const retainedSide = `${axis} ${s.clip.keepSide === 'negative' ? '≤' : '≥'} ${s.clip.offset.toFixed(2)}`;
-  const presets = <div className="scene-presets" role="group" aria-label={t('scenePresets')}>{SCENE_PRESETS.filter(preset => (s.mode !== 'optics' || preset !== 'extraocular') && (s.mode === 'explore' || (preset !== 'eyelids' && preset !== 'orbit'))).map(preset => <button key={preset} className={s.presetId === preset ? 'active' : ''} aria-pressed={s.presetId === preset} onClick={() => { edit(() => s.applyPreset(preset)); if (compact) closePresets(); }}>{t(presetMessages[preset])}</button>)}</div>;
+  const presets = <div className="scene-presets" role="group" aria-label={t('scenePresets')}>{SCENE_PRESETS.filter(preset => (s.mode !== 'optics' || preset !== 'extraocular') && (s.mode === 'explore' || (preset !== 'all' && preset !== 'eyelids' && preset !== 'orbit'))).map(preset => <button key={preset} className={s.presetId === preset ? 'active' : ''} aria-pressed={s.presetId === preset} onClick={() => { edit(() => s.applyPreset(preset)); if (compact) closePresets(); }}>{t(presetMessages[preset])}</button>)}</div>;
   const views = <div className="view-controls" role="group" aria-label={t('view')}>{(['oblique','front','side','back'] as ViewPreset[]).map(view => <button key={view} className={s.view === view ? 'active' : ''} aria-pressed={s.view === view} onClick={() => s.setView(view)}>{t(view)}</button>)}<span className="spacer"/><button className="square" aria-label={t('zoomOut')} onClick={() => engine.current?.zoom(0.15)}>−</button><button className="square" aria-label={t('zoomIn')} onClick={() => engine.current?.zoom(-0.15)}>+</button></div>;
   const undo = <button className="undo-scene" disabled={s.undoCount === 0} aria-label={`${t('undoScene')}${s.undoCount > 0 ? ` (${s.undoCount})` : ''}`} title={t('undoScene')} onClick={s.undoScene}>↶ {t(compact ? 'undoShort' : 'undoScene')}{s.undoCount > 0 && ` (${s.undoCount})`}</button>;
   const opticalLink = s.mode === 'explore' && s.showOptics && <button onClick={() => s.setMode('optics', engine.current?.captureCamera())}>{t('enterOptics')} →</button>;

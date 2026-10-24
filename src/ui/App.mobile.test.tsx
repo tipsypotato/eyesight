@@ -142,14 +142,16 @@ it('keeps the model mounted while focusing on content and restores model access 
 });
 
 it('applies an exploration preset, closes the picker and restores focus to its summary', () => {
+  store.getState().applyPreset('intact');
   const { controls, picker, summary } = presetMenu();
   expect(store.getState().layers['orbital-roof']).toBe('off');
+  expect(store.getState().undoCount).toBe(1);
   const orbit = controls.find(node => node.type === 'button' && node.key === 'orbit')!;
   (orbit.props.onClick as () => void)();
   expect(store.getState().presetId).toBe('orbit');
   expect(store.getState().layers['orbital-roof']).toBe('ghost');
   expect(store.getState().layers['oculomotor-nerve']).toBe('on');
-  expect(store.getState().undoCount).toBe(1);
+  expect(store.getState().undoCount).toBe(2);
   expect(picker.open).toBe(false);
   expect(summary.focus).toHaveBeenCalledWith({ preventScroll: true });
 });

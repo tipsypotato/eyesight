@@ -528,6 +528,42 @@ describe('comparison and physiology', () => {
 
 describe('observation presets and scene undo', () => {
   const muscles = ['superior-rectus', 'inferior-rectus', 'medial-rectus', 'lateral-rectus', 'superior-oblique', 'inferior-oblique'] as const;
+  it('starts exploration with every structure enabled and restores that default on reset', () => {
+    const store = createEyeStore();
+    const all = () => {
+      expect(store.getState()).toMatchObject({ mode: 'explore', presetId: 'all', clip: { enabled: false }, explode: 0, isolateId: null, showOptics: false, view: 'oblique' });
+      for (const id of STRUCTURE_IDS) expect(store.getState().layers[id], id).toBe('on');
+    };
+    all();
+    store.getState().applyPreset('fundus');
+    store.getState().select('macula', true); store.getState().toggleIsolate(); store.getState().setExplode(0.8);
+    store.getState().setLanguage('en'); store.getState().resetScene(); all();
+    expect(store.getState().lang).toBe('en');
+    store.getState().undoScene();
+    expect(store.getState()).toMatchObject({ presetId: 'fundus', isolateId: 'macula', explode: 0.8 });
+    store.getState().clearLocalProgress(); all();
+  });
+  it('persists all-structure scenes and preserves saved layer choices instead of replacing them with defaults', () => {
+    const data = new Map<string, string>();
+    const storage = { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => { data.set(key, value); } };
+    const store = createEyeStore(storage);
+    store.getState().flushProgress();
+    const restored = createEyeStore(storage);
+    expect(restored.getState().presetId).toBe('all');
+    for (const id of STRUCTURE_IDS) expect(restored.getState().layers[id], id).toBe('on');
+    restored.getState().cycleLayer('orbital-roof'); restored.getState().cycleLayer('orbital-roof');
+    restored.getState().setClip({ enabled: true, axis: 'coronal', offset: -1 });
+    restored.getState().setMode('optics'); restored.getState().setMode('explore');
+    expect(restored.getState().layers['orbital-roof']).toBe('off');
+    restored.getState().flushProgress();
+    expect(createEyeStore(storage).getState()).toMatchObject({ presetId: 'all', layers: { 'orbital-roof': 'off', lens: 'on' }, clip: { enabled: true, axis: 'coronal', offset: -1 }, storageNotice: null });
+  });
+  it.each(['optics', 'tour', 'quiz', 'disease'] as const)('does not apply the all-structure preset in %s', mode => {
+    const store = createEyeStore(); store.getState().setMode(mode);
+    const before = store.getState(); store.getState().applyPreset('all');
+    expect(store.getState()).toBe(before);
+    for (const id of [...muscles, ...ADNEXAL_IDS, ...ORBITAL_IDS]) expect(store.getState().layers[id], id).toBe('off');
+  });
   it('opens the orbital contents through translucent walls and fat while retaining the globe and muscles', () => {
     const store = createEyeStore();
     store.getState().applyPreset('orbit');
@@ -572,8 +608,8 @@ describe('observation presets and scene undo', () => {
   it('keeps orbital additions hidden in established presets, tours, quizzes and disease chapters', () => {
     const store = createEyeStore();
     const hidden = () => { for (const id of ORBITAL_IDS) expect(store.getState().layers[id]).toBe('off'); };
-    hidden();
-    for (const preset of SCENE_PRESETS.filter(id => id !== 'orbit')) {
+    store.getState().applyPreset('wall-cut'); hidden();
+    for (const preset of SCENE_PRESETS.filter(id => id !== 'all' && id !== 'orbit')) {
       store.getState().applyPreset('orbit'); store.getState().applyPreset(preset); hidden();
     }
     store.getState().setMode('optics'); hidden();
@@ -623,8 +659,8 @@ describe('observation presets and scene undo', () => {
   it('keeps new eyelid structures hidden in established presets, tours, quizzes and disease chapters', () => {
     const store = createEyeStore();
     const hidden = () => { for (const id of ADNEXAL_IDS) expect(store.getState().layers[id]).toBe('off'); };
-    hidden();
-    for (const preset of SCENE_PRESETS.filter(id => id !== 'eyelids' && id !== 'orbit')) {
+    store.getState().applyPreset('wall-cut'); hidden();
+    for (const preset of SCENE_PRESETS.filter(id => id !== 'all' && id !== 'eyelids' && id !== 'orbit')) {
       store.getState().applyPreset('eyelids'); store.getState().applyPreset(preset); hidden();
     }
     for (const lesson of ['anatomy', 'vision', 'myopia']) { store.getState().startLesson(lesson); hidden(); }
@@ -665,7 +701,7 @@ describe('observation presets and scene undo', () => {
   it('keeps muscle anatomy out of existing internal, guided and disease scenes', () => {
     const store = createEyeStore();
     const hidden = () => { for (const id of muscles) expect(store.getState().layers[id]).toBe('off'); };
-    hidden();
+    store.getState().applyPreset('wall-cut'); hidden();
     for (const preset of ['wall-cut', 'anterior', 'fundus', 'chambers', 'optical-path'] as const) {
       store.getState().applyPreset('extraocular'); store.getState().applyPreset(preset); hidden();
     }
@@ -864,8 +900,10 @@ describe('observation presets and scene undo', () => {
   });
   it('rejects nonfinite scene input and clamps section and separation ranges', () => {
     const store = createEyeStore();
+    store.getState().applyPreset('wall-cut');
+    const before = store.getState();
     store.getState().setClip({ offset: NaN }); store.getState().setExplode(Infinity);
-    expect(store.getState()).toMatchObject({ clip: { offset: 0 }, explode: 0, undoCount: 0 });
+    expect(store.getState()).toBe(before);
     store.getState().setClip({ offset: -2 }); store.getState().setExplode(3);
     expect(store.getState()).toMatchObject({ clip: { offset: -1 }, explode: 1 });
   });

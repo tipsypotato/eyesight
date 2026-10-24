@@ -71,7 +71,9 @@ describe('visible anatomy surface', () => {
 
   it('checks a selectable ghost or hidden target without changing its scene or visibility', () => {
     const { eye, camera } = setup([]);
-    const state = createEyeStore().getState();
+    const store = createEyeStore();
+    store.getState().applyPreset('wall-cut');
+    const state = store.getState();
     const part = eye.parts.get('cornea')!;
     camera.position.set(3.5, 1.4, 3.5);
     camera.lookAt(0, 0, -0.08);

@@ -87,7 +87,25 @@ describe('responsive workspace markup', () => {
       expect(renderApp(false)).not.toContain(`>${label}</button>`);
     }
   });
+  it.each(['zh', 'en'] as const)('orders exploration presets from all structures to focused views in %s', lang => {
+    store.getState().setLanguage(lang);
+    const labels = lang === 'zh'
+      ? ['全部结构', '眼眶与内容物', '结膜与眼睑', '眼外肌观察', '完整眼球', '眼球壁剖面', '前段观察', '眼内空间', '眼底观察', '光路观察']
+      : ['All structures', 'Orbit &amp; contents', 'Conjunctiva &amp; eyelids', 'Extraocular muscles', 'Whole eye', 'Eye wall section', 'Anterior segment', 'Intraocular spaces', 'Fundus view', 'Optical path'];
+    for (const narrow of [false, true]) {
+      const picker = renderApp(narrow).match(/<details[^>]*class="preset-picker"[^>]*>([\s\S]*?)<\/details>/)?.[1];
+      expect(picker).toBeDefined();
+      expect([...picker!.matchAll(/<button\b[^>]*>([^<]+)<\/button>/g)].map(match => match[1])).toEqual(labels);
+      expect(picker).toContain(`<strong>${labels[0]}</strong>`);
+      expect(picker).toMatch(new RegExp(`<button[^>]*aria-pressed="true"[^>]*>${labels[0]}</button>`));
+    }
+    for (const mode of ['optics', 'tour', 'quiz', 'disease'] as const) {
+      store.getState().setMode(mode);
+      for (const narrow of [false, true]) expect(renderApp(narrow)).not.toContain(`>${labels[0]}</button>`);
+    }
+  });
   it('extends the section slider to the orbital apex and restores native coordinates when tiled', () => {
+    store.getState().applyPreset('intact');
     const range = () => [...renderApp(false).matchAll(/<input\b[^>]*>/g)].find(([tag]) => tag.includes('class="section-range"'))?.[0];
     expect(range()).toContain('min="-1" max="1"');
     store.getState().applyPreset('orbit'); store.getState().setClip({ enabled: true, axis: 'coronal', offset: -2.1 });
@@ -260,7 +278,7 @@ describe('responsive workspace markup', () => {
       const picker = html.match(/<details[^>]*class="preset-picker"[^>]*>([\s\S]*?)<\/details>/);
       expect(picker).not.toBeNull();
       expect(picker![0].split('>')[0]).not.toContain('open');
-      expect(picker![1].match(/<button\b/g)).toHaveLength(9);
+      expect(picker![1].match(/<button\b/g)).toHaveLength(10);
       expect(picker![1]).toContain(messages.presetOrbit[lang].replace('&', '&amp;'));
       const help = html.match(/<details[^>]*class="control-help"[^>]*>([\s\S]*?)<\/details>/);
       expect(help).not.toBeNull();
