@@ -461,3 +461,17 @@ describe('disease workspace integration', () => {
     expect(html).not.toContain('class="section-controls"');
   });
 });
+
+
+it.each(['zh', 'en'] as const)('offers one compact skull checkbox with a disabled-context explanation in %s', lang => {
+  store.getState().setLanguage(lang);
+  const checkbox = () => renderApp(false).match(/<label class="check skull-toggle"[^>]*>([\s\S]*?)<\/label>/)?.[0];
+  expect(checkbox()).toContain(lang === 'zh' ? '头骨参照' : 'Skull reference');
+  expect(checkbox()).toContain('checked=""');
+  expect(checkbox()).not.toContain('disabled=""');
+  store.getState().setClip({ enabled: true });
+  expect(checkbox()).toContain('disabled=""');
+  expect(checkbox()).toContain(lang === 'zh' ? '剖切' : 'sectioning');
+  store.getState().setMode('optics');
+  expect(checkbox()).toBeUndefined();
+});

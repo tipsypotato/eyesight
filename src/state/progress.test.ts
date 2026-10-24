@@ -9,7 +9,7 @@ const draft = (): PersistedDraft => ({
   clip: { enabled: true, axis: 'sagittal', offset: 0.2, keepSide: 'negative' }, presetId: 'wall-cut',
   explode: 0.3, labels: true, view: 'side', opticsPreset: 'normal',
   opticsInput: { axialIncrement: 0, objectDistance: 'far', accommodation: 0, pupil: 'medium', externalLens: 'off' }, opticsExperiment: 'free',
-  comparison: null, physiology: null, showOptics: true,
+  comparison: null, physiology: null, showOptics: true, showSkull: false,
   camera: { position: [3, 2, 4], target: [0.2, 0, 0], zoom: 1.2,
     viewport: { aspect: 1.6, usableFraction: [0.8, 0.7] }, viewOffset: { fullWidth: 1000, fullHeight: 625, offsetX: -40, offsetY: 20, width: 1000, height: 625 } },
   isolationLayers: null, lessonId: null, step: 0,
@@ -293,4 +293,21 @@ describe('saved progress boundary', () => {
     expect(result.value?.sessions.alias).toBeUndefined();
     expect(wrongQuestionIds(result.value!.sessions[session.sessionId])).toEqual(['cornea']);
   });
+});
+
+
+it('restores optional skull visibility without enabling it in legacy scenes', () => {
+  const value = saved();
+  delete value.drafts.explore!.showSkull;
+  const legacy = parseProgress(JSON.stringify(value));
+  expect(legacy.discarded).toBe(false);
+  expect(legacy.value?.drafts.explore).toMatchObject({ showSkull: false, camera: value.drafts.explore!.camera });
+  value.drafts.explore!.showSkull = true;
+  expect(parseProgress(JSON.stringify(value)).value?.drafts.explore?.showSkull).toBe(true);
+  for (const invalid of [null, 1, 'true', {}, []]) {
+    const payload = JSON.parse(JSON.stringify(value)); payload.drafts.explore.showSkull = invalid;
+    const result = parseProgress(JSON.stringify(payload));
+    expect(result.discarded).toBe(true);
+    expect(result.value?.drafts.explore).toBeUndefined();
+  }
 });

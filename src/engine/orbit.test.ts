@@ -14,6 +14,43 @@ const points = (mesh: THREE.Mesh) => {
 };
 
 describe('orbital walls and contents', () => {
+  it('forms a continuous rounded socket with a contoured, thicker anterior rim', () => {
+    const eye = buildEye();
+    try {
+      const walls = ['medial-orbital-wall', 'orbital-roof', 'lateral-orbital-wall', 'orbital-floor'] as const;
+      const rims: THREE.Vector3[] = [];
+      for (let part = 0; part < walls.length; part++) {
+        const geometry = meshes(eye.parts.get(walls[part])!.group)[0].geometry;
+        const vertices = points(meshes(eye.parts.get(walls[part])!.group)[0]);
+        const normal = geometry.getAttribute('normal');
+        const next = meshes(eye.parts.get(walls[(part + 1) % walls.length])!.group)[0].geometry;
+        const stride = 25, rows = 36, layerSize = stride * (rows + 1);
+        const edges = new Map<string, number>(), index = geometry.index!;
+        for (let i = 0; i < index.count; i += 3) {
+          const face = [index.getX(i), index.getX(i + 1), index.getX(i + 2)];
+          for (let edge = 0; edge < 3; edge++) {
+            const a = face[edge], b = face[(edge + 1) % 3], key = `${Math.min(a, b)}:${Math.max(a, b)}`;
+            edges.set(key, (edges.get(key) ?? 0) + 1);
+          }
+        }
+        expect([...edges.values()].every(count => count === 2), `${walls[part]} remains closed when isolated`).toBe(true);
+        for (let side = 0; side < 2; side++) for (let row = 2; row < rows - 1; row++) {
+          const a = side * layerSize + row * stride + stride - 1, b = side * layerSize + row * stride;
+          expect(vertices[a].distanceTo(new THREE.Vector3().fromBufferAttribute(next.getAttribute('position'), b))).toBeLessThan(1e-6);
+          expect(new THREE.Vector3().fromBufferAttribute(normal, a).dot(new THREE.Vector3().fromBufferAttribute(next.getAttribute('normal'), b))).toBeGreaterThan(0.999);
+        }
+        for (let ring = layerSize * 2; ring < vertices.length; ring += stride) {
+          expect(vertices[ring + stride - 1].distanceTo(new THREE.Vector3().fromBufferAttribute(next.getAttribute('position'), ring))).toBeLessThan(1e-6);
+          expect(new THREE.Vector3().fromBufferAttribute(normal, ring + stride - 1).dot(new THREE.Vector3().fromBufferAttribute(next.getAttribute('normal'), ring))).toBeGreaterThan(0.999);
+        }
+        const middle = Math.floor(stride / 2), front = rows * stride + middle, back = 2 * stride + middle;
+        expect(vertices[front + layerSize].distanceTo(vertices[front])).toBeGreaterThan(vertices[back + layerSize].distanceTo(vertices[back]) + 0.08);
+        rims.push(...vertices.slice(rows * stride, layerSize));
+      }
+      expect(Math.max(...rims.map(point => point.z)) - Math.min(...rims.map(point => point.z))).toBeGreaterThan(0.15);
+    } finally { eye.dispose(); }
+  });
+
   it('builds finite selectable orbital surfaces clear of the globe and the anterior aperture', () => {
     const eye = buildEye();
     try {
@@ -50,7 +87,7 @@ describe('orbital walls and contents', () => {
         expect(bounds.min.z).toBeLessThan(-2);
         expect(bounds.max.z).toBeGreaterThan(0.5);
         const geometry = meshes(group)[0].geometry, position = geometry.getAttribute('position'), normal = geometry.getAttribute('normal');
-        const inner = Math.floor(position.count / 4), outer = inner + position.count / 2;
+        const inner = 18 * 25 + 12, outer = inner + 25 * 37;
         const direction = new THREE.Vector3().fromBufferAttribute(position, outer).sub(new THREE.Vector3().fromBufferAttribute(position, inner));
         expect(new THREE.Vector3().fromBufferAttribute(normal, outer).dot(direction)).toBeGreaterThan(0);
         expect(new THREE.Vector3().fromBufferAttribute(normal, inner).dot(direction)).toBeLessThan(0);

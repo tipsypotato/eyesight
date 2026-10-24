@@ -146,3 +146,7 @@ button.active:not(.eye-label),button.selected:not(.eye-label),.scene-presets but
 .compact-controls .control-help[open] summary:before{content:'−'}
 .compact-controls .control-help p{margin:0 0 6px;line-height:1.6;font-size:11px}
 .compact-controls .control-footer>button{padding:4px 8px;font-size:11px}
+
+.compact-controls .skull-toggle{font-size:11px;cursor:pointer}
+.compact-controls .skull-toggle:has(input:disabled){color:var(--muted);cursor:default}
+.skull-status{position:absolute;top:42px;left:16px;right:16px;z-index:2;margin:0;padding:5px 8px;border-radius:4px;background:#f9fbf3e8;font-size:11px;line-height:1.5;pointer-events:none}

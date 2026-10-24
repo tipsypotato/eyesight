@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createEyeStore } from './store';
 import { PROGRESS_KEY } from './progress';
-import { ADNEXAL_IDS, ORBITAL_IDS, SCENE_PRESETS, STRUCTURE_IDS, type CameraSnapshot, type LayerMode, type OpticsExperiment, type OpticsInput, type OpticsPreset, type PhysiologyKind } from '../anatomy/types';
+import { ADNEXAL_IDS, ORBITAL_IDS, SCENE_PRESETS, STRUCTURE_IDS, skullContextAvailable, type CameraSnapshot, type LayerMode, type OpticsExperiment, type OpticsInput, type OpticsPreset, type PhysiologyKind } from '../anatomy/types';
 
 describe('learning state', () => {
   it('keeps a canvas fundus selection in the current section without changing other layers', () => {
@@ -918,4 +918,69 @@ it('reveals a hidden flat tile without closing the grid and can undo that reveal
   expect(store.getState().layers).toEqual({ ...before.layers, 'moll-glands': 'on' });
   store.getState().undoReveal();
   expect(store.getState()).toMatchObject({ explode: 0.8, clip: before.clip, layers: before.layers });
+});
+
+
+describe('passive skull reference', () => {
+  it('defaults to the whole-head context only for all and orbit presets in exploration', () => {
+    const store = createEyeStore();
+    expect(store.getState().showSkull).toBe(true);
+    for (const preset of SCENE_PRESETS) {
+      store.getState().applyPreset(preset);
+      expect(store.getState().showSkull).toBe(preset === 'all' || preset === 'orbit');
+    }
+    for (const mode of ['optics', 'tour', 'quiz', 'disease'] as const) {
+      store.getState().setMode(mode);
+      expect(store.getState().showSkull).toBe(false);
+      const before = store.getState();
+      store.getState().setShowSkull(true);
+      expect(store.getState()).toBe(before);
+    }
+  });
+  it('records visibility changes with refitting and restores the flag and camera on undo', () => {
+    const store = createEyeStore();
+    const camera: CameraSnapshot = { position: [3, 2, 4], target: [0, 0, 0], zoom: 1 };
+    store.setState({ camera });
+    const revision = store.getState().sceneRevision!;
+    store.getState().setShowSkull(false);
+    expect(store.getState()).toMatchObject({ showSkull: false, camera: null, sceneRevision: revision + 1, undoCount: 1 });
+    const unchanged = store.getState();
+    store.getState().setShowSkull(false);
+    store.getState().setShowSkull('true' as unknown as boolean);
+    expect(store.getState()).toBe(unchanged);
+    store.getState().undoScene();
+    expect(store.getState()).toMatchObject({ showSkull: true, camera, undoCount: 0 });
+  });
+  it('temporarily hides context for section, separation, isolation and light paths', () => {
+    const store = createEyeStore();
+    const scene = store.getState();
+    expect(skullContextAvailable(scene)).toBe(true);
+    expect(skullContextAvailable({ ...scene, clip: { ...scene.clip, enabled: true } })).toBe(false);
+    expect(skullContextAvailable({ ...scene, explode: 0.01 })).toBe(false);
+    expect(skullContextAvailable({ ...scene, explode: 0.8 })).toBe(false);
+    expect(skullContextAvailable({ ...scene, isolateId: 'lens' })).toBe(false);
+    expect(skullContextAvailable({ ...scene, showOptics: true })).toBe(false);
+    expect(skullContextAvailable({ ...scene, mode: 'tour' })).toBe(false);
+    store.getState().setClip({ enabled: true }); store.getState().setClip({ enabled: false });
+    expect(store.getState().showSkull).toBe(true);
+    expect(skullContextAvailable(store.getState())).toBe(true);
+  });
+  it('preserves the requested reference across focused observations, workspaces and reloads', () => {
+    const data = new Map<string, string>();
+    const storage = { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => { data.set(key, value); } };
+    const store = createEyeStore(storage);
+    store.getState().revealStructure('lens');
+    expect(store.getState()).toMatchObject({ showSkull: false, revealReturn: { showSkull: true } });
+    store.getState().undoReveal();
+    expect(store.getState().showSkull).toBe(true);
+    store.getState().enterRelationship('accommodation');
+    expect(store.getState()).toMatchObject({ showSkull: false, relationshipReturn: { showSkull: true } });
+    store.getState().exitRelationship();
+    expect(store.getState().showSkull).toBe(true);
+    store.getState().setMode('optics'); store.getState().setMode('explore');
+    store.getState().flushProgress();
+    expect(createEyeStore(storage).getState().showSkull).toBe(true);
+    store.getState().setShowSkull(false); store.getState().setMode('optics'); store.getState().setMode('explore');
+    expect(createEyeStore(storage).getState().showSkull).toBe(false);
+  });
 });

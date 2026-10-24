@@ -15,6 +15,7 @@ const DIRECTIONS: Record<ViewPreset, THREE.Vector3> = {
 
 export class CameraRig {
   readonly controls: OrbitControls;
+  motionRevision = 0;
   private usableFraction = new THREE.Vector2(1, 1);
   private interacting = false;
   private interactionEnabled = true;
@@ -28,7 +29,7 @@ export class CameraRig {
     controls.zoomSpeed = 0.8;
     controls.panSpeed = 0.65;
     controls.screenSpacePanning = true;
-    controls.addEventListener('start', () => { this.interacting = true; animator.cancel('camera'); });
+    controls.addEventListener('start', () => { this.motionRevision++; this.interacting = true; animator.cancel('camera'); });
     controls.addEventListener('end', () => { this.interacting = false; this.applyViewportScale(); });
     this.controls = controls;
     this.updateDistanceLimits();
@@ -57,6 +58,7 @@ export class CameraRig {
     this.controls.update();
   }
   cancel() {
+    this.motionRevision++;
     this.interacting = false;
     const snapshot = this.capture();
     const damping = this.controls.enableDamping;

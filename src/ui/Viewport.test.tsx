@@ -1,3 +1,4 @@
+import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { CameraSnapshot, SceneState } from '../anatomy/types';
 import type { EyeEngine } from '../engine/EyeEngine';
@@ -9,7 +10,7 @@ const hooks = vi.hoisted(() => ({
   current: null as null | {
     refs: { current: unknown }[]; refIndex: number; effectIndex: number;
     effects: { deps?: readonly unknown[]; cleanup?: () => void }[];
-    pending: (() => void)[];
+    pending: (() => void)[]; states: unknown[]; stateIndex: number; stateUpdates: number;
   },
   host: {} as HTMLElement,
 }));
@@ -30,7 +31,11 @@ vi.mock('react', async importOriginal => ({
       });
     }
   },
-  useState: (initial: unknown) => [initial, () => {}],
+  useState: (initial: unknown) => {
+    const current = hooks.current!, index = current.stateIndex++;
+    if (!(index in current.states)) current.states[index] = initial;
+    return [current.states[index], (value: unknown) => { current.states[index] = value; current.stateUpdates++; }];
+  },
 }));
 vi.mock('zustand', () => ({
   useStore: (store: typeof eyeStore, selector?: (state: ReturnType<typeof eyeStore.getState>) => unknown) => selector ? selector(store.getState()) : store.getState(),
@@ -57,8 +62,9 @@ class EngineStub {
   camera: CameraSnapshot = { position: [3, 2, 5], target: [0, 0, 0], zoom: 1 };
   cameraListener: ((camera: CameraSnapshot) => void) | null = null;
   ready: ((error?: unknown) => void) | undefined;
-  constructor(_host: HTMLElement, _select: unknown, _locate: unknown, _section: unknown, ready?: (error?: unknown) => void) {
-    this.ready = ready;
+  skullStatus: ((status: 'loading' | 'ready' | 'error') => void) | undefined;
+  constructor(_host: HTMLElement, _select: unknown, _locate: unknown, _section: unknown, ready?: (error?: unknown) => void, skullStatus?: (status: 'loading' | 'ready' | 'error') => void) {
+    this.ready = ready; this.skullStatus = skullStatus;
     EngineStub.instances.push(this);
   }
   setState(state: SceneState) {
@@ -83,18 +89,19 @@ function deferredEngine() {
   return { promise, resolve: () => resolve(engineModule), reject };
 }
 function mount(props: Parameters<typeof Viewport>[0]) {
-  const current: NonNullable<typeof hooks.current> = { refs: [], effects: [], pending: [], refIndex: 0, effectIndex: 0 };
+  const current: NonNullable<typeof hooks.current> = { refs: [], effects: [], pending: [], refIndex: 0, effectIndex: 0, states: [], stateIndex: 0, stateUpdates: 0 };
+  let tree: ReturnType<typeof Viewport>;
   const rerender = (next: Parameters<typeof Viewport>[0]) => {
-    current.refIndex = 0; current.effectIndex = 0; current.pending = [];
+    current.refIndex = 0; current.effectIndex = 0; current.stateIndex = 0; current.pending = [];
     hooks.current = current;
-    try { Viewport(next); } finally { hooks.current = null; }
+    try { tree = Viewport(next); } finally { hooks.current = null; }
     current.pending.forEach(effect => effect());
   };
   rerender(props);
   let mounted = true;
   const unmount = () => { if (mounted) { mounted = false; [...current.effects].reverse().forEach(effect => effect.cleanup?.()); } };
   cleanups.push(unmount);
-  return Object.assign(unmount, { rerender });
+  return Object.assign(unmount, { rerender, html: () => renderToStaticMarkup(tree), stateUpdates: () => current.stateUpdates });
 }
 async function paint() {
   expect(frames).toHaveLength(1);
@@ -262,4 +269,35 @@ it('synchronizes a late reference viewport and stops applying store updates afte
   expect(EngineStub.instances.map(instance => instance.states.length)).toEqual(counts);
   expect(EngineStub.instances.every(instance => instance.disposed)).toBe(true);
   expect(main.current).toBeNull(); expect(reference.current).toBeNull();
+});
+
+
+it.each(['zh', 'en'] as const)('keeps optional skull loading and failure separate from startup in %s', async lang => {
+  eyeStore.getState().setLanguage(lang);
+  const props = { engine: engineRef(), peer: engineRef() };
+  vi.mocked(loadEyeEngine).mockResolvedValue(engineModule);
+  const viewport = mount(props);
+  await settle(); await paint();
+  const instance = EngineStub.instances[0];
+  instance.ready?.(); viewport.rerender(props);
+  expect(elements['startup-screen'].removed).toBe(true);
+  expect(viewport.html()).toContain('aria-busy="false"');
+  expect(viewport.html()).toContain(lang === 'zh' ? '正在加载头骨参照' : 'Loading skull reference');
+  instance.skullStatus?.('error'); viewport.rerender(props);
+  expect(viewport.html()).toContain(lang === 'zh' ? '眼球仍可正常操作' : 'eye controls remain usable');
+  expect(viewport.html()).not.toContain('role="alert"');
+  expect(instance.disposed).toBe(false);
+  eyeStore.getState().setClip({ enabled: true }); viewport.rerender(props);
+  expect(viewport.html()).not.toContain('class="skull-status"');
+  eyeStore.getState().setClip({ enabled: false });
+  instance.skullStatus?.('ready'); viewport.rerender(props);
+  expect(viewport.html()).not.toContain('class="skull-status"');
+  instance.skullStatus?.('loading'); viewport.rerender(props);
+  expect(viewport.html()).toContain('class="skull-status"');
+  eyeStore.getState().setShowSkull(false); viewport.rerender(props);
+  expect(viewport.html()).not.toContain('class="skull-status"');
+  viewport();
+  const updates = viewport.stateUpdates();
+  instance.skullStatus?.('error');
+  expect(viewport.stateUpdates()).toBe(updates);
 });

@@ -2,7 +2,7 @@ import { Component, useEffect, useId, useRef, useState, type ReactNode, type Ref
 import { useStore } from 'zustand';
 import { GROUPS, LESSONS, STRUCTURES } from '../anatomy/data';
 import { searchStructures } from '../anatomy/search';
-import { FLAT_LAYOUT_START, SCENE_PRESETS, sectionLimit, type ScenePreset, type ClipAxis, type Mode, type OpticsExperiment, type OpticsInput, type OpticsPreset, type PhysiologyKind, type StructureId, type ViewPreset } from '../anatomy/types';
+import { FLAT_LAYOUT_START, SCENE_PRESETS, sectionLimit, skullContextAvailable, type ScenePreset, type ClipAxis, type Mode, type OpticsExperiment, type OpticsInput, type OpticsPreset, type PhysiologyKind, type StructureId, type ViewPreset } from '../anatomy/types';
 import { messages, type MessageKey } from '../content/messages';
 import type { EyeEngine } from '../engine/EyeEngine';
 import { finishStartup, loadEyeEngine, setStartupStage, STARTUP_COMPLETED, STARTUP_TEXT, type StartupStage, yieldToBrowser } from '../startup';
@@ -57,6 +57,7 @@ export function Viewport({ engine, peer, reference = false, narrow = false, inte
   const t = useText();
   const [failed, setFailed] = useState<'load' | 'webgl' | null>(null);
   const [loading, setLoading] = useState<StartupStage>('engine');
+  const [skullStatus, setSkullStatus] = useState<'loading' | 'ready' | 'error'>('loading');
   const scene = (state: ReturnType<typeof eyeStore.getState>) => {
     if (state.mode === 'disease' && options.current.reference) return { ...state, diseaseNormal: true };
     return state.comparison && (options.current.reference || options.current.narrow && state.comparison.showing === 'reference')
@@ -106,7 +107,7 @@ export function Viewport({ engine, peer, reference = false, narrow = false, inte
         if (error !== undefined) { fail(error); return; }
         progress('ready');
         if (!reference) finishStartup();
-      });
+      }, status => { if (!cancelled) setSkullStatus(status); });
       instance = active; engine.current = active;
       active.setInteractionEnabled(options.current.interactionEnabled);
       active.setState(scene(eyeStore.getState()));
@@ -131,6 +132,7 @@ export function Viewport({ engine, peer, reference = false, narrow = false, inte
   return <div className="viewport" ref={host} role="group" aria-busy={!failed && loading !== 'ready'} aria-label={`${t(binocular ? 'bothEyes' : 'rightEye')} · ${t('schematic')}`}>
     {!s.comparison && !s.diseaseComparison && <div className="scene-corner" data-viewport-overlay>01 <span>/ {t(s.mode)}</span></div>}{!narrow && <p className="interaction-hint" data-viewport-overlay>{s.mode === 'quiz' && s.quiz?.context !== 'structures' ? LEARNING_TEXT.answerHint[s.lang] : t(s.mode === 'quiz' ? 'dragQuiz' : 'drag')}</p>}
     {!failed && loading !== 'ready' && <div className="model-loading"><EyeIcon/><p role="status">{STARTUP_TEXT[loading][s.lang]}</p><progress aria-label={STARTUP_TEXT.progress[s.lang]} max="4" value={STARTUP_COMPLETED[loading]}/><small>{STARTUP_COMPLETED[loading]} / 4</small></div>}
+    {!failed && loading === 'ready' && s.showSkull && skullContextAvailable(s) && skullStatus !== 'ready' && <p className="skull-status" role="status" data-viewport-overlay>{t(skullStatus === 'loading' ? 'skullLoading' : 'skullUnavailable')}</p>}
     {failed && <div className="webgl-error" role="alert"><EyeIcon/><p>{failed === 'load' ? STARTUP_TEXT.failure[s.lang] : t('webglError')}</p><button onClick={() => location.reload()}>{t('reload')}</button></div>}
   </div>;
 }
@@ -421,7 +423,7 @@ function SceneControls({ engine }: { engine: EngineRef }) {
       <div className="section-controls"><div className="section-heading">{clipToggle}{clipAxis}{clipFlip}</div><div className="section-slider">{clipRange}<output className="section-value" aria-label={t('retainedSide')}>{retainedSide}</output></div></div>
       {explodeControl}
     </div>
-    <div className="control-footer"><details className="control-help"><summary>{t('controlHelp')}</summary><p id={explodeHintId}>{t('explodeHint')}</p><p id={sectionHintId}>{t(flatLayout ? 'flatSectionHint' : 'sectionLocked')}</p></details>{opticalLink}</div>
+    <div className="control-footer"><label className="check skull-toggle" title={t('skullContextHint')}><input type="checkbox" checked={!!s.showSkull} disabled={!skullContextAvailable(s)} title={t('skullContextHint')} onChange={e => edit(() => s.setShowSkull(e.target.checked))}/>{t('skullReference')}</label><details className="control-help"><summary>{t('controlHelp')}</summary><p id={explodeHintId}>{t('explodeHint')}</p><p id={sectionHintId}>{t(flatLayout ? 'flatSectionHint' : 'sectionLocked')}</p></details>{opticalLink}</div>
     {opticalHint}
   </div>;
   return <div className="scene-controls">

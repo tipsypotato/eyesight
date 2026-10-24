@@ -20,6 +20,12 @@ A commit SHA was not available from the retrieval endpoint. The following SHA-25
 | `src/engine/animator.ts` | `efa7c6828af98e7a736c97354e66b1f238ce7174218e8df64a530ada1c5cc1a3` |
 | `src/engine/section.ts` | `7c1820ee798b4020e19859b1abbadd0e8f8ca821dd2cad6e6751f12d0f5fed74` |
 
+## Skull context model
+
+`public/models/skull-context.glb` is adapted from [ScatteringSkull in Khronos glTF Sample Assets](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/ScatteringSkull), retrieved 2026-10-24. The [source notice](https://github.com/KhronosGroup/glTF-Sample-Assets/blob/main/Models/ScatteringSkull/README.md) credits Vladimir Petkovic and dedicates the model under [CC0 1.0 Universal](https://creativecommons.org/publicdomain/zero/1.0/legalcode). The embedded source copyright reads: `2025 (c) Adobe Inc., model by Vladimir Petkovic, CC0 1.0 Universal`.
+
+The original GLB SHA-256 is `339eafce3fdbc4175ed4798addba7d0c175cb0dab316e9d91abc053422050a00`. Eyesight reduces the geometry from 188,871 to 29,999 triangles, removes textures and material extensions, and bakes a uniform scale, rotation and translation to approximately register the right orbital socket with the existing eye. The resulting asset is 596,428 bytes and retains vertex normals. The skull supplies passive spatial context, including the mandible; it is not a clinically calibrated anatomy model and does not add individually selectable skull bones.
+
 ## Dependencies
 
 React, Three.js, Zustand, Vite, TypeScript and Vitest are installed from npm. Exact versions are pinned in package-lock.json; each package retains its own bundled license. Browser code does not call a translation service, load external fonts, collect user data or submit quiz results.

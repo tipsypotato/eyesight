@@ -8,15 +8,22 @@ type Point = [number, number, number];
 
 // shortcut: orbital contours and neurovascular routes are illustrative; use measured assets for surgical planning.
 function wall(start: number) {
-  const columns = 24, rows = 36, stride = columns + 1, layerSize = stride * (rows + 1);
+  const columns = 24, rows = 36, rimSegments = 6, stride = columns + 1, layerSize = stride * (rows + 1);
   const positions: number[] = [], indices: number[] = [];
+  const surface = (t: number, angle: number, side: number) => {
+    const c = Math.cos(angle), s = Math.sin(angle), width = Math.sin(t * Math.PI / 2) ** 0.65;
+    const roundness = 0.65 + 0.22 * width, contour = 1 + (0.018 * Math.sin(2 * angle) + 0.012 * Math.cos(3 * angle)) * t * t;
+    const thickness = 0.05 + (0.10 + 0.07 * Math.max(0, s) + 0.03 * Math.max(0, -c)) * t ** 8;
+    return new THREE.Vector3(
+      0.52 * (1 - t) + ((0.36 + 1.44 * width) * contour + side * thickness) * Math.sign(c) * Math.abs(c) ** roundness,
+      ((0.34 + 1.38 * width) * contour + side * thickness) * Math.sign(s) * Math.abs(s) ** roundness,
+      -2.13 + 2.79 * t + (0.10 * (1 + c) + 0.04 * (1 + s)) * t ** 4,
+    );
+  };
   for (let side = 0; side < 2; side++) for (let row = 0; row <= rows; row++) {
-    const t = row / rows, width = Math.sin(t * Math.PI / 2) ** 0.65;
     for (let column = 0; column <= columns; column++) {
       const angle = start + column / columns * Math.PI / 2;
-      const c = Math.cos(angle), s = Math.sin(angle);
-      positions.push(0.52 * (1 - t) + (0.36 + 1.28 * width + side * 0.06) * Math.sign(c) * Math.abs(c) ** 0.65,
-        (0.34 + 1.22 * width + side * 0.06) * Math.sign(s) * Math.abs(s) ** 0.65, -2.13 + 2.79 * t);
+      positions.push(...surface(row / rows, angle, side).toArray());
       if (row < rows && column < columns) {
         const a = side * layerSize + row * stride + column, b = a + stride;
         if (side) indices.push(a, a + 1, b, a + 1, b + 1, b);
@@ -24,12 +31,46 @@ function wall(start: number) {
       }
     }
   }
+  const rim = (u: number, angle: number) => {
+    const inner = surface(1, angle, 0), outer = surface(1, angle, 1), thickness = inner.distanceTo(outer);
+    return inner.lerp(outer, (1 - Math.cos(u * Math.PI)) / 2).add(new THREE.Vector3(0, 0, Math.sin(u * Math.PI) * thickness / 2));
+  };
+  for (let ring = 1; ring < rimSegments; ring++) for (let column = 0; column <= columns; column++) {
+    positions.push(...rim(ring / rimSegments, start + column / columns * Math.PI / 2).toArray());
+  }
+  for (let ring = 0; ring < rimSegments; ring++) for (let column = 0; column < columns; column++) {
+    const a = (ring === 0 ? rows * stride : layerSize * 2 + (ring - 1) * stride) + column;
+    const b = (ring === rimSegments - 1 ? layerSize + rows * stride : layerSize * 2 + ring * stride) + column;
+    indices.push(a, b, a + 1, a + 1, b, b + 1);
+  }
   const edge = (a: number, b: number) => indices.push(a, b, a + layerSize, b, b + layerSize, a + layerSize);
-  for (let column = 0; column < columns; column++) { edge(column, column + 1); edge(rows * stride + column + 1, rows * stride + column); }
+  for (let column = 0; column < columns; column++) edge(column, column + 1);
   for (let row = 0; row < rows; row++) { edge((row + 1) * stride, row * stride); edge(row * stride + columns, (row + 1) * stride + columns); }
+  for (const column of [0, columns]) for (let ring = 1; ring < rimSegments; ring++) {
+    const a = rows * stride + column, b = layerSize * 2 + (ring - 1) * stride + column;
+    const c = ring === rimSegments - 1 ? layerSize + a : b + stride;
+    if (column === 0) indices.push(a, b, c);
+    else indices.push(a, c, b);
+  }
   const geometry = new THREE.BufferGeometry().setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
   geometry.setIndex(indices);
   geometry.computeVertexNormals();
+  // Match the socket's smooth surface across the four separately selectable wall seams.
+  const normal = geometry.getAttribute('normal');
+  for (let side = 0; side < 2; side++) for (let row = 0; row <= rows; row++) for (const column of [0, columns]) {
+    const t = row / rows, angle = start + column / columns * Math.PI / 2, delta = 0.0001;
+    const along = surface(Math.min(1, t + delta), angle, side).sub(surface(Math.max(0, t - delta), angle, side));
+    const around = surface(t, angle + delta, side).sub(surface(t, angle - delta, side));
+    const direction = along.cross(around).normalize().multiplyScalar(side ? -1 : 1);
+    normal.setXYZ(side * layerSize + row * stride + column, direction.x, direction.y, direction.z);
+  }
+  for (let ring = 1; ring < rimSegments; ring++) for (let column = 0; column <= columns; column++) {
+    const u = ring / rimSegments, angle = start + column / columns * Math.PI / 2, delta = 0.0001;
+    const across = rim(u + delta, angle).sub(rim(u - delta, angle));
+    const around = rim(u, angle + delta).sub(rim(u, angle - delta));
+    const direction = across.cross(around).normalize();
+    normal.setXYZ(layerSize * 2 + (ring - 1) * stride + column, direction.x, direction.y, direction.z);
+  }
   geometry.computeBoundingBox();
   return geometry;
 }

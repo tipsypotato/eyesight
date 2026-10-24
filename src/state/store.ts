@@ -16,10 +16,10 @@ const defaultLayers = () => Object.fromEntries(STRUCTURE_IDS.map(id => [id, defa
 const initialScene = (): SceneState => ({
   lang: 'zh', mode: 'explore', selectedId: null, selectedEye: 'right', disease: null, diseaseNormal: false, relatedIds: [], layers: defaultLayers(), isolateId: null,
   clip: { enabled: true, axis: 'sagittal', offset: 0, keepSide: 'negative' }, presetId: null, explode: 0, labels: false,
-  view: 'oblique', opticsPreset: 'normal', opticsInput: opticsInputForPreset('normal'), opticsExperiment: 'baseline', comparison: null, physiology: null, quizRevealed: false, showOptics: false, camera: null, sceneRevision: 0,
+  view: 'oblique', opticsPreset: 'normal', opticsInput: opticsInputForPreset('normal'), opticsExperiment: 'baseline', comparison: null, physiology: null, quizRevealed: false, showOptics: false, showSkull: false, camera: null, sceneRevision: 0,
 });
 type StorageLike = Pick<Storage, 'getItem' | 'setItem'>;
-type ObservationScene = Pick<SceneState, 'selectedId' | 'layers' | 'isolateId' | 'clip' | 'explode' | 'labels' | 'view' | 'presetId' | 'showOptics'>;
+type ObservationScene = Pick<SceneState, 'selectedId' | 'layers' | 'isolateId' | 'clip' | 'explode' | 'labels' | 'view' | 'presetId' | 'showOptics' | 'showSkull'>;
 const clearedObservation = { focusReturn: null, revealReturn: null, revealPreset: null };
 const clearedRelationship = { relatedIds: [] as StructureId[], relationshipId: null, relationshipReturn: null };
 export interface EyeState extends SceneState {
@@ -50,7 +50,7 @@ export interface EyeState extends SceneState {
   setLanguage: (lang: Lang) => void; setMode: (mode: Mode, camera?: CameraSnapshot) => void;
   select: (id: StructureId, preserveSection?: boolean) => void; cycleLayer: (id: StructureId) => void;
   toggleIsolate: () => void; setClip: (patch: Partial<SceneState['clip']>) => void;
-  setExplode: (value: number) => void; setLabels: (value: boolean) => void;
+  setExplode: (value: number) => void; setLabels: (value: boolean) => void; setShowSkull: (value: boolean) => void;
   setView: (view: ViewPreset) => void; setOptics: (preset: OpticsPreset) => void;
   setOpticsInput: (patch: Partial<OpticsInput>) => void; setOpticsExperiment: (value: OpticsExperiment) => void;
   saveComparison: () => void; clearComparison: () => void; setComparisonView: (showing: 'reference' | 'current') => void;
@@ -67,8 +67,8 @@ export interface EyeState extends SceneState {
 type WorkspaceDraft = Omit<SceneState, 'lang' | 'mode' | 'sceneRevision'> & Pick<EyeState, 'lessonId' | 'step' | 'quiz' | 'isolationLayers'>;
 
 function captureDraft(state: SceneState & Pick<EyeState, 'lessonId' | 'step' | 'quiz' | 'isolationLayers'>, camera = state.camera): WorkspaceDraft {
-  const { selectedId, layers, isolateId, clip, explode, labels, view, presetId, opticsPreset, opticsInput, opticsExperiment, comparison, physiology, quizRevealed, showOptics, lessonId, step, quiz } = state;
-  return { selectedId, layers: { ...layers }, isolateId, clip: { ...clip }, explode, labels, view, presetId, opticsPreset, opticsInput: { ...opticsInput }, opticsExperiment, quizRevealed, showOptics, lessonId, step, quiz,
+  const { selectedId, layers, isolateId, clip, explode, labels, view, presetId, opticsPreset, opticsInput, opticsExperiment, comparison, physiology, quizRevealed, showOptics, showSkull, lessonId, step, quiz } = state;
+  return { selectedId, layers: { ...layers }, isolateId, clip: { ...clip }, explode, labels, view, presetId, opticsPreset, opticsInput: { ...opticsInput }, opticsExperiment, quizRevealed, showOptics, showSkull, lessonId, step, quiz,
     disease: state.disease ? pauseDisease(state.disease, camera) : null, diseaseNormal: state.diseaseNormal ?? false, selectedEye: state.selectedEye ?? 'right',
     comparison: structuredClone(comparison), physiology: physiology ? structuredClone({ ...physiology, playing: false }) : null,
     isolationLayers: state.isolationLayers ? { ...state.isolationLayers } : null, camera: camera ? structuredClone(camera) : null };
@@ -128,8 +128,8 @@ function sceneFor(mode: Mode, lessonId: string | null = null, index = 0, quiz: P
 
 type SceneSnapshot = ObservationScene & Pick<EyeState, 'disease' | 'diseaseNormal' | 'diseaseComparison' | 'selectedEye' | 'isolationLayers' | 'opticsPreset' | 'opticsInput' | 'opticsExperiment' | 'comparison' | 'physiology' | 'focusReturn' | 'revealReturn' | 'revealPreset' | 'relatedIds' | 'relationshipId' | 'relationshipReturn'> & { camera: CameraSnapshot | null };
 function captureScene(s: EyeState, camera = s.camera): SceneSnapshot {
-  const { selectedId, layers, isolateId, clip, explode, labels, view, presetId, showOptics, isolationLayers, opticsPreset, opticsInput, opticsExperiment, comparison, physiology, focusReturn, revealReturn, revealPreset, relatedIds, relationshipId, relationshipReturn } = s;
-  return structuredClone({ selectedId, layers, isolateId, clip, explode, labels, view, presetId, showOptics, isolationLayers, opticsPreset, opticsInput, opticsExperiment, comparison, physiology, focusReturn, revealReturn, revealPreset, relatedIds, relationshipId, relationshipReturn, disease: s.disease, diseaseNormal: s.diseaseNormal, diseaseComparison: s.diseaseComparison, selectedEye: s.selectedEye, camera: camera ?? null });
+  const { selectedId, layers, isolateId, clip, explode, labels, view, presetId, showOptics, showSkull, isolationLayers, opticsPreset, opticsInput, opticsExperiment, comparison, physiology, focusReturn, revealReturn, revealPreset, relatedIds, relationshipId, relationshipReturn } = s;
+  return structuredClone({ selectedId, layers, isolateId, clip, explode, labels, view, presetId, showOptics, showSkull, isolationLayers, opticsPreset, opticsInput, opticsExperiment, comparison, physiology, focusReturn, revealReturn, revealPreset, relatedIds, relationshipId, relationshipReturn, disease: s.disease, diseaseNormal: s.diseaseNormal, diseaseComparison: s.diseaseComparison, selectedEye: s.selectedEye, camera: camera ?? null });
 }
 function sameScene(a: SceneSnapshot, b: SceneSnapshot) {
   const comparable = ({ camera: _camera, focusReturn: _focus, revealReturn: _reveal, revealPreset: _preset, ...scene }: SceneSnapshot) => scene;
@@ -157,7 +157,7 @@ function presetScene(presetId: ScenePreset, s: Pick<SceneState, 'mode' | 'select
     isolateId: null, isolationLayers: null, explode: 0, labels: false,
     clip: { enabled: !['all', 'intact', 'fundus', 'extraocular', 'eyelids', 'orbit'].includes(presetId), axis: 'sagittal', offset: 0, keepSide: 'negative' },
     view: presetId === 'fundus' ? 'front' : ['all', 'intact', 'anterior', 'extraocular', 'eyelids', 'orbit'].includes(presetId) ? 'oblique' : 'side',
-    showOptics: presetId === 'optical-path', camera: null, ...clearedObservation, sceneRevision: (s.sceneRevision ?? 0) + 1 };
+    showOptics: presetId === 'optical-path', showSkull: s.mode === 'explore' && (presetId === 'all' || presetId === 'orbit'), camera: null, ...clearedObservation, sceneRevision: (s.sceneRevision ?? 0) + 1 };
 }
 
 export function createEyeStore(storage?: StorageLike) {
@@ -378,6 +378,10 @@ export function createEyeStore(storage?: StorageLike) {
       if (explode !== get().explode) changeScene({ explode, ...(explode >= FLAT_LAYOUT_START && get().explode < FLAT_LAYOUT_START ? { view: 'front' as const, camera: null } : {}) });
     },
     setLabels: labels => changeScene({ labels }),
+    setShowSkull: showSkull => {
+      const s = get();
+      if (s.mode === 'explore' && typeof showSkull === 'boolean' && showSkull !== s.showSkull) changeScene({ showSkull, camera: null, sceneRevision: (s.sceneRevision ?? 0) + 1 });
+    },
     setView: view => set(s => ({ view, camera: null, sceneRevision: (s.sceneRevision ?? 0) + 1 })),
     setOptics: opticsPreset => {
       if (get().physiology || !['normal', 'myopia', 'corrected'].includes(opticsPreset)) return;
@@ -522,7 +526,7 @@ export function createEyeStore(storage?: StorageLike) {
     revealStructure: (id, camera) => {
       const s = get();
       if (s.mode === 'quiz') return;
-      const { selectedId, layers, isolateId, clip, explode, labels, view, isolationLayers, presetId, showOptics, relatedIds, relationshipId, relationshipReturn } = s;
+      const { selectedId, layers, isolateId, clip, explode, labels, view, isolationLayers, presetId, showOptics, showSkull, relatedIds, relationshipId, relationshipReturn } = s;
       const fundus = ['macula', 'fovea', 'optic-disc', 'optic-nerve', 'retinal-vessels', 'retina'].includes(id);
       const anterior = ['lens', 'zonules', 'ciliary-body', 'anterior-chamber', 'posterior-chamber'].includes(id);
       const front = ['cornea', 'iris', 'pupil', 'sclera'].includes(id);
@@ -538,13 +542,13 @@ export function createEyeStore(storage?: StorageLike) {
       if (orbital) for (const part of STRUCTURE_IDS) revealed[part] = ORBITAL_IDS.some(context => context === part) || EXTRAOCULAR_IDS.some(context => context === part) || ['sclera', 'cornea', 'optic-nerve', 'levator-palpebrae'].includes(part) ? 'ghost' : ['choroid', 'retina', 'iris', 'pupil'].includes(part) ? 'on' : 'off';
       revealed[id] = 'on';
       get().recordTourAction({ kind: 'select', id });
-      changeScene({ ...clearedRelationship, selectedId: id, presetId: null, showOptics: flat ? showOptics : false, layers: isolateId || flat ? { ...layers, [id]: 'on' } : revealed, isolateId: isolateId ? id : null,
+      changeScene({ ...clearedRelationship, selectedId: id, presetId: null, showOptics: flat ? showOptics : false, showSkull: false, layers: isolateId || flat ? { ...layers, [id]: 'on' } : revealed, isolateId: isolateId ? id : null,
         clip: flat ? { ...clip, enabled: false } : { enabled: !(fundus || front || extraocular || adnexal || orbital || isolateId), axis: 'sagittal', offset: 0, keepSide: 'negative' }, explode: flat ? explode : 0,
         view: flat ? 'front' : fundus ? id === 'optic-nerve' ? 'back' : 'front' : front ? 'front' : extraocular || adnexal || orbital ? 'oblique' : 'side',
         camera: null, sceneRevision: (s.sceneRevision ?? 0) + 1,
         focusReturn: camera ? structuredClone(camera) : null,
         revealPreset: flat ? 'frontView' : orbital ? 'orbitalView' : adnexal ? 'adnexalView' : extraocular ? 'extraocularView' : fundus ? id === 'optic-nerve' ? 'nerveView' : 'fundusView' : anterior ? 'anteriorView' : front ? 'frontView' : 'sectionView',
-        revealReturn: { selectedId, layers: { ...layers }, isolateId, clip: { ...clip }, explode, labels, view, isolationLayers, presetId, showOptics, relatedIds, relationshipId, relationshipReturn,
+        revealReturn: { selectedId, layers: { ...layers }, isolateId, clip: { ...clip }, explode, labels, view, isolationLayers, presetId, showOptics, showSkull, relatedIds, relationshipId, relationshipReturn,
           camera: camera ? structuredClone(camera) : null },
       });
     },

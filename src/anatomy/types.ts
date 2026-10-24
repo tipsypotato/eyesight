@@ -52,12 +52,16 @@ export interface SceneState {
   opticsPreset: OpticsPreset; opticsInput: OpticsInput; opticsExperiment: OpticsExperiment; quizRevealed: boolean;
   comparison: { input: OpticsInput; showing: 'reference' | 'current' } | null;
   physiology: PhysiologyState | null;
-  showOptics?: boolean;
+  showOptics?: boolean; showSkull?: boolean;
   camera?: CameraSnapshot | null;
   sceneRevision?: number;
 }
 export const FLAT_LAYOUT_START = 2 / 3;
 export const EXPLODE_SCALE = 3 / FLAT_LAYOUT_START;
+
+export function skullContextAvailable(scene: Pick<SceneState, 'mode' | 'clip' | 'explode' | 'isolateId' | 'showOptics'>): boolean {
+  return scene.mode === 'explore' && scene.explode === 0 && !scene.clip.enabled && !scene.isolateId && !scene.showOptics;
+}
 
 export function sectionLimit(scene: Pick<SceneState, 'layers' | 'isolateId' | 'clip' | 'explode'>): number {
   const orbital = ORBITAL_IDS.some(id => scene.layers[id] !== 'off' && (!scene.isolateId || scene.isolateId === id));

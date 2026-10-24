@@ -9,6 +9,14 @@ import { Animator } from './animator';
 import { CameraRig } from './camera';
 import { visibleSurface } from './visibility';
 import { opticsInputForPreset, traceOptics, type TraceOpticsResult } from './optics';
+import { loadSkullContext, SKULL_BOUNDS } from './skull';
+
+vi.mock('./skull', async original => ({
+  ...await original<typeof import('./skull')>(),
+  loadSkullContext: vi.fn((signal: AbortSignal) => new Promise<THREE.Group>((_resolve, reject) => {
+    signal.addEventListener('abort', () => reject(new Error('aborted')), { once: true });
+  })),
+}));
 
 class EngineElementStub extends EventTarget {
   style: Record<string, string> = {};
@@ -33,7 +41,7 @@ vi.mock('three', async importOriginal => ({
   },
 }));
 
-function startupEngine(onReady = (_error?: unknown) => {}) {
+function startupEngine(onReady = (_error?: unknown) => {}, onSkullStatus?: (status: 'loading' | 'ready' | 'error') => void) {
   const documentStub = Object.assign(new EventTarget(), { createElement: () => new EngineElementStub(), createElementNS: () => new EngineElementStub() });
   const media = Object.assign(new EventTarget(), { matches: true });
   vi.stubGlobal('document', documentStub);
@@ -42,7 +50,7 @@ function startupEngine(onReady = (_error?: unknown) => {}) {
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} });
   vi.stubGlobal('requestAnimationFrame', () => 1); vi.stubGlobal('cancelAnimationFrame', () => {});
   const host = new EngineElementStub(); host.parentElement = new EngineElementStub();
-  const engine = new EyeEngine(host as unknown as HTMLElement, () => {}, undefined, undefined, onReady);
+  const engine = new EyeEngine(host as unknown as HTMLElement, () => {}, undefined, undefined, onReady, onSkullStatus);
   Object.assign(engine, { renderLabels() {} });
   const internal = engine as unknown as { eye: ReturnType<typeof buildEye>; render(time: number): void };
   return { engine, internal, cleanup: () => { engine.dispose(); vi.unstubAllGlobals(); } };
@@ -361,6 +369,7 @@ it('restores a mode camera and removes optical stretching without rebuilding the
 it('restores internal tissue materials when the closed eye is exploded or cut', () => {
   const eye = buildEye();
   const store = createEyeStore();
+  store.getState().setShowSkull(false);
   eye.root.traverse(object => {
     if (object instanceof THREE.Mesh || object instanceof THREE.Line) {
       const materials = Array.isArray(object.material) ? object.material : [object.material];
@@ -1594,5 +1603,115 @@ it('repacks flat visibility and isolation changes while preserving selection cam
     expect(store.getState().explode).toBe(0.85);
     expect(internal.eye.parts.get('orbital-roof')!.group.visible).toBe(true);
     expect(new THREE.Box3().setFromObject(internal.eye.parts.get('orbital-roof')!.group).getCenter(new THREE.Vector3()).z).toBeCloseTo(0, 6);
+  } finally { cleanup(); }
+});
+
+it('loads passive skull context without blocking the eye, moving a chosen camera or joining eye interactions', async () => {
+  const load = vi.mocked(loadSkullContext); load.mockClear();
+  let resolve!: (group: THREE.Group) => void;
+  load.mockReturnValueOnce(new Promise(value => { resolve = value; }));
+  const ready = vi.fn(), status = vi.fn();
+  const { engine, internal, cleanup } = startupEngine(ready, status);
+  const store = createEyeStore();
+  const group = new THREE.Group(), mesh = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial());
+  group.add(mesh);
+  const disposeGeometry = vi.fn(), disposeMaterial = vi.fn();
+  mesh.geometry.addEventListener('dispose', disposeGeometry); mesh.material.addEventListener('dispose', disposeMaterial);
+  try {
+    store.getState().applyPreset('intact'); engine.setState(store.getState());
+    expect(load).not.toHaveBeenCalled();
+    store.getState().applyPreset('all'); engine.setState(store.getState()); internal.render(0);
+    expect(ready).toHaveBeenCalledWith();
+    expect(status).toHaveBeenCalledWith('loading'); expect(load).toHaveBeenCalledTimes(1);
+    const camera = (engine as unknown as { camera: THREE.PerspectiveCamera }).camera;
+    camera.updateMatrixWorld();
+    for (const x of [SKULL_BOUNDS.min.x, SKULL_BOUNDS.max.x]) for (const y of [SKULL_BOUNDS.min.y, SKULL_BOUNDS.max.y]) for (const z of [SKULL_BOUNDS.min.z, SKULL_BOUNDS.max.z]) {
+      const point = new THREE.Vector3(x, y, z).project(camera);
+      expect(Math.max(Math.abs(point.x), Math.abs(point.y), Math.abs(point.z))).toBeLessThan(1);
+    }
+    engine.zoom(-0.1); const chosenCamera = engine.captureCamera();
+    resolve(group); await vi.waitFor(() => expect(status).toHaveBeenLastCalledWith('ready'));
+    expect(engine.captureCamera()).toEqual(chosenCamera);
+    expect(group.visible).toBe(true); expect(internal.eye.parts.size).toBe(51);
+    expect([...internal.eye.parts.values()].some(part => part.group === group)).toBe(false);
+    const wall = internal.eye.parts.get('orbital-roof')!.group.children[0] as THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhysicalMaterial>;
+    expect(wall.material.opacity).toBe(0.18);
+    expect(store.getState().layers['orbital-roof']).toBe('on');
+    store.getState().select('orbital-roof', true); engine.setState(store.getState());
+    expect(wall.material.opacity).toBe(1); expect(wall.material.emissiveIntensity).toBeGreaterThan(0);
+    store.getState().select('iris', true); engine.setState(store.getState()); expect(wall.material.opacity).toBe(0.18);
+    store.getState().setExplode(0.2); engine.setState(store.getState()); expect(group.visible).toBe(false);
+    expect(wall.material.opacity).toBe(1);
+    store.getState().setExplode(0); engine.setState(store.getState()); expect(group.visible).toBe(true);
+    const headCamera = engine.captureCamera();
+    store.getState().setClip({ enabled: true }); engine.setState(store.getState()); expect(group.visible).toBe(false);
+    expect(camera.position.distanceTo(new THREE.Vector3().fromArray(engine.captureCamera().target))).toBeLessThan(new THREE.Vector3().fromArray(headCamera.position).distanceTo(new THREE.Vector3().fromArray(headCamera.target)) / 2);
+    store.getState().setClip({ enabled: false }); store.getState().select('lens', true); store.getState().toggleIsolate();
+    engine.setState(store.getState()); expect(group.visible).toBe(false);
+    store.getState().toggleIsolate(); engine.setState(store.getState()); expect(group.visible).toBe(true);
+    store.getState().setMode('optics'); engine.setState(store.getState()); expect(group.visible).toBe(false);
+    expect(load).toHaveBeenCalledTimes(1);
+  } finally { cleanup(); }
+  expect(disposeGeometry).toHaveBeenCalledTimes(1); expect(disposeMaterial).toHaveBeenCalledTimes(1);
+});
+
+it('aborts the optional skull request and disposes late results after the viewport unmounts', async () => {
+  let resolve!: (group: THREE.Group) => void;
+  const load = vi.mocked(loadSkullContext); load.mockReturnValueOnce(new Promise(value => { resolve = value; }));
+  const status = vi.fn(), { engine, cleanup } = startupEngine(undefined, status);
+  engine.setState(createEyeStore().getState());
+  const signal = load.mock.calls.at(-1)![0];
+  cleanup(); expect(signal.aborted).toBe(true);
+  const group = new THREE.Group(), geometry = new THREE.BoxGeometry(), material = new THREE.MeshStandardMaterial();
+  const disposed = vi.fn(); geometry.addEventListener('dispose', disposed); material.addEventListener('dispose', disposed);
+  group.add(new THREE.Mesh(geometry, material));
+  resolve(group); await vi.waitFor(() => expect(disposed).toHaveBeenCalledTimes(2));
+  expect(group.parent).toBeNull(); expect(status.mock.calls).toEqual([['loading']]);
+});
+
+it('keeps the eye usable on skull failure and retries only when the reference is re-enabled', async () => {
+  const load = vi.mocked(loadSkullContext); load.mockClear(); load.mockRejectedValueOnce(new Error('offline'));
+  const status = vi.fn(), { engine, cleanup } = startupEngine(undefined, status), store = createEyeStore();
+  try {
+    engine.setState(store.getState());
+    const headCamera = engine.captureCamera();
+    await vi.waitFor(() => expect(status).toHaveBeenLastCalledWith('error'));
+    const eyeCamera = engine.captureCamera();
+    expect(new THREE.Vector3().fromArray(eyeCamera.position).distanceTo(new THREE.Vector3().fromArray(eyeCamera.target))).toBeLessThan(new THREE.Vector3().fromArray(headCamera.position).distanceTo(new THREE.Vector3().fromArray(headCamera.target)) / 2);
+    store.getState().select('iris', true); engine.setState(store.getState());
+    expect(load).toHaveBeenCalledTimes(1);
+    store.getState().setShowSkull(false); engine.setState(store.getState());
+    load.mockResolvedValueOnce(new THREE.Group());
+    store.getState().setShowSkull(true); engine.setState(store.getState());
+    await vi.waitFor(() => expect(status).toHaveBeenLastCalledWith('ready'));
+    expect(store.getState().selectedId).toBe('iris'); expect(load).toHaveBeenCalledTimes(2);
+  } finally { cleanup(); }
+});
+
+it.each(['auto-animation', 'zoom', 'orbit-start', 'workspace'] as const)('refits a failed skull only while its requested camera remains unchanged: %s', async action => {
+  let reject!: (reason: Error) => void;
+  vi.mocked(loadSkullContext).mockReturnValueOnce(new Promise((_resolve, fail) => { reject = fail; }));
+  const status = vi.fn(), { engine, cleanup } = startupEngine(undefined, status), store = createEyeStore();
+  const internal = engine as unknown as { animator: Animator; rig: CameraRig };
+  try {
+    internal.animator.reducedMotion = false;
+    engine.setState(store.getState());
+    internal.animator.tick(1);
+    if (action === 'zoom') engine.zoom(-0.2);
+    if (action === 'orbit-start') {
+      internal.rig.controls.dispatchEvent({ type: 'start' });
+      internal.rig.controls.target.x += 0.25;
+      internal.rig.controls.update();
+    }
+    if (action === 'workspace') { store.getState().setMode('optics'); engine.setState(store.getState()); }
+    internal.animator.tick(1);
+    const chosenCamera = engine.captureCamera();
+    reject(new Error('offline'));
+    await vi.waitFor(() => expect(status).toHaveBeenLastCalledWith('error'));
+    internal.animator.tick(1);
+    const result = engine.captureCamera();
+    if (action === 'auto-animation') {
+      expect(new THREE.Vector3().fromArray(result.position).distanceTo(new THREE.Vector3().fromArray(result.target))).toBeLessThan(new THREE.Vector3().fromArray(chosenCamera.position).distanceTo(new THREE.Vector3().fromArray(chosenCamera.target)) / 2);
+    } else expect(result).toEqual(chosenCamera);
   } finally { cleanup(); }
 });

@@ -9,7 +9,7 @@ import { isDiseaseId, parseDiseaseDraft, type DiseaseDraft, type DiseaseId } fro
 
 // Keep the original storage key so existing scenes are found and migrated.
 export const PROGRESS_KEY = 'eyesight.progress.v2';
-export type PersistedDraft = Pick<SceneState, 'selectedId' | 'layers' | 'isolateId' | 'clip' | 'presetId' | 'explode' | 'labels' | 'view' | 'opticsPreset' | 'opticsInput' | 'opticsExperiment' | 'comparison' | 'physiology' | 'showOptics' | 'camera'> & {
+export type PersistedDraft = Pick<SceneState, 'selectedId' | 'layers' | 'isolateId' | 'clip' | 'presetId' | 'explode' | 'labels' | 'view' | 'opticsPreset' | 'opticsInput' | 'opticsExperiment' | 'comparison' | 'physiology' | 'showOptics' | 'showSkull' | 'camera'> & {
   isolationLayers: SceneState['layers'] | null; lessonId: string | null; step: number; selectedEye?: SceneState['selectedEye']; quizSessionId?: string;
 };
 export type SavedProgress = {
@@ -75,7 +75,8 @@ function parseDraft(value: unknown, mode: Mode): PersistedDraft | null {
     || (value.presetId !== null && !member(value.presetId, SCENE_PRESETS))
     || !finite(value.explode, 0, 1) || typeof value.labels !== 'boolean' || !member(value.view, ['oblique', 'front', 'side', 'back'])
     || !member(value.opticsPreset, presets) || !member(value.opticsExperiment, experiments)
-    || (value.showOptics !== undefined && typeof value.showOptics !== 'boolean')) return null;
+    || (value.showOptics !== undefined && typeof value.showOptics !== 'boolean')
+    || (value.showSkull !== undefined && typeof value.showSkull !== 'boolean')) return null;
   const parsedLayers = layers(value.layers), input = optics(value.opticsInput), clip = value.clip;
   if (!parsedLayers || !input || !record(clip) || typeof clip.enabled !== 'boolean' || !member(clip.axis, ['sagittal', 'axial', 'coronal'])
     || !finite(clip.offset, -6, 6) || !member(clip.keepSide, ['negative', 'positive'])) return null;
@@ -100,7 +101,7 @@ function parseDraft(value: unknown, mode: Mode): PersistedDraft | null {
     selectedId: value.selectedId, layers: parsedLayers, isolateId: value.isolateId,
     clip: { enabled: clip.enabled, axis: clip.axis, offset: clip.offset, keepSide: clip.keepSide }, presetId: value.presetId,
     explode: value.explode, labels: value.labels, view: value.view, opticsPreset: value.opticsPreset, opticsInput: input, opticsExperiment: value.opticsExperiment,
-    comparison, physiology: demo, showOptics: value.showOptics ?? false, camera: savedCamera, isolationLayers,
+    comparison, physiology: demo, showOptics: value.showOptics ?? false, showSkull: value.showSkull ?? false, camera: savedCamera, isolationLayers,
     lessonId: lesson?.id ?? null, step: value.step,
     ...(member(value.selectedEye, ['right', 'left']) ? { selectedEye: value.selectedEye } : {}),
     ...(typeof value.quizSessionId === 'string' ? { quizSessionId: value.quizSessionId } : {}),
