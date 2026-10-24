@@ -78,6 +78,24 @@ describe('responsive workspace markup', () => {
       expect(renderApp(false)).not.toContain(`>${label}</button>`);
     }
   });
+  it.each(['zh', 'en'] as const)('offers an orbital preset only in exploration in %s', lang => {
+    store.getState().setLanguage(lang); store.getState().applyPreset('orbit');
+    const label = lang === 'zh' ? '眼眶与内容物' : 'Orbit &amp; contents';
+    expect(renderApp(false)).toMatch(new RegExp(`<button[^>]*aria-pressed="true"[^>]*>${label}</button>`));
+    for (const mode of ['optics', 'tour', 'quiz', 'disease'] as const) {
+      store.getState().setMode(mode);
+      expect(renderApp(false)).not.toContain(`>${label}</button>`);
+    }
+  });
+  it('extends the section slider to the orbital apex while preserving the original eye range', () => {
+    const range = () => [...renderApp(false).matchAll(/<input\b[^>]*>/g)].find(([tag]) => tag.includes('class="section-range"'))?.[0];
+    expect(range()).toContain('min="-1" max="1"');
+    store.getState().applyPreset('orbit'); store.getState().setClip({ enabled: true, axis: 'coronal', offset: -2.1 });
+    expect(range()).toContain('min="-3" max="3"');
+    expect(range()).toContain('value="-2.1"');
+    store.getState().setExplode(1);
+    expect(range()).toContain('min="-4" max="4"');
+  });
   it.each(['zh', 'en'] as const)('keeps gland details and observation actions available in %s', lang => {
     store.getState().setLanguage(lang); store.getState().applyPreset('eyelids');
     store.getState().select('meibomian-glands', true);
@@ -99,6 +117,29 @@ describe('responsive workspace markup', () => {
     expect(html).not.toContain(messages.fundusGroup[lang]);
     expect(html).toContain(lang === 'zh' ? '结膜与眼睑分组' : 'Conjunctiva and eyelid group');
     expect(html.match(/class="structure-row/g)).toHaveLength(9);
+  });
+  it.each(['zh', 'en'] as const)('describes orbital group results without a fundus hint in %s', lang => {
+    const result = search.searchStructures('orbit');
+    vi.spyOn(search, 'searchStructures').mockReturnValue(result);
+    store.getState().setLanguage(lang);
+    const html = renderApp(false);
+    expect(html).not.toContain(messages.fundusGroup[lang]);
+    expect(html).toContain(lang === 'zh' ? '眼眶与内容物分组' : 'Orbit and contents group');
+    expect(html.match(/class="structure-row/g)).toHaveLength(17);
+  });
+  it('keeps orbital details, observation controls and language state available on both layouts', () => {
+    store.getState().applyPreset('orbit'); store.getState().select('ciliary-ganglion', true);
+    for (const lang of ['zh', 'en'] as const) {
+      store.getState().setLanguage(lang);
+      for (const narrow of [false, true]) {
+        const html = renderApp(narrow);
+        expect(html).toContain(lang === 'zh' ? '睫状神经节' : 'Ciliary ganglion');
+        expect(html).toContain('Ganglion ciliare');
+        expect(html).toContain(messages.isolate[lang]);
+        expect(html).toContain(messages.focus[lang]);
+      }
+    }
+    expect(store.getState()).toMatchObject({ presetId: 'orbit', selectedId: 'ciliary-ganglion', lang: 'en' });
   });
   it.each<{ mode: Mode; tabs: string[]; active: string }>([
     { mode: 'explore', tabs: ['structures', 'parameters', 'explanation'], active: 'structures' },

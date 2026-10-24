@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ADNEXAL_IDS, STRUCTURE_IDS } from '../anatomy/types';
+import { ADNEXAL_IDS, ORBITAL_IDS, STRUCTURE_IDS } from '../anatomy/types';
 import { CONTENT_VERSION, questionsFor } from '../content/questions';
 import { createSession, submitSessionAnswer, wrongQuestionIds } from '../modes/quiz';
 import { parseProgress, type PersistedDraft, type SavedProgress } from './progress';
@@ -15,6 +15,33 @@ const draft = (): PersistedDraft => ({
   isolationLayers: null, lessonId: null, step: 0,
 });
 const saved = (): SavedProgress => ({ schemaVersion: 2, contentVersion: CONTENT_VERSION, mode: 'explore', drafts: { explore: draft() }, lessonPositions: {}, tourTasks: {}, sessions: {}, activeSessions: {}, activeQuizId: null });
+it('migrates pre-orbit scenes and isolation snapshots without discarding their scene or answers', () => {
+  const value = saved(), scene = value.drafts.explore!;
+  scene.isolateId = 'lens'; scene.isolationLayers = { ...scene.layers };
+  for (const id of ORBITAL_IDS) { delete (scene.layers as Partial<typeof scene.layers>)[id]; delete (scene.isolationLayers as Partial<typeof scene.layers>)[id]; }
+  const session = createSession('structures', questionsFor('structures'));
+  value.sessions[session.sessionId] = session; value.activeSessions.structures = session.sessionId;
+  const result = parseProgress(JSON.stringify(value));
+  expect(result.discarded).toBe(false);
+  expect(result.value?.drafts.explore).toMatchObject({ selectedId: 'lens', isolateId: 'lens', camera: scene.camera, clip: scene.clip });
+  for (const id of ORBITAL_IDS) {
+    expect(result.value?.drafts.explore?.layers[id]).toBe('off');
+    expect(result.value?.drafts.explore?.isolationLayers?.[id]).toBe('off');
+  }
+  expect(result.value?.sessions).toEqual(value.sessions);
+});
+
+it('restores orbital selections and presets but rejects malformed orbital layers', () => {
+  const value = saved();
+  Object.assign(value.drafts.explore!, { selectedId: 'ciliary-ganglion', isolateId: 'ciliary-ganglion', presetId: 'orbit', clip: { enabled: true, axis: 'coronal', offset: -2.1, keepSide: 'negative' } });
+  const result = parseProgress(JSON.stringify(value));
+  expect(result.discarded).toBe(false);
+  expect(result.value?.drafts.explore).toEqual(value.drafts.explore);
+  const invalid = JSON.parse(JSON.stringify(value));
+  invalid.drafts.explore.layers['ciliary-ganglion'] = 'invalid';
+  expect(parseProgress(JSON.stringify(invalid)).value?.drafts.explore).toBeUndefined();
+});
+
 it('restores older scenes and isolation snapshots with the new eyelid structures hidden', () => {
   const value = saved(), scene = value.drafts.explore!;
   scene.isolateId = 'lens'; scene.isolationLayers = { ...scene.layers };
@@ -118,7 +145,7 @@ describe('saved progress boundary', () => {
 
   it.each([
     ['structure', { selectedId: 'unknown' }], ['layer', { layers: { sclera: 'on' } }],
-    ['clip', { clip: { enabled: true, axis: 'sagittal', offset: 2, keepSide: 'negative' } }],
+    ['clip', { clip: { enabled: true, axis: 'sagittal', offset: 5, keepSide: 'negative' } }],
     ['explode', { explode: -1 }], ['optics', { opticsInput: { axialIncrement: 1.1, accommodation: 0, objectDistance: 'far', pupil: 'medium', externalLens: 'off' } }],
     ['preset', { opticsPreset: 'surgery' }], ['camera zoom', { camera: { position: [3, 2, 4], target: [0, 0, 0], zoom: 0 } }],
     ['camera overflow', { camera: { position: [1e308, 2, 4], target: [0, 0, 0], zoom: 1 } }],

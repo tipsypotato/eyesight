@@ -2,7 +2,7 @@ import { Component, useEffect, useId, useRef, useState, type ReactNode, type Ref
 import { useStore } from 'zustand';
 import { GROUPS, LESSONS, STRUCTURES } from '../anatomy/data';
 import { searchStructures } from '../anatomy/search';
-import { SCENE_PRESETS, type ScenePreset, type ClipAxis, type Mode, type OpticsExperiment, type OpticsInput, type OpticsPreset, type PhysiologyKind, type StructureId, type ViewPreset } from '../anatomy/types';
+import { SCENE_PRESETS, sectionLimit, type ScenePreset, type ClipAxis, type Mode, type OpticsExperiment, type OpticsInput, type OpticsPreset, type PhysiologyKind, type StructureId, type ViewPreset } from '../anatomy/types';
 import { messages, type MessageKey } from '../content/messages';
 import type { EyeEngine } from '../engine/EyeEngine';
 import { finishStartup, loadEyeEngine, setStartupStage, STARTUP_COMPLETED, STARTUP_TEXT, type StartupStage, yieldToBrowser } from '../startup';
@@ -141,7 +141,7 @@ function StructuresPanel({ engine }: { engine: EngineRef }) {
   const result = searchStructures(query), matching = result.items;
   return <><div className="panel-heading"><span className="eyebrow">{t('structures')}</span><h2>{t('structures')} <span className="count">{STRUCTURES.length}</span></h2></div>
     <div className="search"><span aria-hidden="true">⌕</span><input value={query} onChange={e => setQuery(e.target.value)} placeholder={t('search')} aria-label={t('search')}/>{query && <button className="clear-search" aria-label={t('clearSearch')} onClick={() => setQuery('')}>×</button>}</div>
-    {(result.ambiguous || result.group || result.relatedDisease) && <p className="search-context" role="status">{t(result.ambiguous ? 'ambiguousSearch' : result.group === 'extraocular' ? 'extraocularGroup' : result.group === 'adnexa' ? 'adnexalGroup' : result.group ? 'fundusGroup' : 'relatedDisease')}</p>}
+    {(result.ambiguous || result.group || result.relatedDisease) && <p className="search-context" role="status">{t(result.ambiguous ? 'ambiguousSearch' : result.group === 'extraocular' ? 'extraocularGroup' : result.group === 'adnexa' ? 'adnexalGroup' : result.group === 'orbit' ? 'orbitalGroup' : result.group ? 'fundusGroup' : 'relatedDisease')}</p>}
     <p className="micro layer-hint">{t('layerHint')}</p>
     <div className="structure-list">{GROUPS.map(group => {
       const items = matching.filter(item => item.group === group.id);
@@ -364,7 +364,7 @@ function ModeActions({ engine }: { engine: EngineRef }) {
 }
 
 const presetMessages: Record<ScenePreset, MessageKey> = {
-  intact: 'presetIntact', 'wall-cut': 'presetWall', anterior: 'presetAnterior', fundus: 'presetFundus', chambers: 'presetChambers', 'optical-path': 'presetOptical', extraocular: 'presetExtraocular', eyelids: 'presetEyelids',
+  intact: 'presetIntact', 'wall-cut': 'presetWall', anterior: 'presetAnterior', fundus: 'presetFundus', chambers: 'presetChambers', 'optical-path': 'presetOptical', extraocular: 'presetExtraocular', eyelids: 'presetEyelids', orbit: 'presetOrbit',
 };
 const rangeKeys = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown']);
 function useSceneRangeGesture(engine: EngineRef) {
@@ -384,13 +384,14 @@ function SceneControls({ engine }: { engine: EngineRef }) {
   const s = useEye(); const t = useText(); const rangeGesture = useSceneRangeGesture(engine);
   const edit = (action: () => void) => editScene(engine.current, action);
   const axis = { sagittal: 'x', axial: 'y', coronal: 'z' }[s.clip.axis];
+  const clipLimit = sectionLimit(s);
   return <div className="scene-controls">
     {s.mode !== 'quiz' && s.mode !== 'disease' && <>
-      <div className="scene-presets" role="group" aria-label={t('scenePresets')}>{SCENE_PRESETS.filter(preset => (s.mode !== 'optics' || preset !== 'extraocular') && (s.mode === 'explore' || preset !== 'eyelids')).map(preset => <button key={preset} className={s.presetId === preset ? 'active' : ''} aria-pressed={s.presetId === preset} onClick={() => edit(() => s.applyPreset(preset))}>{t(presetMessages[preset])}</button>)}</div>
+      <div className="scene-presets" role="group" aria-label={t('scenePresets')}>{SCENE_PRESETS.filter(preset => (s.mode !== 'optics' || preset !== 'extraocular') && (s.mode === 'explore' || (preset !== 'eyelids' && preset !== 'orbit'))).map(preset => <button key={preset} className={s.presetId === preset ? 'active' : ''} aria-pressed={s.presetId === preset} onClick={() => edit(() => s.applyPreset(preset))}>{t(presetMessages[preset])}</button>)}</div>
       <div className="section-controls">
         <label className="check"><input type="checkbox" checked={s.clip.enabled} onChange={e => edit(() => s.setClip({ enabled: e.target.checked }))}/>{t('clip')}</label>
         <select aria-label={t('clip')} value={s.clip.axis} onChange={e => edit(() => s.setClip({ axis: e.target.value as ClipAxis }))}>{(['sagittal','axial','coronal'] as ClipAxis[]).map(axis => <option value={axis} key={axis}>{t(axis)}</option>)}</select>
-        <input className="section-range" aria-label={t('sectionPosition')} aria-valuetext={`${t(s.clip.axis)} ${s.clip.offset.toFixed(2)} · ${t('retainedSide')} ${axis} ${s.clip.keepSide === 'negative' ? '≤' : '≥'} ${s.clip.offset.toFixed(2)}`} type="range" min="-1" max="1" step="0.01" value={s.clip.offset} disabled={!s.clip.enabled} {...rangeGesture} onChange={e => s.setClip({ offset: Number(e.target.value) })}/>
+        <input className="section-range" aria-label={t('sectionPosition')} aria-valuetext={`${t(s.clip.axis)} ${s.clip.offset.toFixed(2)} · ${t('retainedSide')} ${axis} ${s.clip.keepSide === 'negative' ? '≤' : '≥'} ${s.clip.offset.toFixed(2)}`} type="range" min={-clipLimit} max={clipLimit} step="0.01" value={s.clip.offset} disabled={!s.clip.enabled} {...rangeGesture} onChange={e => s.setClip({ offset: Number(e.target.value) })}/>
         <button className="flip-section" disabled={!s.clip.enabled} onClick={() => edit(() => s.setClip({ keepSide: s.clip.keepSide === 'negative' ? 'positive' : 'negative' }))}>{t('flipSection')}</button>
         <label className="explode-control">{t('explode')}<input aria-label={t('explode')} aria-valuetext={`${Math.round(s.explode * 100)}%`} type="range" min="0" max="1" step="0.01" value={s.explode} {...rangeGesture} onChange={e => s.setExplode(Number(e.target.value))}/></label>
       </div>

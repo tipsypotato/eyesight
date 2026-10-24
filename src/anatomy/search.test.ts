@@ -1,10 +1,38 @@
 import { describe, expect, it } from 'vitest';
 import { STRUCTURES } from './data';
 import { searchStructures } from './search';
+import { ORBITAL_IDS } from './types';
 
 const ids = (query: string) => searchStructures(query).items.map(item => item.id);
 
 describe('structure search', () => {
+  it('returns the orbit group without duplicating muscles and optic nerve from their existing groups', () => {
+    for (const query of ['眼眶', '眼眶与内容物', '眶内容物', 'Orbit', 'orbital contents', 'Orbit & contents']) {
+      const result = searchStructures(query);
+      expect(result.group).toBe('orbit');
+      expect(result.items.map(({ id }) => id)).toEqual(ORBITAL_IDS);
+      expect(result.relatedDisease).toBe(false);
+    }
+    expect(ids('眶壁')).toEqual(ORBITAL_IDS.slice(0, 4));
+    expect(ids('orbital fat')).toEqual(['intraconal-fat', 'extraconal-fat']);
+  });
+
+  it('distinguishes whole cranial nerve abbreviations and ophthalmic vessels', () => {
+    for (const [query, id] of [
+      ['CN II', 'optic-nerve'], [' CN III ', 'oculomotor-nerve'], ['cn iv', 'trochlear-nerve'], ['CN VI', 'abducens-nerve'],
+      ['动眼神经', 'oculomotor-nerve'], ['oculomotor nerve', 'oculomotor-nerve'],
+      ['trochlear nerve', 'trochlear-nerve'], ['abducens nerve', 'abducens-nerve'],
+      ['frontal nerve', 'frontal-nerve'], ['lacrimal nerve', 'lacrimal-nerve'], ['nasociliary nerve', 'nasociliary-nerve'],
+      ['SOV', 'superior-ophthalmic-vein'], ['IOV', 'inferior-ophthalmic-vein'], ['眼动脉', 'ophthalmic-artery'],
+    ]) expect(ids(query)).toEqual([id]);
+    expect(ids('V1')).toEqual(['frontal-nerve', 'lacrimal-nerve', 'nasociliary-nerve']);
+    expect(ids('CN I')).toEqual([]);
+    expect(ids('CN V')).toEqual([]);
+    expect(ids('CN VII')).toEqual([]);
+    expect(ids('lacrimal gland')).toEqual(['lacrimal-gland']);
+    expect(ids('iris')).toEqual(['iris']);
+  });
+
   it('matches both languages, Latin names and stable IDs without case or edge-space sensitivity', () => {
     expect(ids('  CoRnEa  ')).toEqual(['cornea']);
     expect(ids('晶状体')).toContain('lens');

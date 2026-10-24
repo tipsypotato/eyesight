@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GROUPS, LESSONS, STRUCTURES } from './data';
-import { STRUCTURE_IDS, type Localized } from './types';
+import { ORBITAL_IDS, STRUCTURE_IDS, type Localized } from './types';
 
 function expectBilingual(value: Localized) {
   expect(value.zh).toMatch(/[\u3400-\u9fff]/);
@@ -31,18 +31,36 @@ describe('bilingual anatomy content', () => {
         expect(source.title.trim().length).toBeGreaterThan(5);
         const url = new URL(source.url);
         expect(url.protocol).toBe('https:');
-        expect(['www.nei.nih.gov', 'eyewiki.aao.org', 'www.ncbi.nlm.nih.gov', 'www.webvision.pitt.edu', 'nba.uth.tmc.edu', 'histology.oit.duke.edu', 'morancore.utah.edu']).toContain(url.hostname);
+        expect(['www.nei.nih.gov', 'eyewiki.aao.org', 'www.ncbi.nlm.nih.gov', 'pmc.ncbi.nlm.nih.gov', 'www.webvision.pitt.edu', 'nba.uth.tmc.edu', 'histology.oit.duke.edu', 'morancore.utah.edu']).toContain(url.hostname);
       }
     }
   });
 
-  it('assigns structures to the six named display groups', () => {
-    expect(GROUPS.map(({ id }) => id).sort()).toEqual(['adnexa', 'extraocular', 'front', 'fundus', 'inside', 'wall']);
+  it('assigns structures to the seven named display groups', () => {
+    expect(GROUPS.map(({ id }) => id).sort()).toEqual(['adnexa', 'extraocular', 'front', 'fundus', 'inside', 'orbit', 'wall']);
     for (const group of GROUPS) {
       expectBilingual(group.name);
       expect(STRUCTURES.some((structure) => structure.group === group.id)).toBe(true);
     }
     for (const structure of STRUCTURES) expect(GROUPS.map(({ id }) => id)).toContain(structure.group);
+  });
+
+  it('describes orbital walls and representative contents without duplicating existing structures', () => {
+    const orbit = STRUCTURES.filter(({ group }) => group === 'orbit');
+    expect(orbit.map(({ id }) => id)).toEqual(ORBITAL_IDS);
+    expect(orbit).toHaveLength(17);
+    const byId = (id: typeof ORBITAL_IDS[number]) => orbit.find((structure) => structure.id === id)!;
+    expect(byId('medial-orbital-wall').summary.en).toContain('ethmoid');
+    expect(byId('intraconal-fat').position.en).toContain('rectus');
+    expect(byId('extraconal-fat').position.en).toContain('outside');
+    expect(byId('oculomotor-nerve').name.en).toContain('CN III');
+    expect(byId('trochlear-nerve').function.en).toContain('superior oblique');
+    expect(byId('abducens-nerve').function.en).toContain('lateral rectus');
+    expect(byId('lacrimal-nerve').fact.en).toContain('pterygopalatine ganglion');
+    expect(byId('ciliary-ganglion').fact.en).toContain('without synapsing');
+    expect(byId('inferior-ophthalmic-vein').fact.en).toContain('vary');
+    expect(byId('lacrimal-gland').function.en).toContain('aqueous');
+    expect(orbit.some(({ id }) => ['optic-nerve', 'superior-rectus', 'levator-palpebrae'].includes(id))).toBe(false);
   });
 
   it('distinguishes the conjunctival surfaces and eyelid tissues from globe-moving muscles', () => {

@@ -5,6 +5,7 @@ import { createFundusDetails } from './fundus';
 import { BASE_PUPIL_RADIUS } from './optics';
 import { createExtraocularMuscles } from './extraocularMuscles';
 import { createEyeAdnexa } from './eyelids';
+import { createOrbit } from './orbit';
 
 export interface EyePart {
   id: StructureId;
@@ -27,6 +28,11 @@ const COLORS: Record<StructureId, string> = {
   'bulbar-conjunctiva': '#efb6a8', 'palpebral-conjunctiva': '#d97e78',
   'eyelid-skin': '#d9aa91', 'orbicularis-oculi': '#bb7169', 'levator-palpebrae': '#b9786a',
   'tarsal-plates': '#d9c6aa', 'meibomian-glands': '#dfb751', 'zeis-glands': '#d89b48', 'moll-glands': '#b78dba',
+  'orbital-roof': '#d9d3bd', 'orbital-floor': '#d4cab1', 'medial-orbital-wall': '#e1d9c3', 'lateral-orbital-wall': '#cfc6b3',
+  'intraconal-fat': '#e5c779', 'extraconal-fat': '#e8d48f', 'oculomotor-nerve': '#f0d580', 'trochlear-nerve': '#e6ca75',
+  'abducens-nerve': '#ebcf7e', 'frontal-nerve': '#e6d990', 'lacrimal-nerve': '#ead68a', 'nasociliary-nerve': '#e7c974',
+  'ciliary-ganglion': '#d6b570', 'ophthalmic-artery': '#bd594e', 'superior-ophthalmic-vein': '#6688b4',
+  'inferior-ophthalmic-vein': '#7699bf', 'lacrimal-gland': '#cc938f',
 };
 
 const profile = (points: [number, number][]) => {
@@ -128,7 +134,7 @@ export function setPosteriorStretch(root: THREE.Group, factor: number) {
   root.userData.posteriorScale = factor;
   const vertex = new THREE.Vector3();
   root.traverse(object => {
-    if (!(object instanceof THREE.Mesh || object instanceof THREE.Line) || object.userData.cap || object.userData.extraocular || object.userData.adnexal) return;
+    if (!(object instanceof THREE.Mesh || object instanceof THREE.Line) || object.userData.cap || object.userData.extraocular || object.userData.adnexal || object.userData.orbital) return;
     const geometry = object.geometry;
     const position = geometry.getAttribute('position');
     if (!geometry.userData.originalPositions) geometry.userData.originalPositions = new Float32Array(position.array);
@@ -366,7 +372,7 @@ export function buildEye(colors: Partial<Record<StructureId, string>> = {}, side
   }
 
   part('optic-nerve', [0.44, 0.03, -1.23], [0.10, 0, -0.40]);
-  const nervePoints = [new THREE.Vector3(0.31, 0.035, -0.87), new THREE.Vector3(0.38, 0.03, -1.10), new THREE.Vector3(0.51, 0.045, -1.37), new THREE.Vector3(0.61, 0.065, -1.62)];
+  const nervePoints = [new THREE.Vector3(0.31, 0.035, -0.87), new THREE.Vector3(0.38, 0.03, -1.10), new THREE.Vector3(0.51, 0.045, -1.37), new THREE.Vector3(0.61, 0.065, -1.62), new THREE.Vector3(0.56, 0.065, -2.13)];
   const nerve = tube('optic-nerve', nervePoints, 0.105, undefined, 48);
   nerve.name = 'optic-nerve-trunk';
   const nervePath = (nerve.geometry as THREE.TubeGeometry).parameters.path;
@@ -378,7 +384,7 @@ export function buildEye(colors: Partial<Record<StructureId, string>> = {}, side
     const angle = i * Math.PI * 2 / 8;
     tube('optic-nerve', nervePoints.map(p => p.clone().add(new THREE.Vector3(Math.cos(angle) * 0.088, Math.sin(angle) * 0.088, 0))), 0.008, '#eed4a0');
   }
-  for (const item of [...createExtraocularMuscles({ ...COLORS, ...colors }), ...createEyeAdnexa({ ...COLORS, ...colors })]) {
+  for (const item of [...createExtraocularMuscles({ ...COLORS, ...colors }), ...createEyeAdnexa({ ...COLORS, ...colors }), ...createOrbit({ ...COLORS, ...colors })]) {
     root.add(item.group);
     parts.set(item.id, item);
   }

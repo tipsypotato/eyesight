@@ -16,6 +16,13 @@ const inferiorObliqueAnatomy = { title: 'NCBI StatPearls · Inferior Oblique Mus
 const eyelidAnatomy = { title: 'NCBI StatPearls · Anatomy, Head and Neck: Eyelid', url: 'https://www.ncbi.nlm.nih.gov/books/NBK482304/' };
 const eyelidHistology = { title: 'Duke University · Histology of the Eye and Eyelid', url: 'https://histology.oit.duke.edu/NormalBody/EyeEar/EyeEar.html' };
 const eyelidLayers = { title: 'University of Utah Moran CORE · Eyelids', url: 'https://morancore.utah.edu/section-04-ophthalmic-pathology/eyelid/' };
+const orbitalAnatomy = { title: 'NCBI StatPearls · Anatomy, Head and Neck, Orbit', url: 'https://www.ncbi.nlm.nih.gov/books/NBK539843/' };
+const orbitalBones = { title: 'NCBI StatPearls · Anatomy, Head and Neck, Orbit Bones', url: 'https://www.ncbi.nlm.nih.gov/books/NBK531490/' };
+const orbitalMicroanatomy = { title: 'Anatomy of the Orbit · Microsurgical anatomy', url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC7561454/' };
+const ciliaryGanglionAnatomy = { title: 'NCBI StatPearls · Neuroanatomy, Ciliary Ganglion', url: 'https://www.ncbi.nlm.nih.gov/books/NBK553182/' };
+const ophthalmicArteries = { title: 'NCBI StatPearls · Ophthalmic Arteries', url: 'https://www.ncbi.nlm.nih.gov/books/NBK482317/' };
+const ophthalmicVeins = { title: 'NCBI StatPearls · Eye Ophthalmic Vein', url: 'https://www.ncbi.nlm.nih.gov/books/NBK557603/' };
+const lacrimalAnatomy = { title: 'NCBI StatPearls · Eye Lacrimal Gland', url: 'https://www.ncbi.nlm.nih.gov/books/NBK532914/' };
 
 export const GROUPS: { id: GroupId; name: Localized }[] = [
   { id: 'wall', name: { zh: '眼球壁', en: 'Eye wall' } },
@@ -24,6 +31,7 @@ export const GROUPS: { id: GroupId; name: Localized }[] = [
   { id: 'fundus', name: { zh: '眼底与视神经', en: 'Fundus & optic nerve' } },
   { id: 'extraocular', name: { zh: '眼外肌', en: 'Extraocular muscles' } },
   { id: 'adnexa', name: { zh: '结膜与眼睑', en: 'Conjunctiva & eyelids' } },
+  { id: 'orbit', name: { zh: '眼眶与内容物', en: 'Orbit & contents' } },
 ];
 
 export const STRUCTURES: Structure[] = [
@@ -298,6 +306,142 @@ export const STRUCTURES: Structure[] = [
     position: { zh: '睫毛毛囊附近，导管可通向毛囊。', en: 'Near eyelash follicles, into which their ducts may open.' },
     fact: { zh: 'Moll 腺是汗腺；邻近的 Zeis 腺是皮脂腺。', en: 'Moll glands are sweat glands; neighboring Zeis glands are sebaceous glands.' },
     sources: [eyelidHistology, histology],
+  },
+  {
+    id: 'orbital-roof', name: { zh: '眶上壁', en: 'Orbital roof' }, latin: 'Paries superior orbitae', group: 'orbit', color: '#d8cab0', kind: 'tissue',
+    summary: { zh: '眼眶上方的骨壁，主要由额骨眶板和蝶骨小翼构成。', en: 'The upper bony wall of the orbit, formed mainly by the frontal orbital plate and lesser sphenoid wing.' },
+    function: { zh: '保护上方眶内容物，并分隔眼眶与前颅窝。', en: 'Protects the superior orbital contents and separates the orbit from the anterior cranial fossa.' },
+    position: { zh: '眼球、上直肌与提上睑肌上方。', en: 'Above the globe, superior rectus and levator palpebrae superioris.' },
+    fact: { zh: '本模型按四面眶壁展示骨性轮廓，未将组成眼眶的七块骨逐一拆分。', en: 'The model groups bone into four walls; it does not separate all seven contributing bones.' },
+    sources: [orbitalBones, orbitalMicroanatomy],
+  },
+  {
+    id: 'orbital-floor', name: { zh: '眶下壁（眶底）', en: 'Orbital floor' }, latin: 'Paries inferior orbitae', group: 'orbit', color: '#cdbb9d', kind: 'tissue',
+    summary: { zh: '主要由上颌骨构成的下方骨壁，另有颧骨及少量腭骨参与。', en: 'The lower bony wall, formed mainly by the maxilla with contributions from the zygomatic and palatine bones.' },
+    function: { zh: '支撑眶内容物，并与下方的上颌窦相隔。', en: 'Supports the orbital contents and separates them from the maxillary sinus below.' },
+    position: { zh: '眼球与下直肌下方，从下眶缘向后延伸。', en: 'Below the globe and inferior rectus, extending backward from the inferior orbital rim.' },
+    fact: { zh: '下斜肌起于眶底前内侧；此处未单独建模眶下沟和眶下管。', en: 'The inferior oblique originates on the anteromedial floor; the infraorbital groove and canal are not modeled separately.' },
+    sources: [orbitalAnatomy, inferiorObliqueAnatomy],
+  },
+  {
+    id: 'medial-orbital-wall', name: { zh: '眶内侧壁', en: 'Medial orbital wall' }, latin: 'Paries medialis orbitae', group: 'orbit', color: '#dfd2b9', kind: 'tissue',
+    summary: { zh: '靠鼻侧的骨壁，主要含筛骨眶板，也有泪骨、上颌骨与蝶骨的参与。', en: 'The nasal bony wall, mainly the ethmoid orbital plate, with lacrimal, maxillary and sphenoid contributions.' },
+    function: { zh: '分隔眶内容物与内侧的鼻腔及鼻旁窦。', en: 'Separates orbital contents from the nasal cavity and paranasal sinuses medially.' },
+    position: { zh: '内直肌鼻侧，左右眼眶的内侧壁大致平行。', en: 'Nasal to the medial rectus; the two medial orbital walls are approximately parallel.' },
+    fact: { zh: '筛骨眶板很薄，也称纸样板；模型厚度为示意。', en: 'The thin ethmoid orbital plate is also called the lamina papyracea; model thickness is schematic.' },
+    sources: [orbitalMicroanatomy, orbitalBones],
+  },
+  {
+    id: 'lateral-orbital-wall', name: { zh: '眶外侧壁', en: 'Lateral orbital wall' }, latin: 'Paries lateralis orbitae', group: 'orbit', color: '#ccb795', kind: 'tissue',
+    summary: { zh: '颞侧较厚的骨壁，由颧骨和蝶骨大翼构成。', en: 'The relatively thick temporal wall, formed by the zygomatic bone and greater sphenoid wing.' },
+    function: { zh: '从外侧保护眶内容物，并参与构成眶缘。', en: 'Protects the orbital contents laterally and contributes to the orbital rim.' },
+    position: { zh: '外直肌颞侧，前方邻近泪腺。', en: 'Temporal to the lateral rectus, near the lacrimal gland anteriorly.' },
+    fact: { zh: '鼻侧与颞侧按人体解剖方向定义，旋转模型不会改变其含义。', en: 'Nasal and temporal describe anatomical directions, regardless of model rotation.' },
+    sources: [orbitalAnatomy, orbitalMicroanatomy],
+  },
+  {
+    id: 'intraconal-fat', name: { zh: '肌锥内脂肪', en: 'Intraconal fat' }, latin: 'Corpus adiposum orbitae, pars intraconalis', group: 'orbit', color: '#d9b758', kind: 'tissue',
+    summary: { zh: '位于四条直肌所围肌锥内的眶脂肪。', en: 'Orbital adipose tissue inside the cone formed by the four rectus muscles.' },
+    function: { zh: '填充和缓冲眼球后方组织，允许神经、血管及眼球活动。', en: 'Pads the tissues behind the globe and accommodates nerves, vessels and eye movement.' },
+    position: { zh: '眼球后方、直肌之间，围绕视神经及邻近血管。', en: 'Behind the globe, between the rectus muscles and around the optic nerve and nearby vessels.' },
+    fact: { zh: '脂肪采用分叶体块示意，未表示每条筋膜间隔或真实脂肪体积。', en: 'Lobulated shapes illustrate fat without depicting every fascial partition or actual fat volume.' },
+    sources: [orbitalAnatomy, orbitalMicroanatomy],
+  },
+  {
+    id: 'extraconal-fat', name: { zh: '肌锥外脂肪', en: 'Extraconal fat' }, latin: 'Corpus adiposum orbitae, pars extraconalis', group: 'orbit', color: '#e5c775', kind: 'tissue',
+    summary: { zh: '位于直肌肌锥之外的眶脂肪。', en: 'Orbital adipose tissue outside the rectus muscle cone.' },
+    function: { zh: '缓冲眶内结构，并为肌肉与周围组织的活动留出空间。', en: 'Cushions orbital structures and accommodates movement of muscles and surrounding tissues.' },
+    position: { zh: '位于肌锥外侧与骨性眶壁内侧之间。', en: 'Lies outside the muscle cone and inside the bony orbital walls.' },
+    fact: { zh: '肌锥内外是位置分区，示意体块不代表独立的脂肪包膜。', en: 'Intraconal and extraconal describe locations; the schematic shapes do not represent separate fat capsules.' },
+    sources: [orbitalAnatomy, orbitalMicroanatomy],
+  },
+  {
+    id: 'oculomotor-nerve', name: { zh: '动眼神经（III）', en: 'Oculomotor nerve (CN III)' }, latin: 'Nervus oculomotorius', group: 'orbit', color: '#e8d18a', kind: 'tissue',
+    summary: { zh: '支配多数眼外肌及提上睑肌的第三脑神经。', en: 'The third cranial nerve, supplying most extraocular muscles and the levator palpebrae superioris.' },
+    function: { zh: '支配上、下、内直肌及下斜肌和提上睑肌；还携带至睫状神经节的副交感纤维。', en: 'Supplies superior, inferior and medial rectus, inferior oblique and the levator; also carries parasympathetic fibers to the ciliary ganglion.' },
+    position: { zh: '上、下支经眶上裂及总腱环进入眶内，分向相应肌肉。', en: 'Its superior and inferior divisions enter through the superior orbital fissure and tendinous ring, then reach their target muscles.' },
+    fact: { zh: '神经线条表示代表性走行，未还原全部细小分支。', en: 'The nerve lines show representative routes, not every small branch.' },
+    sources: [orbitalMicroanatomy, extraocularActions],
+  },
+  {
+    id: 'trochlear-nerve', name: { zh: '滑车神经（IV）', en: 'Trochlear nerve (CN IV)' }, latin: 'Nervus trochlearis', group: 'orbit', color: '#ddc47c', kind: 'tissue',
+    summary: { zh: '支配上斜肌的第四脑神经。', en: 'The fourth cranial nerve, supplying the superior oblique muscle.' },
+    function: { zh: '通过上斜肌参与眼球内旋、下转和外展。', en: 'Acts through the superior oblique to contribute to intorsion, depression and abduction.' },
+    position: { zh: '经眶上裂在总腱环之外入眶，向内上方走向上斜肌。', en: 'Enters through the superior orbital fissure outside the tendinous ring and runs superomedially to superior oblique.' },
+    fact: { zh: '滑车神经支配肌肉；上斜肌肌腱所经过的滑车是另一种结构。', en: 'This nerve supplies the muscle; the trochlea guiding its tendon is a separate structure.' },
+    sources: [orbitalMicroanatomy, superiorObliqueAnatomy],
+  },
+  {
+    id: 'abducens-nerve', name: { zh: '展神经（VI）', en: 'Abducens nerve (CN VI)' }, latin: 'Nervus abducens', group: 'orbit', color: '#e4c986', kind: 'tissue',
+    summary: { zh: '支配外直肌的第六脑神经。', en: 'The sixth cranial nerve, supplying the lateral rectus muscle.' },
+    function: { zh: '使外直肌收缩，将眼球转向颞侧。', en: 'Activates the lateral rectus to turn the eye toward the temple.' },
+    position: { zh: '经眶上裂与总腱环入眶，在肌锥内走向外直肌深面。', en: 'Enters through the superior orbital fissure and tendinous ring, then runs within the cone to the deep surface of lateral rectus.' },
+    fact: { zh: '视神经负责视觉传入，展神经负责运动支配，两者功能不同。', en: 'The optic nerve carries visual input; the abducens nerve provides motor control.' },
+    sources: [orbitalMicroanatomy, extraocularActions],
+  },
+  {
+    id: 'frontal-nerve', name: { zh: '额神经（V1 分支）', en: 'Frontal nerve (V1 branch)' }, latin: 'Nervus frontalis', group: 'orbit', color: '#e6d89b', kind: 'tissue',
+    summary: { zh: '三叉神经眼支的感觉分支，向前分为眶上神经和滑车上神经。', en: 'A sensory branch of the ophthalmic division of the trigeminal nerve, dividing into supraorbital and supratrochlear nerves.' },
+    function: { zh: '传递额部、前部头皮及部分上睑的感觉。', en: 'Carries sensation from the forehead, anterior scalp and part of the upper eyelid.' },
+    position: { zh: '沿眶顶内侧面向前走行，位于提上睑肌上方。', en: 'Runs forward beneath the orbital roof, above the levator palpebrae superioris.' },
+    fact: { zh: 'V1 指三叉神经的眼支，不是传递视觉的视神经。', en: 'V1 is the ophthalmic division of the trigeminal nerve, distinct from the optic nerve for vision.' },
+    sources: [orbitalMicroanatomy, orbitalBones],
+  },
+  {
+    id: 'lacrimal-nerve', name: { zh: '泪腺神经（V1 分支）', en: 'Lacrimal nerve (V1 branch)' }, latin: 'Nervus lacrimalis', group: 'orbit', color: '#decf91', kind: 'tissue',
+    summary: { zh: '三叉神经眼支沿眶外侧前行的一条分支。', en: 'A branch of the ophthalmic division of the trigeminal nerve running along the lateral orbit.' },
+    function: { zh: '传递泪腺、邻近结膜和外侧上睑的感觉，并携带到达泪腺的分泌运动纤维。', en: 'Carries sensation from the lacrimal gland, nearby conjunctiva and lateral upper lid, and conveys secretomotor fibers to the gland.' },
+    position: { zh: '在外直肌上缘附近前行，抵达上颞侧泪腺。', en: 'Runs near the superior border of lateral rectus toward the superotemporal lacrimal gland.' },
+    fact: { zh: '到泪腺的副交感节后纤维来自翼腭神经节，再经交通支加入此神经。', en: 'Postganglionic parasympathetic fibers reach it through a communicating branch from the pterygopalatine ganglion pathway.' },
+    sources: [orbitalMicroanatomy, lacrimalAnatomy],
+  },
+  {
+    id: 'nasociliary-nerve', name: { zh: '鼻睫神经（V1 分支）', en: 'Nasociliary nerve (V1 branch)' }, latin: 'Nervus nasociliaris', group: 'orbit', color: '#ebdba1', kind: 'tissue',
+    summary: { zh: '三叉神经眼支进入肌锥的一条感觉分支。', en: 'A sensory branch of the ophthalmic division of the trigeminal nerve that enters the muscle cone.' },
+    function: { zh: '经分支传递角膜、虹膜、睫状体及部分鼻部区域的感觉。', en: 'Its branches carry sensation from the cornea, iris, ciliary body and parts of the nasal region.' },
+    position: { zh: '经总腱环入眶，越过视神经上方后向内侧眶壁走行。', en: 'Enters through the tendinous ring, crosses above the optic nerve and runs toward the medial orbital wall.' },
+    fact: { zh: '角膜反射的感觉传入涉及鼻睫神经；闭眼的运动传出经面神经。', en: 'The nasociliary nerve contributes the sensory limb of the corneal reflex; the facial nerve drives eyelid closure.' },
+    sources: [orbitalMicroanatomy, ciliaryGanglionAnatomy],
+  },
+  {
+    id: 'ciliary-ganglion', name: { zh: '睫状神经节', en: 'Ciliary ganglion' }, latin: 'Ganglion ciliare', group: 'orbit', color: '#d7bc77', kind: 'tissue',
+    summary: { zh: '位于眶后部的小型副交感神经节。', en: 'A small parasympathetic ganglion in the posterior orbit.' },
+    function: { zh: '中继动眼神经携带的副交感信号，经睫状短神经参与瞳孔缩小和晶状体调节。', en: 'Relays parasympathetic input carried by the oculomotor nerve; short ciliary nerves then support pupil constriction and accommodation.' },
+    position: { zh: '视神经颞侧与外直肌之间的眶脂肪内。', en: 'Within orbital fat between the temporal side of the optic nerve and lateral rectus.' },
+    fact: { zh: '感觉和交感纤维可通过神经节，但不在其中换元。', en: 'Sensory and sympathetic fibers pass through the ganglion without synapsing there.' },
+    sources: [ciliaryGanglionAnatomy, orbitalMicroanatomy],
+  },
+  {
+    id: 'ophthalmic-artery', name: { zh: '眼动脉', en: 'Ophthalmic artery' }, latin: 'Arteria ophthalmica', group: 'orbit', color: '#bd5e54', kind: 'tissue',
+    summary: { zh: '通常起自颈内动脉，为眼球和眶内组织供血的主要动脉。', en: 'The main arterial supply to the eye and orbital tissues, usually arising from the internal carotid artery.' },
+    function: { zh: '经视网膜中央动脉、睫状动脉及其他分支供应眼球、肌肉和泪腺等组织。', en: 'Supplies the globe, muscles and lacrimal gland through central retinal, ciliary and other branches.' },
+    position: { zh: '随视神经经视神经管入眶，多从视神经上方跨向鼻侧。', en: 'Enters through the optic canal with the optic nerve, usually crossing above it toward the nasal side.' },
+    fact: { zh: '这里示意主干及代表性分支，不表示完整微循环或每个人的血管走行。', en: 'The model shows the trunk and representative branches, not the full microcirculation or every individual course.' },
+    sources: [ophthalmicArteries, orbitalMicroanatomy],
+  },
+  {
+    id: 'superior-ophthalmic-vein', name: { zh: '眼上静脉', en: 'Superior ophthalmic vein' }, latin: 'Vena ophthalmica superior', group: 'orbit', color: '#648eb0', kind: 'tissue',
+    summary: { zh: '眶内较大的静脉回流通路，与面部静脉及海绵窦相通。', en: 'A major orbital venous channel communicating with facial veins and the cavernous sinus.' },
+    function: { zh: '汇集眼球及眶内多处组织的静脉血，向海绵窦回流。', en: 'Collects venous blood from the globe and orbital tissues and drains toward the cavernous sinus.' },
+    position: { zh: '从前内侧眶部向后走行，在视神经上方经过，再经眶上裂离眶。', en: 'Runs backward from the anteromedial orbit above the optic nerve, then leaves through the superior orbital fissure.' },
+    fact: { zh: '眼静脉的分支和粗细存在差异；蓝色仅用于区分静脉。', en: 'Ophthalmic veins vary in branching and caliber; blue is used only to distinguish veins.' },
+    sources: [ophthalmicVeins, orbitalMicroanatomy],
+  },
+  {
+    id: 'inferior-ophthalmic-vein', name: { zh: '眼下静脉', en: 'Inferior ophthalmic vein' }, latin: 'Vena ophthalmica inferior', group: 'orbit', color: '#789fb9', kind: 'tissue',
+    summary: { zh: '位于眼球下方、走行和汇流方式较多变的眶静脉。', en: 'An orbital vein beneath the globe with variable course and drainage.' },
+    function: { zh: '收集下部眶组织的静脉血，可通向眼上静脉、海绵窦或翼静脉丛。', en: 'Drains inferior orbital tissues toward the superior ophthalmic vein, cavernous sinus or pterygoid plexus.' },
+    position: { zh: '起于眼球与下直肌之间的静脉丛，沿下部眼眶向后延伸。', en: 'Arises from a plexus between the globe and inferior rectus and extends backward through the inferior orbit.' },
+    fact: { zh: '真实汇流途径存在变异，模型不包含眶外静脉丛和完整交通支。', en: 'Actual drainage routes vary; the model omits extraorbital venous plexuses and the complete communicating network.' },
+    sources: [ophthalmicVeins],
+  },
+  {
+    id: 'lacrimal-gland', name: { zh: '泪腺', en: 'Lacrimal gland' }, latin: 'Glandula lacrimalis', group: 'orbit', color: '#c88e91', kind: 'tissue',
+    summary: { zh: '位于眶前上颞侧的腺体，包含眶部和睑部。', en: 'A gland in the anterior superotemporal orbit, with orbital and palpebral portions.' },
+    function: { zh: '分泌泪膜的水液成分及多种保护性蛋白，维持眼表湿润。', en: 'Secretes the aqueous component of tears and protective proteins to maintain a moist ocular surface.' },
+    position: { zh: '主要位于额骨泪腺窝内，邻近提上睑肌腱膜外侧。', en: 'Lies mainly in the lacrimal fossa of the frontal bone, near the lateral levator aponeurosis.' },
+    fact: { zh: '泪腺产生水液，睑板腺主要提供脂质；本模型未模拟分泌和完整泪道。', en: 'The lacrimal gland supplies aqueous fluid, while meibomian glands mainly supply lipids; secretion and the full drainage apparatus are not simulated.' },
+    sources: [lacrimalAnatomy, eyelidHistology],
   },
 ];
 

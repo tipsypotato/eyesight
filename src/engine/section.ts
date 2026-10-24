@@ -48,6 +48,8 @@ export class SectionTool {
   readonly planes = [this.plane];
   private visual: { guide: THREE.Group; frame: THREE.LineLoop; arrow: THREE.ArrowHelper } | null = null;
   private enabled = false;
+  private limit = 1;
+  private extent = 1.24;
   private drag: { axis: THREE.Vector3; origin: THREE.Vector3; plane: THREE.Plane | null; offset: number; lastOffset: number; pointerY: number; unitsPerPixel: number } | null = null;
 
   get guide() { return this.visuals.guide; }
@@ -81,16 +83,19 @@ export class SectionTool {
     const { guide, arrow } = this.visual;
     const axis = this.plane.normal.clone().set(Math.abs(this.plane.normal.x), Math.abs(this.plane.normal.y), Math.abs(this.plane.normal.z));
     guide.visible = this.enabled;
+    guide.scale.setScalar(this.extent / 1.24);
     guide.position.copy(this.plane.normal).multiplyScalar(-this.plane.constant);
     guide.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), axis);
     arrow.setDirection(new THREE.Vector3(0, 0, this.plane.normal.dot(axis)));
   }
 
-  update(clip: SceneState['clip'], _camera?: THREE.Camera) {
+  update(clip: SceneState['clip'], _camera?: THREE.Camera, limit = 1, extent = 1.24) {
     const axis = SECTION_AXES[clip.axis];
     const normal = axis.clone().multiplyScalar(clip.keepSide === 'positive' ? 1 : -1);
     this.plane.setFromNormalAndCoplanarPoint(normal, axis.clone().multiplyScalar(clip.offset));
     this.enabled = clip.enabled;
+    this.limit = limit;
+    this.extent = extent;
     this.updateGuide();
   }
   keeps(point: THREE.Vector3) {
@@ -118,7 +123,7 @@ export class SectionTool {
     const delta = point ? point.sub(drag.origin).dot(drag.axis) : (drag.pointerY - pointerY) * drag.unitsPerPixel;
     const value = drag.offset + delta;
     if (!Number.isFinite(value)) return null;
-    drag.lastOffset = THREE.MathUtils.clamp(value, -1, 1);
+    drag.lastOffset = THREE.MathUtils.clamp(value, -this.limit, this.limit);
     return drag.lastOffset;
   }
 

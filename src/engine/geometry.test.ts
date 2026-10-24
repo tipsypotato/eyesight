@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import * as THREE from 'three';
-import { STRUCTURE_IDS } from '../anatomy/types';
+import { ORBITAL_IDS, STRUCTURE_IDS } from '../anatomy/types';
 import { buildEye, createShellSection, setOpticalGeometry, setPosteriorStretch } from './geometry';
 import { intersectionSurvives, SectionTool } from './section';
 
@@ -12,7 +12,9 @@ describe('adult right-eye geometry', () => {
       const bounds = new THREE.Box3().setFromObject(part.group);
       expect(bounds.isEmpty(), part.id).toBe(false);
       expect([...bounds.min.toArray(), ...bounds.max.toArray()].every(Number.isFinite), part.id).toBe(true);
-      expect(bounds.getSize(new THREE.Vector3()).length(), part.id).toBeLessThan(4);
+      if (ORBITAL_IDS.some(id => id === part.id)) {
+        expect([...bounds.min.toArray(), ...bounds.max.toArray()].every(value => Math.abs(value) < 2.5), part.id).toBe(true);
+      } else expect(bounds.getSize(new THREE.Vector3()).length(), part.id).toBeLessThan(4);
     }
     const span = (id: 'sclera' | 'choroid' | 'retina') => new THREE.Box3().setFromObject(eye.parts.get(id)!.group).getSize(new THREE.Vector3()).x;
     expect(span('sclera')).toBeGreaterThan(span('choroid'));
@@ -45,7 +47,7 @@ describe('adult right-eye geometry', () => {
       const trunk = nerve.children.find(object => object instanceof THREE.Mesh && object.geometry instanceof THREE.TubeGeometry) as THREE.Mesh<THREE.TubeGeometry>;
       const { path, radius, radialSegments, tubularSegments } = trunk.geometry.parameters;
       expect(path.getPoint(0).toArray()).toEqual([0.31, 0.035, -0.87]);
-      expect(path.getPoint(1).distanceTo(new THREE.Vector3(0.61, 0.065, -1.62))).toBeLessThan(1e-10);
+      expect(path.getPoint(1).distanceTo(new THREE.Vector3(0.56, 0.065, -2.13))).toBeLessThan(1e-10);
       expect(radius).toBe(0.105);
       const positions = trunk.geometry.getAttribute('position');
       let largestChord = 0;

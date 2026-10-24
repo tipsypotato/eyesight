@@ -1,5 +1,5 @@
 import { LESSONS } from '../anatomy/data';
-import { ADNEXAL_IDS, EXTRAOCULAR_IDS, SCENE_PRESETS, STRUCTURE_IDS, type CameraSnapshot, type Mode, type OpticsInput, type PhysiologyState, type SceneState } from '../anatomy/types';
+import { ADNEXAL_IDS, EXTRAOCULAR_IDS, ORBITAL_IDS, SCENE_PRESETS, STRUCTURE_IDS, type CameraSnapshot, type Mode, type OpticsInput, type PhysiologyState, type SceneState } from '../anatomy/types';
 import { CONTENT_VERSION } from '../content/questions';
 import { validateOpticsInput } from '../engine/optics';
 import { PHYSIOLOGY_LENGTHS, physiologyInput } from '../modes/physiology';
@@ -29,9 +29,9 @@ const integer = (value: unknown, min: number, max: number): value is number => f
 const structureOrNull = (value: unknown): value is SceneState['selectedId'] => value === null || member(value, STRUCTURE_IDS);
 
 function layers(value: unknown): SceneState['layers'] | null {
-  const added = ['iridocorneal-angle', 'trabecular-meshwork', ...EXTRAOCULAR_IDS, ...ADNEXAL_IDS];
+  const added = ['iridocorneal-angle', 'trabecular-meshwork', ...EXTRAOCULAR_IDS, ...ADNEXAL_IDS, ...ORBITAL_IDS];
   if (!record(value) || !STRUCTURE_IDS.every(id => member(value[id], ['on', 'ghost', 'off']) || added.includes(id) && value[id] === undefined)) return null;
-  return Object.fromEntries(STRUCTURE_IDS.map(id => [id, value[id] ?? ([...EXTRAOCULAR_IDS, ...ADNEXAL_IDS].some(part => part === id) ? 'off' : 'on')])) as SceneState['layers'];
+  return Object.fromEntries(STRUCTURE_IDS.map(id => [id, value[id] ?? ([...EXTRAOCULAR_IDS, ...ADNEXAL_IDS, ...ORBITAL_IDS].some(part => part === id) ? 'off' : 'on')])) as SceneState['layers'];
 }
 
 function optics(value: unknown): OpticsInput | null {
@@ -77,7 +77,7 @@ function parseDraft(value: unknown, mode: Mode): PersistedDraft | null {
     || (value.showOptics !== undefined && typeof value.showOptics !== 'boolean')) return null;
   const parsedLayers = layers(value.layers), input = optics(value.opticsInput), clip = value.clip;
   if (!parsedLayers || !input || !record(clip) || typeof clip.enabled !== 'boolean' || !member(clip.axis, ['sagittal', 'axial', 'coronal'])
-    || !finite(clip.offset, -1, 1) || !member(clip.keepSide, ['negative', 'positive'])) return null;
+    || !finite(clip.offset, -4, 4) || !member(clip.keepSide, ['negative', 'positive'])) return null;
   const isolationLayers = value.isolationLayers === null ? null : layers(value.isolationLayers);
   if (value.isolationLayers !== null && !isolationLayers) return null;
   const lesson = LESSONS.find(item => item.id === value.lessonId);

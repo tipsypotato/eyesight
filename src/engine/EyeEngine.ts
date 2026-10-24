@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { STRUCTURES } from '../anatomy/data';
-import { ADNEXAL_IDS, EXTRAOCULAR_IDS, type CameraSnapshot, type EyeSide, type SceneState, type StructureId, type ViewPreset } from '../anatomy/types';
+import { ADNEXAL_IDS, EXTRAOCULAR_IDS, ORBITAL_IDS, sectionLimit, type CameraSnapshot, type EyeSide, type SceneState, type StructureId, type ViewPreset } from '../anatomy/types';
 import { Animator } from './animator';
 import { CameraRig } from './camera';
 import { buildEye, createShellSection, setOpticalGeometry, setPosteriorStretch, type EyePart } from './geometry';
@@ -279,6 +279,14 @@ export class EyeEngine {
       this.posteriorScale = inputs.right.myopia ? 1.22 / 0.914 : 1;
     }
     this.eye.root.updateMatrixWorld(true);
+    if (sceneChanged || state.layers !== previous?.layers || state.isolateId !== previous?.isolateId || state.explode !== previous?.explode) {
+      this.sectionExtent = 1.24;
+      if (ORBITAL_IDS.some(id => this.eye.parts.get(id)?.group.visible)) {
+        const bounds = new THREE.Box3();
+        for (const part of this.eye.parts.values()) if (part.group.visible) bounds.union(this.boundsFor(part));
+        this.sectionExtent = Math.max(...bounds.min.toArray().map(Math.abs), ...bounds.max.toArray().map(Math.abs)) + 0.12;
+      }
+    }
     this.updateDiseaseEffects();
     this.updateNeural();
     this.capKey = '';
@@ -381,9 +389,10 @@ export class EyeEngine {
     const fundus = ['macula', 'fovea', 'optic-disc', 'retinal-vessels', 'retina'].includes(id);
     const extraocular = EXTRAOCULAR_IDS.some(muscle => muscle === id);
     const adnexal = ADNEXAL_IDS.some(structure => structure === id);
-    const direction = extraocular ? new THREE.Vector3(part.anchor.x, part.anchor.y, 0.7) : fundus || adnexal ? new THREE.Vector3(0, 0, 1) : id === 'optic-nerve' ? new THREE.Vector3(0, 0, -1) : undefined;
+    const orbital = ORBITAL_IDS.some(structure => structure === id);
+    const direction = extraocular || orbital ? new THREE.Vector3(part.anchor.x, part.anchor.y, 0.7) : fundus || adnexal ? new THREE.Vector3(0, 0, 1) : id === 'optic-nerve' ? new THREE.Vector3(0, 0, -1) : undefined;
     const lensDetail = id === 'lens' && this.state?.mode === 'disease' && this.state.disease?.id === 'cataract' && this.state.disease.view === 'lens-detail';
-    this.rig.focus(sphere.center, Math.max(0.06, sphere.radius / (lensDetail || extraocular || adnexal ? 0.72 : 0.34)), direction?.applyQuaternion(this.activeEye().root.quaternion));
+    this.rig.focus(sphere.center, Math.max(0.06, sphere.radius / (lensDetail || extraocular || adnexal || orbital ? 0.72 : 0.34)), direction?.applyQuaternion(this.activeEye().root.quaternion));
     this.notifyCamera();
     this.invalidate();
   }
@@ -425,7 +434,7 @@ export class EyeEngine {
     if (this.state?.mode === 'disease' && this.state.disease?.id === 'cataract' && this.state.disease.view === 'lens-detail') {
       const sphere = this.boundsFor(this.eye.parts.get('lens')!).getBoundingSphere(new THREE.Sphere());
       this.rig.preset(view, sphere.radius / 0.72, sphere.center);
-    } else if (this.leftEye || optical || [...EXTRAOCULAR_IDS, ...ADNEXAL_IDS].some(id => this.eye.parts.get(id)?.group.visible)) {
+    } else if (this.leftEye || optical || this.eye.parts.get('optic-nerve')?.group.visible || [...EXTRAOCULAR_IDS, ...ADNEXAL_IDS, ...ORBITAL_IDS].some(id => this.eye.parts.get(id)?.group.visible)) {
       const bounds = new THREE.Box3();
       for (const eye of this.eyes()) for (const part of eye.parts.values()) if (part.group.visible) bounds.union(this.boundsFor(part));
       if (this.leftEye && this.diseaseEffects) bounds.union(new THREE.Box3().setFromObject(this.diseaseEffects));
@@ -631,9 +640,10 @@ export class EyeEngine {
     addNode('optic-nerve-exit-signal', nervePoints.at(-1)!, new THREE.OctahedronGeometry(0.045));
   }
 
+  private sectionExtent = 1.24;
   private updateSections() {
     if (!this.state) return;
-    this.section.update(this.state.clip, this.camera);
+    this.section.update(this.state.clip, this.camera, sectionLimit(this.state), this.sectionExtent);
     this.section.guide.visible = this.state.clip.enabled && !this.leftEye && this.state.mode !== 'quiz';
     const key = `${this.state.clip.enabled}|${this.state.clip.axis}|${this.state.clip.offset}|${this.state.explode}|${this.posteriorScale}`;
     for (const [id, cap] of this.caps) {
@@ -772,7 +782,7 @@ export class EyeEngine {
     if (clientX < rect.left || clientY < rect.top || clientX > rect.left + rect.width || clientY > rect.top + rect.height) return null;
     this.camera.updateMatrixWorld();
     this.eye.root.updateWorldMatrix(true, true);
-    this.section.update(state.clip, this.camera);
+    this.section.update(state.clip, this.camera, sectionLimit(state), this.sectionExtent);
     this.pointer.set((clientX - rect.left) / rect.width * 2 - 1, -(clientY - rect.top) / rect.height * 2 + 1);
     this.raycaster.setFromCamera(this.pointer, this.camera);
     const hits: { id: StructureId; side: EyeSide; distance: number }[] = [];
@@ -819,7 +829,7 @@ export class EyeEngine {
   private pickSectionFrame(clientX: number, clientY: number) {
     if (!this.interactionEnabled || this.leftEye || !this.sectionCallbacks || !this.state?.clip.enabled || this.state.mode === 'quiz') return null;
     const rect = this.setPointerRay(clientX, clientY);
-    this.section.update(this.state.clip);
+    this.section.update(this.state.clip, this.camera, sectionLimit(this.state), this.sectionExtent);
     this.section.guide.updateMatrixWorld(true);
     const threshold = this.raycaster.params.Line.threshold;
     this.raycaster.params.Line.threshold = 9 * 2 * this.camera.position.distanceTo(this.section.guide.position)

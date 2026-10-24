@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { createEyeStore } from '../state/store';
 import { EyeEngine } from './EyeEngine';
-import { ADNEXAL_IDS, type CameraSnapshot, type SceneState } from '../anatomy/types';
+import { ADNEXAL_IDS, ORBITAL_IDS, type CameraSnapshot, type SceneState } from '../anatomy/types';
 import { buildEye } from './geometry';
 import { SectionTool } from './section';
 import { Animator } from './animator';
@@ -878,7 +878,7 @@ it('keeps camera and optical ray resources stable while stepping through paused 
     expect(neural.material).toBeInstanceOf(THREE.LineDashedMaterial);
     expect(neural.material.color.equals((opticalRay as THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>).material.color)).toBe(false);
     const position = neural.geometry.getAttribute('position');
-    expect(position.getZ(position.count - 1)).toBeCloseTo(-1.62 / 0.914, 6);
+    expect(position.getZ(position.count - 1)).toBeCloseTo(-2.13 / 0.914, 6);
     const disc = internal.neural.getObjectByName('optic-disc-signal')!;
     expect(disc.position.x).toBeCloseTo(eye.parts.get('optic-disc')!.anchor.x);
     for (const child of internal.rays.children.filter(child => child.name === 'optical-ray') as THREE.Line[]) {
@@ -896,7 +896,7 @@ it('follows stretched and transformed anatomy and releases signal resources on r
       physiology: { kind: 'signal', step: 2, playing: false, returnInput: opticsInputForPreset('normal'), returnExperiment: 'baseline', returnPreset: 'normal', returnShowOptics: false } }); sync();
     const path = internal.neural.getObjectByName('optic-nerve-signal') as THREE.Line;
     expect(path).toBeDefined();
-    const expectedExit = eye.parts.get('optic-nerve')!.group.localToWorld(new THREE.Vector3(0.61, 0.065, -1.62 * 1.22 / 0.914));
+    const expectedExit = eye.parts.get('optic-nerve')!.group.localToWorld(new THREE.Vector3(0.56, 0.065, -2.13 * 1.22 / 0.914));
     const vertices = path.geometry.getAttribute('position');
     expect(new THREE.Vector3().fromBufferAttribute(vertices, vertices.count - 1).distanceTo(expectedExit)).toBeLessThan(1e-6);
     const geometryDisposed = vi.fn(), materialDisposed = vi.fn();
@@ -1124,12 +1124,45 @@ it('frames the eyelid layers at a readable scale and fits their exploded extent'
   } finally { cleanup(); }
 });
 
-it('selects, highlights, isolates and sections every conjunctival and eyelid structure', () => {
+it('fits the visible orbital walls and contents, and sizes the section guide for the orbit', () => {
   const { engine, internal, store, sync, cleanup } = diseaseEngineFixture();
   try {
-    for (const id of ADNEXAL_IDS) {
+    const section = (engine as unknown as { section: SectionTool; updateSections(): void });
+    store.getState().applyPreset('orbit');
+    for (const explode of [0, 1]) {
+      store.getState().setExplode(explode); sync();
+      for (const view of ['front', 'side', 'back', 'oblique'] as const) {
+        engine.setView(view); internal.rig.controls.update(); internal.camera.updateMatrixWorld();
+        for (const part of internal.eye.parts.values()) if (part.group.visible) {
+          const bounds = new THREE.Box3().setFromObject(part.group);
+          for (const x of [bounds.min.x, bounds.max.x]) for (const y of [bounds.min.y, bounds.max.y]) for (const z of [bounds.min.z, bounds.max.z]) {
+            const point = new THREE.Vector3(x, y, z).project(internal.camera);
+            expect(Math.abs(point.x), `${view}/${part.id}`).toBeLessThan(1);
+            expect(Math.abs(point.y), `${view}/${part.id}`).toBeLessThan(1);
+          }
+        }
+      }
+    }
+    store.getState().setClip({ enabled: true, axis: 'coronal', offset: -2.1 }); sync(); section.updateSections();
+    expect(section.section.guide.position.z).toBe(-2.1);
+    expect(section.section.guide.scale.x).toBeGreaterThan(1);
+    store.getState().applyPreset('anterior'); sync(); section.updateSections();
+    expect(section.section.guide.scale.x).toBe(1);
+    engine.setView('side'); internal.rig.controls.update(); internal.camera.updateMatrixWorld();
+    const nerve = new THREE.Box3().setFromObject(internal.eye.parts.get('optic-nerve')!.group);
+    for (const point of [nerve.min, nerve.max]) {
+      point.project(internal.camera);
+      expect(Math.abs(point.x)).toBeLessThan(1); expect(Math.abs(point.y)).toBeLessThan(1);
+    }
+  } finally { cleanup(); }
+});
+
+it('selects, highlights, isolates and sections every conjunctival, eyelid and orbital structure', () => {
+  const { engine, internal, store, sync, cleanup } = diseaseEngineFixture();
+  try {
+    for (const id of [...ADNEXAL_IDS, ...ORBITAL_IDS]) {
       expect(internal.eye.parts.has(id), id).toBe(true);
-      store.getState().applyPreset('eyelids'); store.getState().select(id, true); store.getState().toggleIsolate(); sync();
+      store.getState().applyPreset(ORBITAL_IDS.some(part => part === id) ? 'orbit' : 'eyelids'); store.getState().select(id, true); store.getState().toggleIsolate(); sync();
       engine.focus(id); internal.camera.updateMatrixWorld();
       const part = internal.eye.parts.get(id)!;
       const surface = visibleSurface(part, internal.eye.parts, store.getState(), internal.camera);

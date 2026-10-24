@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createEyeStore } from './store';
-import { ADNEXAL_IDS, SCENE_PRESETS, STRUCTURE_IDS, type CameraSnapshot, type LayerMode, type OpticsExperiment, type OpticsInput, type OpticsPreset, type PhysiologyKind } from '../anatomy/types';
+import { ADNEXAL_IDS, ORBITAL_IDS, SCENE_PRESETS, STRUCTURE_IDS, type CameraSnapshot, type LayerMode, type OpticsExperiment, type OpticsInput, type OpticsPreset, type PhysiologyKind } from '../anatomy/types';
 
 describe('learning state', () => {
   it('keeps a canvas fundus selection in the current section without changing other layers', () => {
@@ -527,6 +527,64 @@ describe('comparison and physiology', () => {
 
 describe('observation presets and scene undo', () => {
   const muscles = ['superior-rectus', 'inferior-rectus', 'medial-rectus', 'lateral-rectus', 'superior-oblique', 'inferior-oblique'] as const;
+  it('opens the orbital contents through translucent walls and fat while retaining the globe and muscles', () => {
+    const store = createEyeStore();
+    store.getState().applyPreset('orbit');
+    expect(store.getState()).toMatchObject({ presetId: 'orbit', clip: { enabled: false }, showOptics: false, view: 'oblique', layers: {
+      sclera: 'on', choroid: 'on', retina: 'on', iris: 'on', pupil: 'on', cornea: 'ghost', 'optic-nerve': 'on', 'levator-palpebrae': 'on',
+      'orbital-roof': 'ghost', 'orbital-floor': 'ghost', 'medial-orbital-wall': 'ghost', 'lateral-orbital-wall': 'ghost', 'intraconal-fat': 'ghost', 'extraconal-fat': 'ghost',
+      lens: 'off', vitreous: 'off', 'retinal-vessels': 'off', 'eyelid-skin': 'off', 'orbicularis-oculi': 'off', 'bulbar-conjunctiva': 'off',
+    } });
+    for (const id of [...muscles, 'oculomotor-nerve', 'trochlear-nerve', 'abducens-nerve', 'frontal-nerve', 'lacrimal-nerve', 'nasociliary-nerve', 'ciliary-ganglion', 'ophthalmic-artery', 'superior-ophthalmic-vein', 'inferior-ophthalmic-vein', 'lacrimal-gland'] as const) expect(store.getState().layers[id]).toBe('on');
+    const layers = { ...store.getState().layers };
+    store.getState().select('ophthalmic-artery', true); store.getState().toggleIsolate();
+    store.getState().select('ciliary-ganglion', true); store.getState().setClip({ enabled: true, axis: 'coronal', offset: -0.4 }); store.getState().setExplode(0.6);
+    store.getState().setMode('optics'); store.getState().setLanguage('en'); store.getState().setMode('explore');
+    expect(store.getState()).toMatchObject({ selectedId: 'ciliary-ganglion', isolateId: 'ciliary-ganglion', lang: 'en', explode: 0.6, clip: { enabled: true, axis: 'coronal', offset: -0.4 } });
+    store.getState().toggleIsolate(); expect(store.getState().layers).toEqual(layers);
+  });
+  it.each(ORBITAL_IDS)('reveals an obscured %s with orbital context and restores the previous scene', id => {
+    const store = createEyeStore(); const before = store.getState();
+    store.getState().revealStructure(id);
+    expect(store.getState()).toMatchObject({ selectedId: id, revealPreset: 'orbitalView', clip: { enabled: false }, view: 'oblique', layers: {
+      [id]: 'on', sclera: 'ghost', cornea: 'ghost', choroid: 'on', retina: 'on', iris: 'on', pupil: 'on', 'optic-nerve': 'ghost', 'levator-palpebrae': 'ghost',
+      lens: 'off', vitreous: 'off', 'eyelid-skin': 'off', 'tarsal-plates': 'off',
+    } });
+    for (const other of ORBITAL_IDS) if (other !== id) expect(store.getState().layers[other]).toBe('ghost');
+    for (const muscle of muscles) expect(store.getState().layers[muscle]).toBe('ghost');
+    store.getState().undoReveal();
+    expect(store.getState()).toMatchObject({ layers: before.layers, clip: before.clip, selectedId: before.selectedId });
+  });
+  it('restores the orbital workspace and pre-isolation layers after refresh', () => {
+    const data = new Map<string, string>();
+    const storage = { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => { data.set(key, value); } };
+    const store = createEyeStore(storage);
+    store.getState().applyPreset('orbit'); store.getState().select('lacrimal-gland', true);
+    const layers = { ...store.getState().layers };
+    store.getState().toggleIsolate(); store.getState().setLanguage('en');
+    store.getState().setClip({ enabled: true, axis: 'coronal', offset: -2.1 }); store.getState().setExplode(0.5);
+    store.getState().flushProgress({ position: [4, 3, 5], target: [0.1, 0, -0.5], zoom: 1.2 });
+    const restored = createEyeStore(storage);
+    expect(restored.getState()).toMatchObject({ presetId: 'orbit', lang: 'en', selectedId: 'lacrimal-gland', isolateId: 'lacrimal-gland', layers, isolationLayers: layers, explode: 0.5, clip: { enabled: true, axis: 'coronal', offset: -2.1 }, camera: { position: [4, 3, 5], target: [0.1, 0, -0.5], zoom: 1.2 }, storageNotice: null });
+    restored.getState().toggleIsolate(); expect(restored.getState().layers).toEqual(layers);
+  });
+  it('keeps orbital additions hidden in established presets, tours, quizzes and disease chapters', () => {
+    const store = createEyeStore();
+    const hidden = () => { for (const id of ORBITAL_IDS) expect(store.getState().layers[id]).toBe('off'); };
+    hidden();
+    for (const preset of SCENE_PRESETS.filter(id => id !== 'orbit')) {
+      store.getState().applyPreset('orbit'); store.getState().applyPreset(preset); hidden();
+    }
+    store.getState().setMode('optics'); hidden();
+    for (const lesson of ['anatomy', 'vision', 'myopia']) { store.getState().startLesson(lesson); hidden(); }
+    store.getState().startQuiz(); hidden();
+    for (const disease of ['cataract', 'glaucoma', 'strabismus', 'amblyopia'] as const) { store.getState().openDisease(disease); hidden(); }
+  });
+  it.each(['optics', 'tour', 'quiz', 'disease'] as const)('limits the orbital preset to exploration rather than %s', mode => {
+    const store = createEyeStore(); store.getState().setMode(mode);
+    const before = store.getState(); store.getState().applyPreset('orbit');
+    expect(store.getState()).toBe(before);
+  });
   it('shows the conjunctiva and eyelid layers with transparent outer layers and preserves isolation across workspaces', () => {
     const store = createEyeStore();
     store.getState().applyPreset('eyelids');
@@ -565,7 +623,7 @@ describe('observation presets and scene undo', () => {
     const store = createEyeStore();
     const hidden = () => { for (const id of ADNEXAL_IDS) expect(store.getState().layers[id]).toBe('off'); };
     hidden();
-    for (const preset of SCENE_PRESETS.filter(id => id !== 'eyelids')) {
+    for (const preset of SCENE_PRESETS.filter(id => id !== 'eyelids' && id !== 'orbit')) {
       store.getState().applyPreset('eyelids'); store.getState().applyPreset(preset); hidden();
     }
     for (const lesson of ['anatomy', 'vision', 'myopia']) { store.getState().startLesson(lesson); hidden(); }
@@ -636,13 +694,13 @@ describe('observation presets and scene undo', () => {
     const a = clean.getState(), b = dirty.getState();
     expect(b.layers).toEqual(a.layers); expect(b.clip).toEqual(a.clip);
     expect(b).toMatchObject({ presetId: preset, isolateId: null, isolationLayers: null, explode: 0, labels: false, view: a.view, showOptics: a.showOptics });
-    expect(b.selectedId).toBe(preset === 'fundus' || preset === 'extraocular' || preset === 'eyelids' ? null : 'lens');
+    expect(b.selectedId).toBe(preset === 'fundus' || preset === 'extraocular' || preset === 'eyelids' || preset === 'orbit' ? null : 'lens');
   });
   it('uses the specified wall, fundus, chamber and optical displays without resetting optical parameters', () => {
     const store = createEyeStore();
     store.getState().setOptics('myopia'); store.getState().applyPreset('optical-path');
     expect(store.getState()).toMatchObject({ opticsPreset: 'myopia', showOptics: true, view: 'side', clip: { enabled: true, axis: 'sagittal', offset: 0, keepSide: 'negative' } });
-    for (const id of STRUCTURE_IDS) expect(store.getState().layers[id]).toBe([...muscles, ...ADNEXAL_IDS].some(part => part === id) ? 'off' : 'ghost');
+    for (const id of STRUCTURE_IDS) expect(store.getState().layers[id]).toBe([...muscles, ...ADNEXAL_IDS, ...ORBITAL_IDS].some(part => part === id) ? 'off' : 'ghost');
     store.getState().applyPreset('fundus');
     expect(store.getState()).toMatchObject({ showOptics: false, view: 'front', clip: { enabled: false }, layers: { retina: 'ghost', lens: 'off', cornea: 'off', macula: 'on', 'optic-disc': 'on' } });
     store.getState().applyPreset('chambers');

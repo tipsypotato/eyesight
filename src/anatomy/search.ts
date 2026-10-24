@@ -22,15 +22,29 @@ const aliases = new Map<string, readonly StructureId[]>([
   ['zeis腺', ['zeis-glands']],
   ['moll', ['moll-glands']], ['莫氏腺', ['moll-glands']], ['睫毛汗腺', ['moll-glands']],
   ['moll腺', ['moll-glands']],
+  ['眶壁', ['orbital-roof', 'orbital-floor', 'medial-orbital-wall', 'lateral-orbital-wall']],
+  ['orbital walls', ['orbital-roof', 'orbital-floor', 'medial-orbital-wall', 'lateral-orbital-wall']],
+  ['眶脂肪', ['intraconal-fat', 'extraconal-fat']], ['orbital fat', ['intraconal-fat', 'extraconal-fat']],
+  ['眶底', ['orbital-floor']], ['眶下壁', ['orbital-floor']],
+  ['cn ii', ['optic-nerve']], ['cn 2', ['optic-nerve']],
+  ['cn iii', ['oculomotor-nerve']], ['cn 3', ['oculomotor-nerve']],
+  ['cn iv', ['trochlear-nerve']], ['cn 4', ['trochlear-nerve']],
+  ['cn vi', ['abducens-nerve']], ['cn 6', ['abducens-nerve']],
+  ['v1', ['frontal-nerve', 'lacrimal-nerve', 'nasociliary-nerve']],
+  ['cn v1', ['frontal-nerve', 'lacrimal-nerve', 'nasociliary-nerve']],
+  ['三叉神经眼支', ['frontal-nerve', 'lacrimal-nerve', 'nasociliary-nerve']],
+  ['ophthalmic nerve', ['frontal-nerve', 'lacrimal-nerve', 'nasociliary-nerve']],
+  ['sov', ['superior-ophthalmic-vein']], ['iov', ['inferior-ophthalmic-vein']],
 ]);
 
 export function searchStructures(query: string): StructureSearchResult {
   const normalized = query.trim().toLowerCase();
   const exact = STRUCTURES.filter(item => [item.id, item.name.zh, item.name.en, item.latin].some(name => name.toLowerCase() === normalized));
-  const ids = aliases.get(normalized) ?? (exact.length ? exact.map(item => item.id) : undefined);
+  const ids = aliases.get(normalized) ?? (exact.length ? exact.map(item => item.id) : /^(?:cn\s*[ivx\d]+|v\d+)$/.test(normalized) ? [] : undefined);
   const group = normalized === '眼底' || normalized === 'fundus' ? 'fundus'
     : ['眼外肌', '眼外肌群', 'extraocular', 'extraocular muscles', 'eom', 'eoms'].includes(normalized) ? 'extraocular'
-    : ['结膜与眼睑', '眼睑', '眼皮', 'eyelids', 'eyelid', 'conjunctiva & eyelids', 'adnexa'].includes(normalized) ? 'adnexa' : null;
+    : ['结膜与眼睑', '眼睑', '眼皮', 'eyelids', 'eyelid', 'conjunctiva & eyelids', 'adnexa'].includes(normalized) ? 'adnexa'
+    : ['眼眶', '眼眶与内容物', '眶内容物', 'orbit', 'orbital contents', 'orbit & contents'].includes(normalized) ? 'orbit' : null;
   const items = STRUCTURES.filter(item => group ? item.group === group : ids ? ids.includes(item.id)
     : `${item.name.zh} ${item.name.en} ${item.latin} ${item.id}`.toLowerCase().includes(normalized));
   return { items, ambiguous: normalized === '黑眼珠', group,
