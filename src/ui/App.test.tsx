@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Mode } from '../anatomy/types';
+import * as search from '../anatomy/search';
 import { messages } from '../content/messages';
 import * as optics from '../engine/optics';
 import { createEyeStore, eyeStore } from '../state/store';
@@ -67,6 +68,37 @@ describe('responsive workspace markup', () => {
     expect(store.getState()).toMatchObject({ presetId: 'extraocular', selectedId: 'superior-oblique' });
     store.getState().setMode('optics');
     expect(renderApp(false)).not.toContain(messages.presetExtraocular.en);
+  });
+  it.each(['zh', 'en'] as const)('offers the eyelid preset only in exploration in %s', lang => {
+    store.getState().setLanguage(lang); store.getState().applyPreset('eyelids');
+    const label = messages.presetEyelids[lang].replace('&', '&amp;');
+    expect(renderApp(false)).toMatch(new RegExp(`<button[^>]*aria-pressed="true"[^>]*>${label}</button>`));
+    for (const mode of ['optics', 'tour', 'quiz', 'disease'] as const) {
+      store.getState().setMode(mode);
+      expect(renderApp(false)).not.toContain(`>${label}</button>`);
+    }
+  });
+  it.each(['zh', 'en'] as const)('keeps gland details and observation actions available in %s', lang => {
+    store.getState().setLanguage(lang); store.getState().applyPreset('eyelids');
+    store.getState().select('meibomian-glands', true);
+    for (const narrow of [false, true]) {
+      const html = renderApp(narrow);
+      expect(html).toContain(lang === 'zh' ? '睑板腺' : 'Meibomian glands');
+      expect(html).toContain('Glandulae tarsales');
+      expect(html).toContain(messages.isolate[lang]);
+      expect(html).toContain(messages.focus[lang]);
+      expect(html).toContain(messages.anatomyCount[lang]);
+    }
+    expect(store.getState()).toMatchObject({ presetId: 'eyelids', selectedId: 'meibomian-glands' });
+  });
+  it.each(['zh', 'en'] as const)('describes eyelid group search results without a fundus hint in %s', lang => {
+    const result = search.searchStructures('eyelids');
+    vi.spyOn(search, 'searchStructures').mockReturnValue(result);
+    store.getState().setLanguage(lang);
+    const html = renderApp(false);
+    expect(html).not.toContain(messages.fundusGroup[lang]);
+    expect(html).toContain(lang === 'zh' ? '结膜与眼睑分组' : 'Conjunctiva and eyelid group');
+    expect(html.match(/class="structure-row/g)).toHaveLength(9);
   });
   it.each<{ mode: Mode; tabs: string[]; active: string }>([
     { mode: 'explore', tabs: ['structures', 'parameters', 'explanation'], active: 'structures' },

@@ -2,11 +2,12 @@ import { expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { createEyeStore } from '../state/store';
 import { EyeEngine } from './EyeEngine';
-import type { CameraSnapshot, SceneState } from '../anatomy/types';
+import { ADNEXAL_IDS, type CameraSnapshot, type SceneState } from '../anatomy/types';
 import { buildEye } from './geometry';
 import { SectionTool } from './section';
 import { Animator } from './animator';
 import { CameraRig } from './camera';
+import { visibleSurface } from './visibility';
 import { opticsInputForPreset, traceOptics, type TraceOpticsResult } from './optics';
 
 class EngineElementStub extends EventTarget {
@@ -1095,6 +1096,58 @@ it('focuses a long extraocular muscle at a readable scale with its full course i
     const height = Math.max(...projected.map(p => p.y)) - Math.min(...projected.map(p => p.y));
     expect(Math.max(width, height)).toBeGreaterThan(0.8);
     expect(engine.isStructureVisible('superior-rectus')).toBe(true);
+  } finally { cleanup(); }
+});
+
+it('frames the eyelid layers at a readable scale and fits their exploded extent', () => {
+  const { engine, internal, store, sync, cleanup } = diseaseEngineFixture();
+  try {
+    expect(internal.eye.parts.has('eyelid-skin')).toBe(true);
+    store.getState().revealStructure('eyelid-skin'); sync();
+    engine.focus('eyelid-skin'); internal.camera.updateMatrixWorld();
+    const bounds = new THREE.Box3().setFromObject(internal.eye.parts.get('eyelid-skin')!.group);
+    const projected: THREE.Vector3[] = [];
+    for (const x of [bounds.min.x, bounds.max.x]) for (const y of [bounds.min.y, bounds.max.y]) for (const z of [bounds.min.z, bounds.max.z]) projected.push(new THREE.Vector3(x, y, z).project(internal.camera));
+    expect(Math.max(...projected.map(p => Math.abs(p.x)))).toBeLessThan(1);
+    expect(Math.max(...projected.map(p => Math.abs(p.y)))).toBeLessThan(1);
+    expect(Math.max(...projected.map(p => p.x)) - Math.min(...projected.map(p => p.x))).toBeGreaterThan(0.8);
+    store.getState().applyPreset('eyelids'); store.getState().setExplode(1); sync(); engine.setView('front');
+    internal.camera.updateMatrixWorld();
+    for (const id of ADNEXAL_IDS) {
+      const box = new THREE.Box3().setFromObject(internal.eye.parts.get(id)!.group);
+      for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
+        const point = new THREE.Vector3(x, y, z).project(internal.camera);
+        expect(Math.abs(point.x), id).toBeLessThan(1);
+        expect(Math.abs(point.y), id).toBeLessThan(1);
+      }
+    }
+  } finally { cleanup(); }
+});
+
+it('selects, highlights, isolates and sections every conjunctival and eyelid structure', () => {
+  const { engine, internal, store, sync, cleanup } = diseaseEngineFixture();
+  try {
+    for (const id of ADNEXAL_IDS) {
+      expect(internal.eye.parts.has(id), id).toBe(true);
+      store.getState().applyPreset('eyelids'); store.getState().select(id, true); store.getState().toggleIsolate(); sync();
+      engine.focus(id); internal.camera.updateMatrixWorld();
+      const part = internal.eye.parts.get(id)!;
+      const surface = visibleSurface(part, internal.eye.parts, store.getState(), internal.camera);
+      expect(surface, id).not.toBeNull();
+      const point = surface!.project(internal.camera);
+      const pick = () => internal.pickStructure((point.x + 1) * 240, (1 - point.y) * 300);
+      expect(pick(), id).toBe(id);
+      const meshes: THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhysicalMaterial>[] = [];
+      part.group.traverse(object => { if (object instanceof THREE.Mesh) meshes.push(object as typeof meshes[number]); });
+      expect(meshes.some(mesh => mesh.material.emissiveIntensity > 0.3), id).toBe(true);
+      for (const axis of ['sagittal', 'axial', 'coronal'] as const) {
+        store.getState().setClip({ enabled: true, axis, offset: 0 }); sync();
+        expect(meshes.every(mesh => mesh.material.clippingPlanes?.length === 1), id).toBe(true);
+      }
+      store.getState().setClip({ enabled: false }); store.getState().cycleLayer(id); sync();
+      expect(pick(), `${id} ghost`).toBeNull();
+      store.getState().cycleLayer(id); sync(); expect(part.group.visible, id).toBe(false);
+    }
   } finally { cleanup(); }
 });
 

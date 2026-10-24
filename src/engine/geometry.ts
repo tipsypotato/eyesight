@@ -4,6 +4,7 @@ import { createIrisTextures } from './irisTexture';
 import { createFundusDetails } from './fundus';
 import { BASE_PUPIL_RADIUS } from './optics';
 import { createExtraocularMuscles } from './extraocularMuscles';
+import { createEyeAdnexa } from './eyelids';
 
 export interface EyePart {
   id: StructureId;
@@ -23,6 +24,9 @@ const COLORS: Record<StructureId, string> = {
   'superior-rectus': '#bb7265', 'inferior-rectus': '#b96d60',
   'medial-rectus': '#ba7866', 'lateral-rectus': '#ae685e',
   'superior-oblique': '#c3836c', 'inferior-oblique': '#be8069',
+  'bulbar-conjunctiva': '#efb6a8', 'palpebral-conjunctiva': '#d97e78',
+  'eyelid-skin': '#d9aa91', 'orbicularis-oculi': '#bb7169', 'levator-palpebrae': '#b9786a',
+  'tarsal-plates': '#d9c6aa', 'meibomian-glands': '#dfb751', 'zeis-glands': '#d89b48', 'moll-glands': '#b78dba',
 };
 
 const profile = (points: [number, number][]) => {
@@ -124,7 +128,7 @@ export function setPosteriorStretch(root: THREE.Group, factor: number) {
   root.userData.posteriorScale = factor;
   const vertex = new THREE.Vector3();
   root.traverse(object => {
-    if (!(object instanceof THREE.Mesh || object instanceof THREE.Line) || object.userData.cap || object.userData.extraocular) return;
+    if (!(object instanceof THREE.Mesh || object instanceof THREE.Line) || object.userData.cap || object.userData.extraocular || object.userData.adnexal) return;
     const geometry = object.geometry;
     const position = geometry.getAttribute('position');
     if (!geometry.userData.originalPositions) geometry.userData.originalPositions = new Float32Array(position.array);
@@ -232,8 +236,8 @@ export function buildEye(colors: Partial<Record<StructureId, string>> = {}, side
     parts.get(id)!.group.add(object);
     return object;
   };
-  const tube = (id: StructureId, points: THREE.Vector3[], radius: number, color?: string) => {
-    const geometry = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), 30, radius, 6, false);
+  const tube = (id: StructureId, points: THREE.Vector3[], radius: number, color?: string, radialSegments = 6) => {
+    const geometry = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points), 30, radius, radialSegments, false);
     const object = mesh(id, geometry);
     if (color) {
       object.material = object.material.clone();
@@ -363,12 +367,18 @@ export function buildEye(colors: Partial<Record<StructureId, string>> = {}, side
 
   part('optic-nerve', [0.44, 0.03, -1.23], [0.10, 0, -0.40]);
   const nervePoints = [new THREE.Vector3(0.31, 0.035, -0.87), new THREE.Vector3(0.38, 0.03, -1.10), new THREE.Vector3(0.51, 0.045, -1.37), new THREE.Vector3(0.61, 0.065, -1.62)];
-  tube('optic-nerve', nervePoints, 0.105);
+  const nerve = tube('optic-nerve', nervePoints, 0.105, undefined, 48);
+  nerve.name = 'optic-nerve-trunk';
+  const nervePath = (nerve.geometry as THREE.TubeGeometry).parameters.path;
+  const endFace = new THREE.CircleGeometry(0.105, 48);
+  endFace.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), nervePath.getTangent(1)));
+  endFace.translate(...nervePath.getPoint(1).toArray());
+  mesh('optic-nerve', endFace).name = 'optic-nerve-distal-face';
   for (let i = 0; i < 8; i++) {
     const angle = i * Math.PI * 2 / 8;
     tube('optic-nerve', nervePoints.map(p => p.clone().add(new THREE.Vector3(Math.cos(angle) * 0.088, Math.sin(angle) * 0.088, 0))), 0.008, '#eed4a0');
   }
-  for (const item of createExtraocularMuscles({ ...COLORS, ...colors })) {
+  for (const item of [...createExtraocularMuscles({ ...COLORS, ...colors }), ...createEyeAdnexa({ ...COLORS, ...colors })]) {
     root.add(item.group);
     parts.set(item.id, item);
   }

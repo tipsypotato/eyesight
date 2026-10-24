@@ -31,18 +31,37 @@ describe('bilingual anatomy content', () => {
         expect(source.title.trim().length).toBeGreaterThan(5);
         const url = new URL(source.url);
         expect(url.protocol).toBe('https:');
-        expect(['www.nei.nih.gov', 'eyewiki.aao.org', 'www.ncbi.nlm.nih.gov', 'www.webvision.pitt.edu', 'nba.uth.tmc.edu']).toContain(url.hostname);
+        expect(['www.nei.nih.gov', 'eyewiki.aao.org', 'www.ncbi.nlm.nih.gov', 'www.webvision.pitt.edu', 'nba.uth.tmc.edu', 'histology.oit.duke.edu', 'morancore.utah.edu']).toContain(url.hostname);
       }
     }
   });
 
-  it('assigns structures to the five named display groups', () => {
-    expect(GROUPS.map(({ id }) => id).sort()).toEqual(['extraocular', 'front', 'fundus', 'inside', 'wall']);
+  it('assigns structures to the six named display groups', () => {
+    expect(GROUPS.map(({ id }) => id).sort()).toEqual(['adnexa', 'extraocular', 'front', 'fundus', 'inside', 'wall']);
     for (const group of GROUPS) {
       expectBilingual(group.name);
       expect(STRUCTURES.some((structure) => structure.group === group.id)).toBe(true);
     }
     for (const structure of STRUCTURES) expect(GROUPS.map(({ id }) => id)).toContain(structure.group);
+  });
+
+  it('distinguishes the conjunctival surfaces and eyelid tissues from globe-moving muscles', () => {
+    const adnexa = STRUCTURES.filter(({ group }) => group === 'adnexa');
+    expect(adnexa.map(({ id }) => id)).toEqual([
+      'bulbar-conjunctiva', 'palpebral-conjunctiva', 'eyelid-skin', 'orbicularis-oculi',
+      'levator-palpebrae', 'tarsal-plates', 'meibomian-glands', 'zeis-glands', 'moll-glands',
+    ]);
+    for (const structure of adnexa) expect(structure.kind).toBe('tissue');
+    const bulbar = adnexa.find(({ id }) => id === 'bulbar-conjunctiva')!;
+    expect(bulbar.fact.zh).toMatch(/不覆盖角膜/);
+    expect(bulbar.fact.en).toMatch(/does not cover the cornea/);
+    const palpebral = adnexa.find(({ id }) => id === 'palpebral-conjunctiva')!;
+    expect(palpebral.position.zh).toContain('穹隆');
+    expect(palpebral.position.en).toContain('fornix');
+    expect(adnexa.find(({ id }) => id === 'levator-palpebrae')!.function.en).toContain('upper eyelid');
+    expect(adnexa.find(({ id }) => id === 'tarsal-plates')!.fact.en).toContain('not cartilage');
+    expect(adnexa.find(({ id }) => id === 'zeis-glands')!.summary.en).toContain('Sebaceous');
+    expect(adnexa.find(({ id }) => id === 'moll-glands')!.summary.en).toContain('apocrine sweat');
   });
 
   it('describes the six globe-moving muscles separately from eyelid and intraocular muscles', () => {

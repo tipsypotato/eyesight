@@ -13,6 +13,9 @@ const extraocularAnatomy = { title: 'NCBI StatPearls · Eye Extraocular Muscles'
 const extraocularActions = { title: 'NCBI StatPearls · Extraocular muscle actions and innervation', url: 'https://www.ncbi.nlm.nih.gov/sites/books/NBK573075/table/article-133080.table1/?report=objectonly' };
 const superiorObliqueAnatomy = { title: 'NCBI StatPearls · Eye Superior Oblique Muscle', url: 'https://www.ncbi.nlm.nih.gov/sites/books/NBK537152/' };
 const inferiorObliqueAnatomy = { title: 'NCBI StatPearls · Inferior Oblique Muscle', url: 'https://www.ncbi.nlm.nih.gov/sites/books/NBK545253/' };
+const eyelidAnatomy = { title: 'NCBI StatPearls · Anatomy, Head and Neck: Eyelid', url: 'https://www.ncbi.nlm.nih.gov/books/NBK482304/' };
+const eyelidHistology = { title: 'Duke University · Histology of the Eye and Eyelid', url: 'https://histology.oit.duke.edu/NormalBody/EyeEar/EyeEar.html' };
+const eyelidLayers = { title: 'University of Utah Moran CORE · Eyelids', url: 'https://morancore.utah.edu/section-04-ophthalmic-pathology/eyelid/' };
 
 export const GROUPS: { id: GroupId; name: Localized }[] = [
   { id: 'wall', name: { zh: '眼球壁', en: 'Eye wall' } },
@@ -20,6 +23,7 @@ export const GROUPS: { id: GroupId; name: Localized }[] = [
   { id: 'inside', name: { zh: '眼房与玻璃体', en: 'Chambers & vitreous' } },
   { id: 'fundus', name: { zh: '眼底与视神经', en: 'Fundus & optic nerve' } },
   { id: 'extraocular', name: { zh: '眼外肌', en: 'Extraocular muscles' } },
+  { id: 'adnexa', name: { zh: '结膜与眼睑', en: 'Conjunctiva & eyelids' } },
 ];
 
 export const STRUCTURES: Structure[] = [
@@ -222,6 +226,78 @@ export const STRUCTURES: Structure[] = [
     position: { zh: '从鼻侧前部眶底起始，绕过下直肌下方，向后颞侧走行并止于赤道后的下颞侧巩膜。', en: 'Starts at the anterior nasal orbital floor, passes beneath the inferior rectus, and runs posterotemporally to the inferotemporal sclera behind the equator.' },
     fact: { zh: '由动眼神经（第 III 脑神经）支配；外旋指眼球上极转向颞侧。', en: 'Supplied by the oculomotor nerve (CN III). Extorsion rotates the upper pole of the eye toward the temple.' },
     sources: [inferiorObliqueAnatomy, extraocularActions],
+  },
+  {
+    id: 'bulbar-conjunctiva', name: { zh: '球结膜', en: 'Bulbar conjunctiva' }, latin: 'Tunica conjunctiva bulbi', group: 'adnexa', color: '#e8a5a0', kind: 'tissue',
+    summary: { zh: '覆盖前部巩膜表面的薄黏膜。', en: 'A thin mucous membrane over the anterior sclera.' },
+    function: { zh: '参与眼表润滑和防护，使眼球与眼睑间保持湿润。', en: 'Helps lubricate and protect the ocular surface beneath the eyelids.' },
+    position: { zh: '从结膜穹隆延伸到角膜缘，位于巩膜表面。', en: 'Extends over the sclera from the conjunctival fornix to the limbus.' },
+    fact: { zh: '球结膜不覆盖角膜；其下方的白色坚韧组织是巩膜。', en: 'It does not cover the cornea; the firm white layer beneath it is the sclera.' },
+    sources: [eyelidAnatomy, histology],
+  },
+  {
+    id: 'palpebral-conjunctiva', name: { zh: '睑结膜', en: 'Palpebral conjunctiva' }, latin: 'Tunica conjunctiva palpebrarum', group: 'adnexa', color: '#d9898c', kind: 'tissue',
+    summary: { zh: '衬覆上下眼睑内面的黏膜。', en: 'The mucous lining of the upper and lower eyelids.' },
+    function: { zh: '与泪膜共同润滑眼表；结膜杯状细胞分泌黏蛋白。', en: 'Works with the tear film to lubricate the eye; conjunctival goblet cells secrete mucins.' },
+    position: { zh: '位于睑板后方，在穹隆处反折并与球结膜连续。', en: 'Behind the tarsal plates, reflecting at the fornix to continue as bulbar conjunctiva.' },
+    fact: { zh: '睑结膜与球结膜是连续黏膜的不同部分。', en: 'Palpebral and bulbar conjunctiva are parts of one continuous membrane.' },
+    sources: [eyelidHistology, histology],
+  },
+  {
+    id: 'eyelid-skin', name: { zh: '眼睑皮肤', en: 'Eyelid skin' }, latin: 'Cutis palpebrarum', group: 'adnexa', color: '#d7a28b', kind: 'tissue',
+    summary: { zh: '覆盖眼睑外面的薄皮肤，由表皮和真皮组成。', en: 'Thin skin on the outer eyelid, composed of epidermis and dermis.' },
+    function: { zh: '形成外部屏障，并随眼睑活动保护眼表。', en: 'Provides an outer barrier and moves with the eyelid to protect the eye.' },
+    position: { zh: '眼轮匝肌浅面，睫毛位于前部睑缘。', en: 'Superficial to orbicularis oculi, with eyelashes at the anterior lid margin.' },
+    fact: { zh: '睫毛及其毛囊属于皮肤附属结构；本模型的睫毛随皮肤一同显示。', en: 'Eyelashes and their follicles are skin appendages; the lashes in this model are displayed with the skin.' },
+    sources: [eyelidHistology, histology],
+  },
+  {
+    id: 'orbicularis-oculi', name: { zh: '眼轮匝肌', en: 'Orbicularis oculi' }, latin: 'Musculus orbicularis oculi', group: 'adnexa', color: '#bd756c', kind: 'tissue',
+    summary: { zh: '环绕睑裂的骨骼肌，是眼睑的主要闭合肌。', en: 'Skeletal muscle surrounding the eyelid opening and primarily responsible for closure.' },
+    function: { zh: '闭合眼睑，参与眨眼和泪液分布。', en: 'Closes the eyelids during blinking and helps spread tears.' },
+    position: { zh: '位于眼睑皮肤深面、睑板前方，并延伸至眶缘周围。', en: 'Deep to eyelid skin, in front of the tarsal plates, and extending around the orbital rim.' },
+    fact: { zh: '由面神经支配，作用是闭眼，并非转动眼球。', en: 'The facial nerve supplies this muscle; it closes the eyelids rather than rotating the globe.' },
+    sources: [eyelidAnatomy, eyelidHistology],
+  },
+  {
+    id: 'levator-palpebrae', name: { zh: '提上睑肌', en: 'Levator palpebrae superioris' }, latin: 'Musculus levator palpebrae superioris', group: 'adnexa', color: '#bc877a', kind: 'tissue',
+    summary: { zh: '从眶后部走向上睑的骨骼肌，前端延续为腱膜。', en: 'A skeletal muscle extending from the posterior orbit into an aponeurosis at the upper eyelid.' },
+    function: { zh: '抬起上眼睑，帮助睁眼。', en: 'Raises the upper eyelid to open the eye.' },
+    position: { zh: '在眼球上方前行，腱膜连接上睑的睑板与皮肤等结构。', en: 'Runs above the globe; its aponeurosis attaches to upper eyelid structures including the tarsus and skin.' },
+    fact: { zh: '由动眼神经支配；它提起上睑，与上直肌转动眼球的作用不同。', en: 'Supplied by the oculomotor nerve, it lifts the upper lid while superior rectus moves the globe.' },
+    sources: [eyelidAnatomy, eyelidHistology],
+  },
+  {
+    id: 'tarsal-plates', name: { zh: '睑板', en: 'Tarsal plates' }, latin: 'Tarsi palpebrarum', group: 'adnexa', color: '#ccbb98', kind: 'tissue',
+    summary: { zh: '上下眼睑内较坚韧的致密结缔组织板。', en: 'Firm plates of dense connective tissue within the upper and lower eyelids.' },
+    function: { zh: '支撑眼睑形状，并容纳睑板腺。', en: 'Support eyelid shape and house the meibomian glands.' },
+    position: { zh: '靠近睑缘，位于眼轮匝肌后方、睑结膜前方。', en: 'Near the lid margins, behind orbicularis oculi and in front of palpebral conjunctiva.' },
+    fact: { zh: '人的睑板不是软骨；上睑板通常比下睑板高。', en: 'Human tarsal plates are not cartilage; the upper plate is usually taller than the lower one.' },
+    sources: [eyelidAnatomy, eyelidLayers],
+  },
+  {
+    id: 'meibomian-glands', name: { zh: '睑板腺', en: 'Meibomian glands' }, latin: 'Glandulae tarsales', group: 'adnexa', color: '#dec17d', kind: 'tissue',
+    summary: { zh: '嵌在睑板内、沿睑缘排列的特化皮脂腺。', en: 'Specialized sebaceous glands embedded in the tarsal plates along the eyelid margins.' },
+    function: { zh: '分泌睑脂，参与泪膜脂质层形成并减少泪液蒸发。', en: 'Secrete meibum that contributes to tear-film lipids and limits evaporation.' },
+    position: { zh: '位于上下睑板内，导管向睑缘开口，开口在睫毛后方。', en: 'Within both tarsal plates, with ducts opening at the lid margin behind the eyelashes.' },
+    fact: { zh: '睑板腺与泪腺不同：其主要分泌脂质，而非水样泪液。', en: 'Unlike the lacrimal gland, these glands primarily supply lipids rather than watery tears.' },
+    sources: [histology, eyelidLayers],
+  },
+  {
+    id: 'zeis-glands', name: { zh: 'Zeis 腺（睫毛皮脂腺）', en: 'Glands of Zeis' }, latin: 'Glandulae sebaceae ciliares', group: 'adnexa', color: '#d3a757', kind: 'tissue',
+    summary: { zh: '附着于睫毛毛囊的小皮脂腺。', en: 'Sebaceous glands associated with eyelash follicles.' },
+    function: { zh: '向睫毛毛囊分泌皮脂，润滑睫毛。', en: 'Release sebum into eyelash follicles to lubricate the lashes.' },
+    position: { zh: '前部睑缘，紧邻睫毛毛囊。', en: 'At the anterior lid margin, next to eyelash follicles.' },
+    fact: { zh: 'Zeis 腺连接睫毛毛囊，睑板腺则位于更深的睑板内。', en: 'Zeis glands connect to lash follicles; meibomian glands lie deeper within the tarsal plates.' },
+    sources: [eyelidLayers, histology],
+  },
+  {
+    id: 'moll-glands', name: { zh: 'Moll 腺（睫毛汗腺）', en: 'Glands of Moll' }, latin: 'Glandulae ciliares', group: 'adnexa', color: '#ca9183', kind: 'tissue',
+    summary: { zh: '睑缘附近的特化顶泌汗腺。', en: 'Modified apocrine sweat glands near the lid margin.' },
+    function: { zh: '其分泌物含有参与眼表防护的抗菌成分。', en: 'Their secretions contain antimicrobial components that help protect the ocular surface.' },
+    position: { zh: '睫毛毛囊附近，导管可通向毛囊。', en: 'Near eyelash follicles, into which their ducts may open.' },
+    fact: { zh: 'Moll 腺是汗腺；邻近的 Zeis 腺是皮脂腺。', en: 'Moll glands are sweat glands; neighboring Zeis glands are sebaceous glands.' },
+    sources: [eyelidHistology, histology],
   },
 ];
 

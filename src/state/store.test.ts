@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { createEyeStore } from './store';
-import { SCENE_PRESETS, STRUCTURE_IDS, type CameraSnapshot, type LayerMode, type OpticsExperiment, type OpticsInput, type OpticsPreset, type PhysiologyKind } from '../anatomy/types';
+import { ADNEXAL_IDS, SCENE_PRESETS, STRUCTURE_IDS, type CameraSnapshot, type LayerMode, type OpticsExperiment, type OpticsInput, type OpticsPreset, type PhysiologyKind } from '../anatomy/types';
 
 describe('learning state', () => {
   it('keeps a canvas fundus selection in the current section without changing other layers', () => {
@@ -527,6 +527,56 @@ describe('comparison and physiology', () => {
 
 describe('observation presets and scene undo', () => {
   const muscles = ['superior-rectus', 'inferior-rectus', 'medial-rectus', 'lateral-rectus', 'superior-oblique', 'inferior-oblique'] as const;
+  it('shows the conjunctiva and eyelid layers with transparent outer layers and preserves isolation across workspaces', () => {
+    const store = createEyeStore();
+    store.getState().applyPreset('eyelids');
+    expect(store.getState()).toMatchObject({ presetId: 'eyelids', clip: { enabled: false }, showOptics: false, view: 'oblique', layers: { sclera: 'on', choroid: 'on', retina: 'on', cornea: 'ghost', iris: 'on', pupil: 'on', lens: 'off', vitreous: 'off', 'retinal-vessels': 'off', 'optic-nerve': 'off', 'eyelid-skin': 'ghost', 'orbicularis-oculi': 'ghost', 'tarsal-plates': 'ghost' } });
+    for (const id of ['bulbar-conjunctiva', 'palpebral-conjunctiva', 'levator-palpebrae', 'meibomian-glands', 'zeis-glands', 'moll-glands'] as const) expect(store.getState().layers[id]).toBe('on');
+    const layers = { ...store.getState().layers };
+    store.getState().select('meibomian-glands', true); store.getState().toggleIsolate();
+    store.getState().select('palpebral-conjunctiva', true);
+    store.getState().setClip({ enabled: true, axis: 'coronal', offset: 0.3 }); store.getState().setExplode(0.6);
+    store.getState().setMode('optics'); store.getState().setLanguage('en'); store.getState().setMode('explore');
+    expect(store.getState()).toMatchObject({ selectedId: 'palpebral-conjunctiva', isolateId: 'palpebral-conjunctiva', lang: 'en', explode: 0.6, clip: { enabled: true, axis: 'coronal', offset: 0.3 } });
+    store.getState().toggleIsolate(); expect(store.getState().layers).toEqual(layers);
+  });
+  it.each(ADNEXAL_IDS)('reveals an obscured %s with translucent context and can undo it', id => {
+    const store = createEyeStore(); const before = store.getState();
+    store.getState().revealStructure(id);
+    expect(store.getState()).toMatchObject({ selectedId: id, revealPreset: 'adnexalView', clip: { enabled: false }, view: 'oblique', layers: { [id]: 'on', sclera: 'ghost', cornea: 'ghost', choroid: 'on', retina: 'on', lens: 'off', vitreous: 'off', 'retinal-vessels': 'off', 'optic-nerve': 'off' } });
+    for (const other of ADNEXAL_IDS) if (other !== id) expect(store.getState().layers[other]).toBe('ghost');
+    store.getState().undoReveal();
+    expect(store.getState()).toMatchObject({ layers: before.layers, clip: before.clip, selectedId: before.selectedId });
+  });
+  it('restores an eyelid workspace after refresh, including the layers saved before isolation', () => {
+    const data = new Map<string, string>();
+    const storage = { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => { data.set(key, value); } };
+    const store = createEyeStore(storage);
+    store.getState().applyPreset('eyelids'); store.getState().select('meibomian-glands', true);
+    const layers = { ...store.getState().layers };
+    store.getState().toggleIsolate(); store.getState().setLanguage('en');
+    store.getState().setClip({ enabled: true, axis: 'axial', offset: -0.4 }); store.getState().setExplode(0.5);
+    store.getState().flushProgress({ position: [3, 2, 4], target: [0.1, 0, 0], zoom: 1.2 });
+    const restored = createEyeStore(storage);
+    expect(restored.getState()).toMatchObject({ lang: 'en', selectedId: 'meibomian-glands', isolateId: 'meibomian-glands', layers, isolationLayers: layers, explode: 0.5, clip: { enabled: true, axis: 'axial', offset: -0.4 }, camera: { position: [3, 2, 4], target: [0.1, 0, 0], zoom: 1.2 }, storageNotice: null });
+    restored.getState().toggleIsolate(); expect(restored.getState().layers).toEqual(layers);
+  });
+  it('keeps new eyelid structures hidden in established presets, tours, quizzes and disease chapters', () => {
+    const store = createEyeStore();
+    const hidden = () => { for (const id of ADNEXAL_IDS) expect(store.getState().layers[id]).toBe('off'); };
+    hidden();
+    for (const preset of SCENE_PRESETS.filter(id => id !== 'eyelids')) {
+      store.getState().applyPreset('eyelids'); store.getState().applyPreset(preset); hidden();
+    }
+    for (const lesson of ['anatomy', 'vision', 'myopia']) { store.getState().startLesson(lesson); hidden(); }
+    store.getState().startQuiz(); hidden();
+    for (const disease of ['cataract', 'glaucoma', 'strabismus', 'amblyopia'] as const) { store.getState().openDisease(disease); hidden(); }
+  });
+  it.each(['optics', 'tour', 'quiz', 'disease'] as const)('limits the eyelid preset to exploration rather than %s', mode => {
+    const store = createEyeStore(); store.getState().setMode(mode);
+    const before = store.getState(); store.getState().applyPreset('eyelids');
+    expect(store.getState()).toBe(before);
+  });
   it('reveals all six muscles with globe context and restores their layers across workspaces', () => {
     const store = createEyeStore();
     store.getState().applyPreset('extraocular');
@@ -586,13 +636,13 @@ describe('observation presets and scene undo', () => {
     const a = clean.getState(), b = dirty.getState();
     expect(b.layers).toEqual(a.layers); expect(b.clip).toEqual(a.clip);
     expect(b).toMatchObject({ presetId: preset, isolateId: null, isolationLayers: null, explode: 0, labels: false, view: a.view, showOptics: a.showOptics });
-    expect(b.selectedId).toBe(preset === 'fundus' || preset === 'extraocular' ? null : 'lens');
+    expect(b.selectedId).toBe(preset === 'fundus' || preset === 'extraocular' || preset === 'eyelids' ? null : 'lens');
   });
   it('uses the specified wall, fundus, chamber and optical displays without resetting optical parameters', () => {
     const store = createEyeStore();
     store.getState().setOptics('myopia'); store.getState().applyPreset('optical-path');
     expect(store.getState()).toMatchObject({ opticsPreset: 'myopia', showOptics: true, view: 'side', clip: { enabled: true, axis: 'sagittal', offset: 0, keepSide: 'negative' } });
-    for (const id of STRUCTURE_IDS) expect(store.getState().layers[id]).toBe(muscles.some(muscle => muscle === id) ? 'off' : 'ghost');
+    for (const id of STRUCTURE_IDS) expect(store.getState().layers[id]).toBe([...muscles, ...ADNEXAL_IDS].some(part => part === id) ? 'off' : 'ghost');
     store.getState().applyPreset('fundus');
     expect(store.getState()).toMatchObject({ showOptics: false, view: 'front', clip: { enabled: false }, layers: { retina: 'ghost', lens: 'off', cornea: 'off', macula: 'on', 'optic-disc': 'on' } });
     store.getState().applyPreset('chambers');

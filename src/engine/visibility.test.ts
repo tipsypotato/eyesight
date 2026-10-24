@@ -172,4 +172,17 @@ describe('visible anatomy surface', () => {
       expect(after!.distanceTo(before!)).toBeLessThan(1e-8);
     } finally { eye.dispose(); }
   });
+
+  it('keeps the upper eyelid retractor label fixed when only the posterior globe lengthens', () => {
+    const { eye, surface } = setup(['levator-palpebrae']);
+    try {
+      expect(eye.parts.has('levator-palpebrae')).toBe(true);
+      const before = surface('levator-palpebrae');
+      expect(before).not.toBeNull();
+      setPosteriorStretch(eye.root, 1.4);
+      const after = surface('levator-palpebrae', 1.4);
+      expect(after).not.toBeNull();
+      expect(after!.distanceTo(before!)).toBeLessThan(1e-8);
+    } finally { eye.dispose(); }
+  });
 });

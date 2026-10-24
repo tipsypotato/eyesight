@@ -71,6 +71,35 @@ describe('structure search', () => {
     expect(ids('iris')).toEqual(['iris']);
     expect(ids('anterior chamber')).toEqual(['anterior-chamber']);
   });
+
+  it('finds both conjunctival surfaces without expanding an exact surface query', () => {
+    for (const query of ['结膜', 'Conjunctiva']) expect(ids(query)).toEqual(['bulbar-conjunctiva', 'palpebral-conjunctiva']);
+    for (const query of ['球结膜', 'bulbar conjunctiva', 'Tunica conjunctiva bulbi']) expect(ids(query)).toEqual(['bulbar-conjunctiva']);
+    for (const query of ['睑结膜', 'palpebral conjunctiva']) expect(ids(query)).toEqual(['palpebral-conjunctiva']);
+  });
+
+  it('returns the conjunctiva and eyelid group through bilingual group aliases', () => {
+    const members = STRUCTURES.filter(item => item.group === 'adnexa');
+    expect(members).toHaveLength(9);
+    for (const query of ['结膜与眼睑', '眼睑', '眼皮', 'Eyelids', 'eyelid', 'Conjunctiva & eyelids', 'adnexa']) {
+      const result = searchStructures(query);
+      expect(result.group).toBe('adnexa');
+      expect(result.items).toEqual(members);
+      expect(result.ambiguous).toBe(false);
+    }
+  });
+
+  it('resolves eyelid glands and muscles without advertising an unavailable disease chapter', () => {
+    for (const query of ['睑板腺', 'Meibomian', 'tarsal glands', 'MGD', 'meibomian gland dysfunction', '睑板腺功能障碍']) {
+      expect(ids(query)).toEqual(['meibomian-glands']);
+      expect(searchStructures(query).relatedDisease).toBe(false);
+    }
+    for (const query of ['Zeis', 'Zeiss', 'Zeis腺', 'Zeis 腺', '睫毛皮脂腺', '蔡氏腺']) expect(ids(query)).toEqual(['zeis-glands']);
+    for (const query of ['Moll', 'Moll腺', 'Moll 腺', '莫氏腺', '睫毛汗腺']) expect(ids(query)).toEqual(['moll-glands']);
+    for (const query of ['眼轮匝肌', 'orbicularis oculi']) expect(ids(query)).toEqual(['orbicularis-oculi']);
+    for (const query of ['提上睑肌', 'levator palpebrae superioris']) expect(ids(query)).toEqual(['levator-palpebrae']);
+    expect(ids('上直肌')).toEqual(['superior-rectus']);
+  });
 });
 
 it('finds aqueous outflow anatomy without treating an exact cornea query as an angle query', () => {

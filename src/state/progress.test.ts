@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { STRUCTURE_IDS } from '../anatomy/types';
+import { ADNEXAL_IDS, STRUCTURE_IDS } from '../anatomy/types';
 import { CONTENT_VERSION, questionsFor } from '../content/questions';
 import { createSession, submitSessionAnswer, wrongQuestionIds } from '../modes/quiz';
 import { parseProgress, type PersistedDraft, type SavedProgress } from './progress';
@@ -15,6 +15,33 @@ const draft = (): PersistedDraft => ({
   isolationLayers: null, lessonId: null, step: 0,
 });
 const saved = (): SavedProgress => ({ schemaVersion: 2, contentVersion: CONTENT_VERSION, mode: 'explore', drafts: { explore: draft() }, lessonPositions: {}, tourTasks: {}, sessions: {}, activeSessions: {}, activeQuizId: null });
+it('restores older scenes and isolation snapshots with the new eyelid structures hidden', () => {
+  const value = saved(), scene = value.drafts.explore!;
+  scene.isolateId = 'lens'; scene.isolationLayers = { ...scene.layers };
+  for (const id of ADNEXAL_IDS) { delete (scene.layers as Partial<typeof scene.layers>)[id]; delete (scene.isolationLayers as Partial<typeof scene.layers>)[id]; }
+  const session = createSession('structures', questionsFor('structures'));
+  value.sessions[session.sessionId] = session; value.activeSessions.structures = session.sessionId;
+  const result = parseProgress(JSON.stringify(value));
+  expect(result.discarded).toBe(false);
+  expect(result.value?.drafts.explore).toMatchObject({ selectedId: 'lens', isolateId: 'lens', camera: scene.camera, clip: scene.clip });
+  for (const id of ADNEXAL_IDS) {
+    expect(result.value?.drafts.explore?.layers[id]).toBe('off');
+    expect(result.value?.drafts.explore?.isolationLayers?.[id]).toBe('off');
+  }
+  expect(result.value?.sessions).toEqual(value.sessions);
+});
+
+it('restores an eyelid preset and gland selection while rejecting invalid added layers', () => {
+  const value = saved();
+  Object.assign(value.drafts.explore!, { selectedId: 'meibomian-glands', isolateId: 'meibomian-glands', presetId: 'eyelids' });
+  const result = parseProgress(JSON.stringify(value));
+  expect(result.discarded).toBe(false);
+  expect(result.value?.drafts.explore).toEqual(value.drafts.explore);
+  const invalid = JSON.parse(JSON.stringify(value));
+  invalid.drafts.explore.layers['meibomian-glands'] = 'invalid';
+  expect(parseProgress(JSON.stringify(invalid)).value?.drafts.explore).toBeUndefined();
+});
+
 it('restores pre-muscle drafts and isolation layers without discarding the previous scene or answers', () => {
   const value = saved(), scene = value.drafts.explore!;
   scene.isolateId = 'lens'; scene.isolationLayers = { ...scene.layers };

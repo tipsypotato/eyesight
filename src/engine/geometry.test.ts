@@ -38,6 +38,33 @@ describe('adult right-eye geometry', () => {
     eye.dispose();
   });
 
+  it('uses a smooth, circular optic nerve while preserving its curved route and distal closure', () => {
+    const eye = buildEye();
+    try {
+      const nerve = eye.parts.get('optic-nerve')!.group;
+      const trunk = nerve.children.find(object => object instanceof THREE.Mesh && object.geometry instanceof THREE.TubeGeometry) as THREE.Mesh<THREE.TubeGeometry>;
+      const { path, radius, radialSegments, tubularSegments } = trunk.geometry.parameters;
+      expect(path.getPoint(0).toArray()).toEqual([0.31, 0.035, -0.87]);
+      expect(path.getPoint(1).distanceTo(new THREE.Vector3(0.61, 0.065, -1.62))).toBeLessThan(1e-10);
+      expect(radius).toBe(0.105);
+      const positions = trunk.geometry.getAttribute('position');
+      let largestChord = 0;
+      for (const ring of [0, Math.floor(tubularSegments / 2), tubularSegments]) {
+        const center = path.getPointAt(ring / tubularSegments);
+        for (let sector = 0; sector < radialSegments; sector++) {
+          const a = new THREE.Vector3().fromBufferAttribute(positions, ring * (radialSegments + 1) + sector);
+          const b = new THREE.Vector3().fromBufferAttribute(positions, ring * (radialSegments + 1) + sector + 1);
+          expect(a.distanceTo(center)).toBeCloseTo(0.105, 6);
+          largestChord = Math.max(largestChord, a.distanceTo(b));
+        }
+      }
+      expect(largestChord).toBeLessThan(0.015);
+      const end = path.getPoint(1), tangent = path.getTangent(1);
+      const ray = new THREE.Raycaster(end.clone().addScaledVector(tangent, 0.2), tangent.clone().negate());
+      expect(ray.intersectObject(nerve, true).some(hit => hit.distance < 0.21)).toBe(true);
+    } finally { eye.dispose(); }
+  });
+
   it('joins the transparent cornea to both surfaces of the scleral limbus', () => {
     const eye = buildEye();
     const cornea = eye.parts.get('cornea')!.group.children[0] as THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhysicalMaterial>;

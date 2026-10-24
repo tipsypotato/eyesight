@@ -141,7 +141,7 @@ function StructuresPanel({ engine }: { engine: EngineRef }) {
   const result = searchStructures(query), matching = result.items;
   return <><div className="panel-heading"><span className="eyebrow">{t('structures')}</span><h2>{t('structures')} <span className="count">{STRUCTURES.length}</span></h2></div>
     <div className="search"><span aria-hidden="true">⌕</span><input value={query} onChange={e => setQuery(e.target.value)} placeholder={t('search')} aria-label={t('search')}/>{query && <button className="clear-search" aria-label={t('clearSearch')} onClick={() => setQuery('')}>×</button>}</div>
-    {(result.ambiguous || result.group || result.relatedDisease) && <p className="search-context" role="status">{t(result.ambiguous ? 'ambiguousSearch' : result.group === 'extraocular' ? 'extraocularGroup' : result.group ? 'fundusGroup' : 'relatedDisease')}</p>}
+    {(result.ambiguous || result.group || result.relatedDisease) && <p className="search-context" role="status">{t(result.ambiguous ? 'ambiguousSearch' : result.group === 'extraocular' ? 'extraocularGroup' : result.group === 'adnexa' ? 'adnexalGroup' : result.group ? 'fundusGroup' : 'relatedDisease')}</p>}
     <p className="micro layer-hint">{t('layerHint')}</p>
     <div className="structure-list">{GROUPS.map(group => {
       const items = matching.filter(item => item.group === group.id);
@@ -364,7 +364,7 @@ function ModeActions({ engine }: { engine: EngineRef }) {
 }
 
 const presetMessages: Record<ScenePreset, MessageKey> = {
-  intact: 'presetIntact', 'wall-cut': 'presetWall', anterior: 'presetAnterior', fundus: 'presetFundus', chambers: 'presetChambers', 'optical-path': 'presetOptical', extraocular: 'presetExtraocular',
+  intact: 'presetIntact', 'wall-cut': 'presetWall', anterior: 'presetAnterior', fundus: 'presetFundus', chambers: 'presetChambers', 'optical-path': 'presetOptical', extraocular: 'presetExtraocular', eyelids: 'presetEyelids',
 };
 const rangeKeys = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End', 'PageUp', 'PageDown']);
 function useSceneRangeGesture(engine: EngineRef) {
@@ -386,7 +386,7 @@ function SceneControls({ engine }: { engine: EngineRef }) {
   const axis = { sagittal: 'x', axial: 'y', coronal: 'z' }[s.clip.axis];
   return <div className="scene-controls">
     {s.mode !== 'quiz' && s.mode !== 'disease' && <>
-      <div className="scene-presets" role="group" aria-label={t('scenePresets')}>{SCENE_PRESETS.filter(preset => s.mode !== 'optics' || preset !== 'extraocular').map(preset => <button key={preset} className={s.presetId === preset ? 'active' : ''} aria-pressed={s.presetId === preset} onClick={() => edit(() => s.applyPreset(preset))}>{t(presetMessages[preset])}</button>)}</div>
+      <div className="scene-presets" role="group" aria-label={t('scenePresets')}>{SCENE_PRESETS.filter(preset => (s.mode !== 'optics' || preset !== 'extraocular') && (s.mode === 'explore' || preset !== 'eyelids')).map(preset => <button key={preset} className={s.presetId === preset ? 'active' : ''} aria-pressed={s.presetId === preset} onClick={() => edit(() => s.applyPreset(preset))}>{t(presetMessages[preset])}</button>)}</div>
       <div className="section-controls">
         <label className="check"><input type="checkbox" checked={s.clip.enabled} onChange={e => edit(() => s.setClip({ enabled: e.target.checked }))}/>{t('clip')}</label>
         <select aria-label={t('clip')} value={s.clip.axis} onChange={e => edit(() => s.setClip({ axis: e.target.value as ClipAxis }))}>{(['sagittal','axial','coronal'] as ClipAxis[]).map(axis => <option value={axis} key={axis}>{t(axis)}</option>)}</select>

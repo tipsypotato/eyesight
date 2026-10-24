@@ -3,11 +3,12 @@ import type { DiseaseDraft } from '../modes/disease';
 export type Lang = 'zh' | 'en';
 export type Localized = Record<Lang, string>;
 export const EXTRAOCULAR_IDS = ['superior-rectus', 'inferior-rectus', 'medial-rectus', 'lateral-rectus', 'superior-oblique', 'inferior-oblique'] as const;
-export const STRUCTURE_IDS = ['cornea', 'sclera', 'iris', 'pupil', 'ciliary-body', 'zonules', 'lens', 'anterior-chamber', 'posterior-chamber', 'vitreous', 'choroid', 'retina', 'macula', 'fovea', 'optic-disc', 'optic-nerve', 'retinal-vessels', 'iridocorneal-angle', 'trabecular-meshwork', ...EXTRAOCULAR_IDS] as const;
+export const ADNEXAL_IDS = ['bulbar-conjunctiva', 'palpebral-conjunctiva', 'eyelid-skin', 'orbicularis-oculi', 'levator-palpebrae', 'tarsal-plates', 'meibomian-glands', 'zeis-glands', 'moll-glands'] as const;
+export const STRUCTURE_IDS = ['cornea', 'sclera', 'iris', 'pupil', 'ciliary-body', 'zonules', 'lens', 'anterior-chamber', 'posterior-chamber', 'vitreous', 'choroid', 'retina', 'macula', 'fovea', 'optic-disc', 'optic-nerve', 'retinal-vessels', 'iridocorneal-angle', 'trabecular-meshwork', ...EXTRAOCULAR_IDS, ...ADNEXAL_IDS] as const;
 export type StructureId = typeof STRUCTURE_IDS[number];
 export type EyeSide = 'right' | 'left';
 export type EyeRef = { side: EyeSide; structureId: StructureId };
-export type GroupId = 'wall' | 'front' | 'inside' | 'fundus' | 'extraocular';
+export type GroupId = 'wall' | 'front' | 'inside' | 'fundus' | 'extraocular' | 'adnexa';
 export type Structure = {
   id: StructureId; name: Localized; latin: string; group: GroupId; color: string;
   kind: 'tissue' | 'region' | 'space'; summary: Localized; function: Localized;
@@ -18,7 +19,7 @@ export type LayerMode = 'on' | 'ghost' | 'off';
 export type ViewPreset = 'oblique' | 'front' | 'side' | 'back';
 export type ClipAxis = 'sagittal' | 'axial' | 'coronal';
 export type KeepSide = 'negative' | 'positive';
-export const SCENE_PRESETS = ['intact', 'wall-cut', 'anterior', 'fundus', 'chambers', 'optical-path', 'extraocular'] as const;
+export const SCENE_PRESETS = ['intact', 'wall-cut', 'anterior', 'fundus', 'chambers', 'optical-path', 'extraocular', 'eyelids'] as const;
 export type ScenePreset = typeof SCENE_PRESETS[number];
 export type OpticsPreset = 'normal' | 'myopia' | 'corrected';
 export type OpticsInput = {
