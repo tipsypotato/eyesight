@@ -35,6 +35,7 @@ export class EyeEngine {
   private leftEye: ReturnType<typeof buildEye> | null = null;
   private skull: THREE.Group | null = null;
   private skullRequest: AbortController | null = null;
+  private skullPreview: Promise<THREE.Group | null> | null = null;
   private skullFailed = false;
   private skullFull = false;
   private diseaseEffects: THREE.Group | null = null;
@@ -78,6 +79,8 @@ export class EyeEngine {
   private viewportKey = '';
   private usableRect = { x: 0, y: 0, width: 1, height: 1 };
   private disposed = false;
+  private preparation: Promise<void> | null = null;
+  private prepared = false;
   private detailRequested = false;
   private media = window.matchMedia('(prefers-reduced-motion: reduce)');
   private originalPosition: string;
@@ -340,7 +343,9 @@ export class EyeEngine {
     };
     void (async () => {
       if (!this.skull) {
-        const preview = await loadSkullContext(request.signal, 'preview').catch(() => null);
+        this.skullPreview = loadSkullContext(request.signal, 'preview').catch(() => null);
+        const preview = await this.skullPreview;
+        this.skullPreview = null;
         if (preview && !display(preview)) return;
         if (this.disposed) return;
         if (preview) this.onSkullStatus?.('upgrading');
@@ -1065,10 +1070,34 @@ export class EyeEngine {
     if (!this.frame && !this.disposed) this.frame = requestAnimationFrame(this.render);
   };
 
+  private async prepareFirstFrame() {
+    if (this.skullPreview) {
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      // shortcut: wait at most 3 s; a guaranteed offline first frame would need a bundled fallback.
+      try { await Promise.race([this.skullPreview, new Promise(resolve => { timeout = setTimeout(resolve, 3000); })]); }
+      finally { clearTimeout(timeout); }
+    }
+    if (this.disposed) return;
+    this.animator.tick(1);
+    this.rig.controls.update();
+    await this.renderer.compileAsync(this.scene, this.camera);
+    if (this.disposed) return;
+    this.prepared = true;
+    this.invalidate();
+  }
+
   private render = (time: number) => {
     this.frame = 0;
     if (this.disposed) return;
     try {
+      if (!this.prepared) {
+        this.preparation ??= this.prepareFirstFrame().catch(error => {
+          if (this.disposed) return;
+          const ready = this.onReady; this.onReady = undefined;
+          if (ready) ready(error); else console.error('3D initialization failed', error);
+        });
+        return;
+      }
       const dt = Math.min(0.05, (time - (this.lastFrame || time)) / 1000);
       this.lastFrame = time;
       this.measureViewport();

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 export type SkullStatus = 'loading' | 'upgrading' | 'preview' | 'ready' | 'error';
 
@@ -9,13 +10,9 @@ export const SKULL_BOUNDS = new THREE.Box3(
 );
 
 export async function loadSkullContext(signal: AbortSignal, detail: 'preview' | 'full' = 'full'): Promise<THREE.Group> {
-  const [buffer, { GLTFLoader }] = await Promise.all([
-    fetch(`${import.meta.env.BASE_URL}models/skull-${detail === 'preview' ? 'preview' : 'context'}.glb`, { signal }).then(response => {
-      if (!response.ok) throw new Error(`Skull reference request failed: ${response.status}`);
-      return response.arrayBuffer();
-    }),
-    import('three/examples/jsm/loaders/GLTFLoader.js'),
-  ]);
+  const response = await fetch(`${import.meta.env.BASE_URL}models/skull-${detail === 'preview' ? 'preview' : 'context'}.glb`, { signal });
+  if (!response.ok) throw new Error(`Skull reference request failed: ${response.status}`);
+  const buffer = await response.arrayBuffer();
   signal.throwIfAborted();
   const { scene } = await new GLTFLoader().parseAsync(buffer, '');
   const originals = new Set<THREE.Material>();

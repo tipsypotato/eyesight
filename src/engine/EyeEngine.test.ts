@@ -39,6 +39,7 @@ vi.mock('three', async importOriginal => ({
   WebGLRenderer: class {
     domElement = new EngineElementStub();
     setPixelRatio() {} setSize() {} dispose() {} forceContextLoss() {} render() {}
+    compileAsync() { return Promise.resolve(new THREE.Group()); }
   },
 }));
 
@@ -191,13 +192,91 @@ it('keeps the initial optical geometry intact but applies saved optical changes 
   } finally { cleanup(); }
 });
 
-it('reports readiness only after the first rendered scene and never again after disposal', () => {
+it('keeps startup covered until the initial skull preview and shaders are ready', async () => {
+  let showPreview!: (group: THREE.Group) => void, compile!: () => void;
+  vi.mocked(loadSkullContext).mockReturnValueOnce(new Promise(resolve => { showPreview = resolve; }));
+  const ready = vi.fn(), { engine, internal, cleanup } = startupEngine(ready);
+  const shaders = vi.spyOn(engine.renderer, 'compileAsync').mockReturnValue(new Promise<THREE.Object3D>(resolve => { compile = () => resolve(new THREE.Group()); }));
+  const draw = vi.spyOn(engine.renderer, 'render');
+  const preview = new THREE.Group();
+  try {
+    engine.setState(createEyeStore().getState()); internal.render(0);
+    expect(ready).not.toHaveBeenCalled(); expect(draw).not.toHaveBeenCalled();
+    showPreview(preview);
+    await vi.waitFor(() => expect(shaders).toHaveBeenCalledOnce());
+    expect(preview.parent).not.toBeNull(); expect(preview.visible).toBe(true);
+    internal.render(16); expect(ready).not.toHaveBeenCalled();
+    compile(); await new Promise(resolve => setTimeout(resolve, 0));
+    internal.render(32);
+    expect(draw).toHaveBeenCalledOnce(); expect(ready).toHaveBeenCalledWith();
+  } finally { cleanup(); }
+});
+
+it('shows the complete skull framing on the first frame with animations enabled', async () => {
+  vi.mocked(loadSkullContext).mockResolvedValueOnce(new THREE.Group());
+  const { engine, internal, cleanup } = startupEngine();
+  const { animator, camera } = engine as unknown as { animator: Animator; camera: THREE.PerspectiveCamera };
+  animator.reducedMotion = false;
+  try {
+    engine.setState(createEyeStore().getState()); internal.render(0);
+    await new Promise(resolve => setTimeout(resolve, 0)); internal.render(16);
+    camera.updateMatrixWorld();
+    for (const x of [SKULL_BOUNDS.min.x, SKULL_BOUNDS.max.x]) for (const y of [SKULL_BOUNDS.min.y, SKULL_BOUNDS.max.y]) for (const z of [SKULL_BOUNDS.min.z, SKULL_BOUNDS.max.z]) {
+      const point = new THREE.Vector3(x, y, z).project(camera);
+      expect(Math.max(Math.abs(point.x), Math.abs(point.y), Math.abs(point.z))).toBeLessThan(1);
+    }
+  } finally { cleanup(); }
+});
+
+it('reveals the eye after a bounded preview wait and still displays a late skull', async () => {
+  vi.useFakeTimers();
+  let resolve!: (group: THREE.Group) => void;
+  vi.mocked(loadSkullContext).mockReturnValueOnce(new Promise(accept => { resolve = accept; }));
+  const ready = vi.fn(), { engine, internal, cleanup } = startupEngine(ready);
+  try {
+    engine.setState(createEyeStore().getState()); internal.render(0);
+    await vi.advanceTimersByTimeAsync(2999); internal.render(16);
+    expect(ready).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1); internal.render(32);
+    expect(ready).toHaveBeenCalledOnce();
+    const preview = new THREE.Group(); resolve(preview);
+    await vi.advanceTimersByTimeAsync(0); internal.render(48);
+    expect(preview.parent).not.toBeNull(); expect(preview.visible).toBe(true);
+    expect(ready).toHaveBeenCalledOnce();
+  } finally { cleanup(); vi.useRealTimers(); }
+});
+
+it('reports shader preparation errors through the startup failure callback', async () => {
+  const ready = vi.fn(), failure = new Error('shader preparation failed');
+  const { engine, internal, cleanup } = startupEngine(ready);
+  vi.spyOn(engine.renderer, 'compileAsync').mockRejectedValue(failure);
+  try {
+    engine.setState({ ...createEyeStore().getState(), showSkull: false }); internal.render(0);
+    await vi.waitFor(() => expect(ready).toHaveBeenCalledWith(failure));
+  } finally { cleanup(); }
+});
+
+it('does not schedule a frame when shader preparation finishes after disposal', async () => {
+  let finish!: () => void;
+  const ready = vi.fn(), { engine, internal, cleanup } = startupEngine(ready);
+  vi.spyOn(engine.renderer, 'compileAsync').mockReturnValue(new Promise<THREE.Object3D>(resolve => { finish = () => resolve(new THREE.Group()); }));
+  try {
+    engine.setState({ ...createEyeStore().getState(), showSkull: false }); internal.render(0);
+    cleanup();
+    const schedule = vi.fn(); vi.stubGlobal('requestAnimationFrame', schedule);
+    finish(); await new Promise(resolve => setTimeout(resolve, 0));
+    expect(schedule).not.toHaveBeenCalled(); expect(ready).not.toHaveBeenCalled();
+  } finally { cleanup(); }
+});
+
+it('reports readiness only after the first rendered scene and never again after disposal', async () => {
   const events: string[] = [];
   const { engine, internal, cleanup } = startupEngine(error => events.push(error ? 'failed' : 'ready'));
   vi.spyOn(engine.renderer, 'render').mockImplementation(() => { events.push('render'); });
   try {
-    engine.setState(createEyeStore().getState());
+    engine.setState({ ...createEyeStore().getState(), showSkull: false });
     expect(events).toEqual([]);
+    internal.render(0); await new Promise(resolve => setTimeout(resolve, 0));
     internal.render(16); internal.render(32);
     expect(events).toEqual(['render', 'ready', 'render']);
     engine.dispose(); internal.render(48);
@@ -205,12 +284,13 @@ it('reports readiness only after the first rendered scene and never again after 
   } finally { cleanup(); }
 });
 
-it('reports a first-frame failure instead of leaving startup waiting forever', () => {
+it('reports a first-frame failure instead of leaving startup waiting forever', async () => {
   const failures: unknown[] = [], failure = new Error('GPU rendering failed');
   const { engine, internal, cleanup } = startupEngine(error => failures.push(error));
   vi.spyOn(engine.renderer, 'render').mockImplementation(() => { throw failure; });
   try {
-    engine.setState(createEyeStore().getState());
+    engine.setState({ ...createEyeStore().getState(), showSkull: false });
+    internal.render(0); await new Promise(resolve => setTimeout(resolve, 0));
     expect(() => internal.render(16)).not.toThrow();
     expect(failures).toEqual([failure]);
   } finally { cleanup(); }
@@ -931,7 +1011,7 @@ it('follows stretched and transformed anatomy and releases signal resources on r
 });
 
 
-it('synchronizes real engine focus and orbit frames, settles when paused and unsubscribes on disposal', () => {
+it('synchronizes real engine focus and orbit frames, settles when paused and unsubscribes on disposal', async () => {
   const frames = new Map<number, FrameRequestCallback>(); let sequence = 0, time = 0;
   const documentStub = Object.assign(new EventTarget(), { createElement: () => new EngineElementStub(), createElementNS: () => new EngineElementStub() });
   const media = Object.assign(new EventTarget(), { matches: false });
@@ -959,6 +1039,7 @@ it('synchronizes real engine focus and orbit frames, settles when paused and uns
       engine.setState(store.getState()); instances.push(engine);
     }
     const [current, reference] = instances; flush();
+    await new Promise(resolve => setTimeout(resolve, 0)); flush();
     const changes: CameraSnapshot[] = [], echoes: CameraSnapshot[] = [];
     current.setCameraListener(snapshot => { changes.push(snapshot); reference.syncCamera(snapshot); });
     reference.setCameraListener(snapshot => { echoes.push(snapshot); current.syncCamera(snapshot); });
@@ -1621,6 +1702,7 @@ it('loads passive skull context without blocking the eye, moving a chosen camera
   try {
     store.getState().applyPreset('intact'); engine.setState(store.getState());
     expect(load).not.toHaveBeenCalled();
+    internal.render(0); await new Promise(resolve => setTimeout(resolve, 0)); internal.render(16);
     store.getState().applyPreset('all'); engine.setState(store.getState()); internal.render(0);
     expect(ready).toHaveBeenCalledWith();
     expect(status).toHaveBeenCalledWith('loading'); expect(load).toHaveBeenCalledTimes(1);
@@ -1802,8 +1884,9 @@ it('starts texture refinement after the first frame without requiring a ready ob
   const { engine, internal, cleanup } = startupEngine();
   Object.assign(engine, { onReady: undefined });
   try {
-    engine.setState(createEyeStore().getState());
+    engine.setState({ ...createEyeStore().getState(), showSkull: false });
     expect(prepare).not.toHaveBeenCalled();
+    internal.render(0); await new Promise(resolve => setTimeout(resolve, 0));
     internal.render(0); expect(prepare).toHaveBeenCalledTimes(1);
     internal.render(16); expect(prepare).toHaveBeenCalledTimes(1);
     cleanup();
