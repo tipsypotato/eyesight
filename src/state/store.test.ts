@@ -984,3 +984,68 @@ describe('passive skull reference', () => {
     expect(createEyeStore(storage).getState().showSkull).toBe(false);
   });
 });
+
+describe('page entry', () => {
+  it.each(['explore', 'optics', 'tour', 'quiz', 'disease'] as const)('opens all structures with skull context after a saved %s workspace', mode => {
+    const data = new Map<string, string>();
+    const storage = { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => { data.set(key, value); } };
+    const previous = createEyeStore(storage);
+    previous.getState().setLanguage('en');
+    previous.getState().applyPreset('fundus');
+    previous.getState().select('macula');
+    previous.getState().toggleIsolate();
+    previous.getState().setClip({ enabled: true, axis: 'coronal', offset: -1 });
+    previous.getState().setExplode(0.8);
+    previous.getState().setLabels(true);
+    previous.getState().setMode(mode);
+    previous.getState().flushProgress({ position: [4, 3, 5], target: [0.1, 0, -0.5], zoom: 1.2 });
+
+    const page = createEyeStore(storage);
+    page.getState().startPage();
+    expect(page.getState()).toMatchObject({ mode: 'explore', lang: 'en', presetId: 'all', showSkull: true, selectedId: null,
+      isolateId: null, isolationLayers: null, clip: { enabled: false }, explode: 0, labels: false, showOptics: false,
+      view: 'oblique', camera: null, focusReturn: null, revealReturn: null, relationshipId: null, undoCount: 0 });
+    for (const id of STRUCTURE_IDS) expect(page.getState().layers[id], id).toBe('on');
+    expect(skullContextAvailable(page.getState())).toBe(true);
+    const initial = page.getState();
+    page.getState().undoScene();
+    expect(page.getState()).toBe(initial);
+
+    page.getState().applyPreset('fundus');
+    page.getState().setMode('optics'); page.getState().setMode('explore');
+    expect(page.getState()).toMatchObject({ presetId: 'fundus', showSkull: false });
+  });
+
+  it('keeps optical drafts, tour progress, quiz answers and disease parameters behind the entry overview', () => {
+    const data = new Map<string, string>();
+    const storage = { getItem: (key: string) => data.get(key) ?? null, setItem: (key: string, value: string) => { data.set(key, value); } };
+    const previous = createEyeStore(storage), s = () => previous.getState();
+    const camera: CameraSnapshot = { position: [4, 3, 5], target: [0.1, 0, -0.5], zoom: 1.2 };
+    s().setMode('optics'); s().setOptics('corrected'); s().saveComparison(); s().setMode('tour', camera);
+    s().startLesson('vision'); s().goToStep(2); s().recordTourAction({ kind: 'observed' });
+    s().setMode('quiz'); s().answerQuiz(s().quiz!.order[0]);
+    const quiz = structuredClone(s().quiz), tasks = structuredClone(s().tourTasks);
+    s().openDisease('strabismus'); s().setDiseaseStep(2); s().updateDisease({ alignment: 'esotropia' });
+    s().selectEye('left', 'iris'); s().flushProgress(camera);
+
+    const page = createEyeStore(storage), p = () => page.getState();
+    p().startPage(); p().flushProgress();
+    expect(p().tourTasks).toEqual(tasks);
+    expect(p().sessions[quiz!.sessionId]).toEqual(quiz);
+    p().setMode('optics');
+    expect(p()).toMatchObject({ opticsPreset: 'corrected', camera, comparison: { input: { externalLens: 'myopia' } } });
+    p().setMode('tour'); expect(p()).toMatchObject({ lessonId: 'vision', step: 2 });
+    p().setMode('quiz'); expect(p().quiz).toEqual(quiz);
+    p().setMode('disease');
+    expect(p()).toMatchObject({ selectedEye: 'left', selectedId: 'iris', disease: { id: 'strabismus', step: 2, alignment: 'esotropia', deviationDeg: 10 }, camera });
+  });
+
+  it.each(['empty', 'corrupt', 'unavailable'] as const)('starts with all structures when storage is %s', kind => {
+    const storage = { getItem: () => { if (kind === 'unavailable') throw Error('blocked'); return kind === 'corrupt' ? 'invalid' : null; }, setItem: () => { if (kind === 'unavailable') throw Error('blocked'); } };
+    const page = createEyeStore(storage);
+    expect(() => page.getState().startPage()).not.toThrow();
+    expect(page.getState()).toMatchObject({ mode: 'explore', presetId: 'all', showSkull: true, undoCount: 0,
+      storageNotice: kind === 'unavailable' ? 'unavailable' : kind === 'corrupt' ? 'recovered' : null });
+    expect(skullContextAvailable(page.getState())).toBe(true);
+  });
+});

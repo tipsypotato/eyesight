@@ -60,6 +60,7 @@ export interface EyeState extends SceneState {
   startQuiz: () => void; answerQuiz: (id: string) => void;
   revealQuiz: () => void; advanceQuiz: () => void; reset: () => void;
   resetCamera: () => void; resetScene: () => void; restartLesson: () => void; restartQuiz: () => void;
+  startPage: () => void;
   rememberFocus: (camera: CameraSnapshot) => void; returnFocus: () => void;
   revealStructure: (id: StructureId, camera?: CameraSnapshot) => void; undoReveal: () => void;
 }
@@ -518,6 +519,11 @@ export function createEyeStore(storage?: StorageLike) {
     continuePractice: () => { if (get().practiceObservation) get().setMode('quiz'); },
     resetCamera: () => set(s => ({ view: s.mode === 'disease' && s.disease ? diseaseScene(s.disease).view : s.presetId ? presetScene(s.presetId, s).view : sceneFor(s.mode, s.lessonId, s.step, s.quiz).view, camera: null, focusReturn: null, sceneRevision: (s.sceneRevision ?? 0) + 1 })),
     resetScene: () => { const s = get(); if (s.mode === 'disease') { s.resetDisease(); return; } changeScene({ ...sceneFor(s.mode, s.lessonId, s.step, s.quiz), ...clearedObservation, ...clearedRelationship, isolationLayers: null, lang: s.lang, sceneRevision: (s.sceneRevision ?? 0) + 1 }); },
+    startPage: () => {
+      get().setMode('explore');
+      get().resetScene();
+      clearHistory();
+    },
     rememberFocus: camera => { if (get().mode !== 'quiz') set({ focusReturn: structuredClone(camera) }); },
     returnFocus: () => {
       const camera = get().focusReturn;
