@@ -26,6 +26,8 @@ A commit SHA was not available from the retrieval endpoint. The following SHA-25
 
 The original GLB SHA-256 is `339eafce3fdbc4175ed4798addba7d0c175cb0dab316e9d91abc053422050a00`. Eyesight reduces the geometry from 188,871 to 29,999 triangles, removes textures and material extensions, and bakes a uniform scale, rotation and translation to approximately register the right orbital socket with the existing eye. The resulting asset is 596,428 bytes and retains vertex normals. The skull supplies passive spatial context, including the mandible; it is not a clinically calibrated anatomy model and does not add individually selectable skull bones.
 
+`public/models/skull-preview.glb` is a second, lower-detail derivative of that same CC0 asset for progressive loading. It contains 9,999 triangles and 6,369 vertices in 214,632 bytes, with the same coordinates and retained vertex normals. Offline reduction used meshoptimizer's attribute-aware simplifier with locked borders, normal weights of 0.25 and a relative error cap of 0.02; meshoptimizer is not needed to decode the asset at runtime. The existing 29,999-triangle model remains the detailed replacement. The preview SHA-256 is `ba631f3a993d6e09c0e63033640b2e81b785e261c46a8397665dfc5883cd1a33`; its input SHA-256 is `290e511a1333b148ad5fe364610befa937a29bcdaf1f64aa054117aae246a5da`.
+
 ## Dependencies
 
 React, Three.js, Zustand, Vite, TypeScript and Vitest are installed from npm. Exact versions are pinned in package-lock.json; each package retains its own bundled license. Browser code does not call a translation service, load external fonts, collect user data or submit quiz results.

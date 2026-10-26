@@ -62,8 +62,8 @@ class EngineStub {
   camera: CameraSnapshot = { position: [3, 2, 5], target: [0, 0, 0], zoom: 1 };
   cameraListener: ((camera: CameraSnapshot) => void) | null = null;
   ready: ((error?: unknown) => void) | undefined;
-  skullStatus: ((status: 'loading' | 'ready' | 'error') => void) | undefined;
-  constructor(_host: HTMLElement, _select: unknown, _locate: unknown, _section: unknown, ready?: (error?: unknown) => void, skullStatus?: (status: 'loading' | 'ready' | 'error') => void) {
+  skullStatus: ((status: 'loading' | 'upgrading' | 'preview' | 'ready' | 'error') => void) | undefined;
+  constructor(_host: HTMLElement, _select: unknown, _locate: unknown, _section: unknown, ready?: (error?: unknown) => void, skullStatus?: (status: 'loading' | 'upgrading' | 'preview' | 'ready' | 'error') => void) {
     this.ready = ready; this.skullStatus = skullStatus;
     EngineStub.instances.push(this);
   }
@@ -283,6 +283,11 @@ it.each(['zh', 'en'] as const)('keeps optional skull loading and failure separat
   expect(elements['startup-screen'].removed).toBe(true);
   expect(viewport.html()).toContain('aria-busy="false"');
   expect(viewport.html()).toContain(lang === 'zh' ? '正在加载头骨参照' : 'Loading skull reference');
+  instance.skullStatus?.('upgrading'); viewport.rerender(props);
+  expect(viewport.html()).toContain(lang === 'zh' ? '头骨细节加载中' : 'Loading skull detail');
+  expect(viewport.html()).toContain('aria-busy="false"');
+  instance.skullStatus?.('preview'); viewport.rerender(props);
+  expect(viewport.html()).toContain(lang === 'zh' ? '已显示简化头骨' : 'Simplified skull shown');
   instance.skullStatus?.('error'); viewport.rerender(props);
   expect(viewport.html()).toContain(lang === 'zh' ? '眼球仍可正常操作' : 'eye controls remain usable');
   expect(viewport.html()).not.toContain('role="alert"');

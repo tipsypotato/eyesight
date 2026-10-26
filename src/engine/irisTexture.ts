@@ -2,6 +2,8 @@ import * as THREE from 'three';
 
 const width = 512, height = 256;
 let cachedPixels: { color: Uint8Array; relief: Uint8Array } | undefined;
+let preparation: Promise<void> | undefined;
+const pending = new Map<THREE.DataTexture, { key: 'color' | 'relief'; untrack: () => void }>();
 
 function noise(u: number, v: number, columns: number, rows: number): number {
   const x = ((u % 1 + 1) % 1) * columns;
@@ -19,7 +21,7 @@ function noise(u: number, v: number, columns: number, rows: number): number {
   return THREE.MathUtils.lerp(top, bottom, sy);
 }
 
-function createIrisPixels() {
+export function createIrisPixels() {
   const colorPixels = new Uint8Array(width * height * 4);
   const reliefPixels = new Uint8Array(width * height * 4);
   const byte = (value: number) => Math.round(THREE.MathUtils.clamp(value, 0, 255));
@@ -62,12 +64,43 @@ function createIrisPixels() {
   return { color: colorPixels, relief: reliefPixels };
 }
 
+export function prepareIrisTextures(): Promise<void> {
+  return preparation ??= (async () => {
+    try {
+      const response = await fetch(`${import.meta.env.BASE_URL}textures/iris-pixels.rgba.gz`);
+      if (!response.ok || !response.body) throw new Error('Iris pixels are unavailable');
+      let bytes = await response.arrayBuffer();
+      const length = width * height * 4;
+      // Hosts may already decode Content-Encoding: gzip before exposing the body.
+      if (bytes.byteLength !== length * 2) {
+        const header = new Uint8Array(bytes, 0, Math.min(bytes.byteLength, 2));
+        if (header[0] !== 0x1f || header[1] !== 0x8b || typeof DecompressionStream === 'undefined') throw new Error('Invalid or unsupported iris compression');
+        bytes = await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+      }
+      if (bytes.byteLength !== length * 2) throw new Error('Invalid iris pixel dimensions');
+      cachedPixels = { color: new Uint8Array(bytes, 0, length), relief: new Uint8Array(bytes, length) };
+    } catch {
+      await new Promise(resolve => setTimeout(resolve, 0));
+      cachedPixels = createIrisPixels();
+    }
+    for (const [texture, { key, untrack }] of pending) {
+      texture.image.data = cachedPixels[key].slice();
+      texture.needsUpdate = true;
+      untrack();
+    }
+  })();
+}
+
 /** u wraps around the iris; v runs from the pupillary margin to the iris root. */
 export function createIrisTextures(): { color: THREE.DataTexture; relief: THREE.DataTexture } {
-  const pixels = cachedPixels ??= createIrisPixels();
-  // Cache the deterministic computation while keeping each eye's pixels and GPU resources independent.
-  const color = new THREE.DataTexture(pixels.color.slice(), width, height, THREE.RGBAFormat);
-  const relief = new THREE.DataTexture(pixels.relief.slice(), width, height, THREE.RGBAFormat);
+  const colorPixels = cachedPixels?.color.slice() ?? new Uint8Array(width * height * 4);
+  const reliefPixels = cachedPixels?.relief.slice() ?? new Uint8Array(width * height * 4);
+  if (!cachedPixels) for (let i = 0; i < colorPixels.length; i += 4) {
+    colorPixels[i] = 141; colorPixels[i + 1] = 100; colorPixels[i + 2] = 62; colorPixels[i + 3] = 255;
+    reliefPixels[i] = reliefPixels[i + 1] = reliefPixels[i + 2] = 128; reliefPixels[i + 3] = 255;
+  }
+  const color = new THREE.DataTexture(colorPixels, width, height, THREE.RGBAFormat);
+  const relief = new THREE.DataTexture(reliefPixels, width, height, THREE.RGBAFormat);
   color.colorSpace = THREE.SRGBColorSpace;
   relief.colorSpace = THREE.NoColorSpace;
   for (const texture of [color, relief]) {
@@ -77,6 +110,11 @@ export function createIrisTextures(): { color: THREE.DataTexture; relief: THREE.
     texture.minFilter = THREE.LinearMipmapLinearFilter;
     texture.generateMipmaps = true;
     texture.needsUpdate = true;
+  }
+  if (!cachedPixels) for (const [key, texture] of Object.entries({ color, relief }) as ['color' | 'relief', THREE.DataTexture][]) {
+    const untrack = () => { pending.delete(texture); texture.removeEventListener('dispose', untrack); };
+    pending.set(texture, { key, untrack });
+    texture.addEventListener('dispose', untrack);
   }
   return { color, relief };
 }

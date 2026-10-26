@@ -4,17 +4,18 @@ import { loadSkullContext, SKULL_BOUNDS } from './skull';
 
 afterEach(() => vi.unstubAllGlobals());
 
-it('loads the bundled skull within its reserved camera bounds without adding selectable anatomy', async () => {
+it.each(['preview', 'full'] as const)('loads the bundled %s skull within its reserved camera bounds without adding selectable anatomy', async detail => {
   const { readFileSync } = await vi.importActual<{ readFileSync(path: URL): Uint8Array<ArrayBuffer> }>('node:fs');
-  const asset = readFileSync(new URL('../../public/models/skull-context.glb', import.meta.url));
-  expect(asset.byteLength).toBeLessThan(1_000_000);
+  const filename = detail === 'preview' ? 'skull-preview.glb' : 'skull-context.glb';
+  const asset = readFileSync(new URL(`../../public/models/${filename}`, import.meta.url));
+  expect(asset.byteLength).toBeLessThan(detail === 'preview' ? 250_000 : 1_000_000);
   const fetchAsset = vi.fn().mockResolvedValue(new Response(asset));
   vi.stubGlobal('fetch', fetchAsset);
   const controller = new AbortController();
-  const skull = await loadSkullContext(controller.signal);
+  const skull = await loadSkullContext(controller.signal, detail);
   const geometries = new Set<THREE.BufferGeometry>(), materials = new Set<THREE.Material>();
   try {
-    expect(fetchAsset).toHaveBeenCalledWith(expect.stringMatching(/models\/skull-context\.glb$/), { signal: controller.signal });
+    expect(fetchAsset).toHaveBeenCalledWith(expect.stringContaining(`models/${filename}`), { signal: controller.signal });
     const bounds = new THREE.Box3().setFromObject(skull);
     expect(bounds.isEmpty()).toBe(false);
     expect(SKULL_BOUNDS.containsBox(bounds)).toBe(true);
@@ -30,6 +31,7 @@ it('loads the bundled skull within its reserved camera bounds without adding sel
       expect(Array.from(normal.array).every(Number.isFinite)).toBe(true);
       expect(object.geometry.index).not.toBeNull();
       const indices = object.geometry.index!;
+      if (detail === 'preview') expect(indices.count / 3).toBeLessThanOrEqual(10_000);
       expect(Array.from({ length: indices.count }, (_, i) => indices.getX(i)).every(index => Number.isInteger(index) && index >= 0 && index < position.count)).toBe(true);
       for (const material of Array.isArray(object.material) ? object.material : [object.material]) {
         materials.add(material);

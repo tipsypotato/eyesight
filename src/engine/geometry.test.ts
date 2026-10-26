@@ -108,6 +108,61 @@ describe('adult right-eye geometry', () => {
     expect(disposed.sort()).toEqual(['color', 'relief']);
   });
 
+  it.each(['right', 'left'] as const)('keeps fine anterior surfaces pickable and clipped in two batched %s-eye meshes', side => {
+    const eye = buildEye({}, side), sign = side === 'left' ? -1 : 1;
+    const released: string[] = [];
+    try {
+      for (const [id, x, y, triangles] of [['ciliary-body', 0.666, 0, 6912], ['zonules', 0.51, 0.0055, 1920]] as const) {
+        const group = eye.parts.get(id)!.group;
+        const meshes = group.children as THREE.Mesh<THREE.BufferGeometry, THREE.MeshPhysicalMaterial>[];
+        expect(meshes.reduce((count, mesh) => count + mesh.geometry.index!.count / 3, 0)).toBe(triangles);
+        group.position.set(0.2, -0.1, 0.4);
+        eye.root.updateMatrixWorld(true);
+        const ray = new THREE.Raycaster(new THREE.Vector3(sign * x + 0.2, y - 0.1, 2), new THREE.Vector3(0, 0, -1));
+        const hits = ray.intersectObject(group, true);
+        expect(hits.length, id).toBeGreaterThan(0);
+        expect(hits.every(hit => hit.object.userData.structureId === id && hit.object.userData.eyeSide === side)).toBe(true);
+        expect(hits.some(intersectionSurvives)).toBe(true);
+        for (const mesh of meshes) mesh.material.clippingPlanes = [new THREE.Plane(new THREE.Vector3(0, 0, -1), 0.7)];
+        expect(hits.some(intersectionSurvives)).toBe(false);
+        for (const mesh of meshes) mesh.material.clippingPlanes = [];
+        group.visible = false;
+        expect(hits.some(intersectionSurvives)).toBe(false);
+        group.visible = true;
+        expect(meshes, id).toHaveLength(1);
+        meshes[0].geometry.addEventListener('dispose', () => released.push(`${id}:geometry`));
+        meshes[0].material.addEventListener('dispose', () => released.push(`${id}:material`));
+      }
+    } finally { eye.dispose(); }
+    expect(released.sort()).toEqual(['ciliary-body:geometry', 'ciliary-body:material', 'zonules:geometry', 'zonules:material']);
+  });
+
+  it('preserves mirrored anterior bounds and reversible accommodation after batching', () => {
+    const right = buildEye(), left = buildEye({}, 'left');
+    try {
+      for (const id of ['ciliary-body', 'zonules'] as const) {
+        const a = new THREE.Box3().setFromObject(right.parts.get(id)!.group, true);
+        const b = new THREE.Box3().setFromObject(left.parts.get(id)!.group, true);
+        expect(a.min.x).toBeCloseTo(-b.max.x, 6);
+        expect(a.max.x).toBeCloseTo(-b.min.x, 6);
+        expect(a.min.y).toBeCloseTo(b.min.y, 6);
+        expect(a.max.z).toBeCloseTo(b.max.z, 6);
+      }
+      const originals = ['ciliary-body', 'zonules'].map(id => {
+        const meshes = left.root.getObjectByName(id)!.children as THREE.Mesh[];
+        return meshes.map(mesh => new Float32Array(mesh.geometry.getAttribute('position').array));
+      });
+      setOpticalGeometry(left.root, { pupilRadius: 0.215, accommodation: 1 });
+      const ciliary = new THREE.Box3().setFromObject(left.parts.get('ciliary-body')!.group);
+      expect(ciliary.max.x).toBeCloseTo(0.736 * 0.94, 5);
+      setOpticalGeometry(left.root, { pupilRadius: 0.215, accommodation: 0 });
+      for (const [index, id] of ['ciliary-body', 'zonules'].entries()) {
+        const meshes = left.root.getObjectByName(id)!.children as THREE.Mesh[];
+        expect(meshes.every((mesh, i) => mesh.geometry.getAttribute('position').array.every((value, j) => value === originals[index][i][j]))).toBe(true);
+      }
+    } finally { right.dispose(); left.dispose(); }
+  });
+
   it('creates shell cross-sections with empty centers at central and offset cuts', () => {
     for (const offset of [0, 0.4]) {
       const geometry = createShellSection(1, 0.94, offset);

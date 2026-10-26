@@ -5,6 +5,7 @@ import { searchStructures } from '../anatomy/search';
 import { FLAT_LAYOUT_START, SCENE_PRESETS, sectionLimit, skullContextAvailable, type ScenePreset, type ClipAxis, type Mode, type OpticsExperiment, type OpticsInput, type OpticsPreset, type PhysiologyKind, type StructureId, type ViewPreset } from '../anatomy/types';
 import { messages, type MessageKey } from '../content/messages';
 import type { EyeEngine } from '../engine/EyeEngine';
+import type { SkullStatus } from '../engine/skull';
 import { finishStartup, loadEyeEngine, setStartupStage, STARTUP_COMPLETED, STARTUP_TEXT, type StartupStage, yieldToBrowser } from '../startup';
 import { traceOptics, type TraceOpticsResult } from '../engine/optics';
 import { sessionScore } from '../modes/quiz';
@@ -57,7 +58,7 @@ export function Viewport({ engine, peer, reference = false, narrow = false, inte
   const t = useText();
   const [failed, setFailed] = useState<'load' | 'webgl' | null>(null);
   const [loading, setLoading] = useState<StartupStage>('engine');
-  const [skullStatus, setSkullStatus] = useState<'loading' | 'ready' | 'error'>('loading');
+  const [skullStatus, setSkullStatus] = useState<SkullStatus>('loading');
   const scene = (state: ReturnType<typeof eyeStore.getState>) => {
     if (state.mode === 'disease' && options.current.reference) return { ...state, diseaseNormal: true };
     return state.comparison && (options.current.reference || options.current.narrow && state.comparison.showing === 'reference')
@@ -132,7 +133,7 @@ export function Viewport({ engine, peer, reference = false, narrow = false, inte
   return <div className="viewport" ref={host} role="group" aria-busy={!failed && loading !== 'ready'} aria-label={`${t(binocular ? 'bothEyes' : 'rightEye')} · ${t('schematic')}`}>
     {!narrow && <p className="interaction-hint" data-viewport-overlay>{s.mode === 'quiz' && s.quiz?.context !== 'structures' ? LEARNING_TEXT.answerHint[s.lang] : t(s.mode === 'quiz' ? 'dragQuiz' : 'drag')}</p>}
     {!failed && loading !== 'ready' && <div className="model-loading"><EyeIcon/><p role="status">{STARTUP_TEXT[loading][s.lang]}</p><progress aria-label={STARTUP_TEXT.progress[s.lang]} max="4" value={STARTUP_COMPLETED[loading]}/><small>{STARTUP_COMPLETED[loading]} / 4</small></div>}
-    {!failed && loading === 'ready' && s.showSkull && skullContextAvailable(s) && skullStatus !== 'ready' && <p className="skull-status" role="status" data-viewport-overlay>{t(skullStatus === 'loading' ? 'skullLoading' : 'skullUnavailable')}</p>}
+    {!failed && loading === 'ready' && s.showSkull && skullContextAvailable(s) && skullStatus !== 'ready' && <p className="skull-status" role="status" data-viewport-overlay>{t(skullStatus === 'loading' ? 'skullLoading' : skullStatus === 'upgrading' ? 'skullUpgrading' : skullStatus === 'preview' ? 'skullPreview' : 'skullUnavailable')}</p>}
     {failed && <div className="webgl-error" role="alert"><EyeIcon/><p>{failed === 'load' ? STARTUP_TEXT.failure[s.lang] : t('webglError')}</p><button onClick={() => location.reload()}>{t('reload')}</button></div>}
   </div>;
 }

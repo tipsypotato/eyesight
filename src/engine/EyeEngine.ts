@@ -9,7 +9,8 @@ import { createSectionContour, intersectionSurvives, SECTION_AXES, sectionPlane,
 import { messages } from '../content/messages';
 import { visibleSurface } from './visibility';
 import { createExplosionLayout } from './explosion-layout';
-import { loadSkullContext, SKULL_BOUNDS } from './skull';
+import { loadSkullContext, SKULL_BOUNDS, type SkullStatus } from './skull';
+import { prepareIrisTextures } from './irisTexture';
 import { applyLensClouding, binocularInputs, createAqueousFlow, createNerveDamage, glaucomaAppearance, orientEye } from './disease';
 
 type Drawable = THREE.Mesh | THREE.Line;
@@ -35,6 +36,7 @@ export class EyeEngine {
   private skull: THREE.Group | null = null;
   private skullRequest: AbortController | null = null;
   private skullFailed = false;
+  private skullFull = false;
   private diseaseEffects: THREE.Group | null = null;
   private diseaseKey = '';
   private lensContextCamera: CameraSnapshot | null = null;
@@ -76,6 +78,7 @@ export class EyeEngine {
   private viewportKey = '';
   private usableRect = { x: 0, y: 0, width: 1, height: 1 };
   private disposed = false;
+  private detailRequested = false;
   private media = window.matchMedia('(prefers-reduced-motion: reduce)');
   private originalPosition: string;
   private capKey = '';
@@ -83,7 +86,7 @@ export class EyeEngine {
   private opticsResult: TraceOpticsResult | null = null;
   private opticalGeometryKey = `${BASE_PUPIL_RADIUS}|0`;
 
-  constructor(private host: HTMLElement, private onSelect: (id: StructureId, side?: EyeSide) => void, private onLocate = onSelect, private sectionCallbacks?: SectionCallbacks, private onReady?: (error?: unknown) => void, private onSkullStatus?: (status: 'loading' | 'ready' | 'error') => void) {
+  constructor(private host: HTMLElement, private onSelect: (id: StructureId, side?: EyeSide) => void, private onLocate = onSelect, private sectionCallbacks?: SectionCallbacks, private onReady?: (error?: unknown) => void, private onSkullStatus?: (status: SkullStatus) => void) {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'low-power' });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.localClippingEnabled = true;
@@ -315,7 +318,7 @@ export class EyeEngine {
     else if (sceneChanged && state.camera) this.rig.restore(state.camera);
     else if (state.mode === 'disease' && state.disease?.id === 'cataract' && state.disease.view === 'lens-detail' && state.view === previous?.view && previous.disease?.id === 'cataract' && previous.disease.view !== 'lens-detail') this.focus('lens');
     else if (sceneChanged || skullVisibilityChanged || flat && (layoutChanged || geometryChanged) || state.view !== previous?.view || (state.mode === 'disease' && state.disease?.id === 'cataract' && previous?.disease?.id === 'cataract' && state.disease.view !== previous.disease.view) || state.explode !== previous?.explode || showingOptics !== (previous?.mode === 'optics' || !!previous?.showOptics)) this.setView(state.view);
-    if (wantsSkull && !this.skull && !this.skullRequest && !this.skullFailed) this.loadSkull();
+    if (wantsSkull && !this.skullFull && !this.skullRequest && !this.skullFailed) this.loadSkull();
     this.invalidate();
   }
 
@@ -323,20 +326,34 @@ export class EyeEngine {
     const request = new AbortController();
     const motionRevision = this.rig.motionRevision;
     this.skullRequest = request;
-    this.onSkullStatus?.('loading');
-    void loadSkullContext(request.signal).then(group => {
-      if (this.disposed) { this.disposeGroup(group); return; }
+    this.onSkullStatus?.(this.skull ? 'upgrading' : 'loading');
+    const display = (group: THREE.Group) => {
+      if (this.disposed) { this.disposeGroup(group); return false; }
+      const previous = this.skull;
       this.skull = group;
       group.visible = !!this.state?.showSkull && skullContextAvailable(this.state);
       this.scene.add(group);
+      if (previous) { this.scene.remove(previous); this.disposeGroup(previous); }
       this.updateMaterials();
-      this.onSkullStatus?.('ready');
       this.invalidate();
-    }).catch(() => {
+      return true;
+    };
+    void (async () => {
+      if (!this.skull) {
+        const preview = await loadSkullContext(request.signal, 'preview').catch(() => null);
+        if (preview && !display(preview)) return;
+        if (this.disposed) return;
+        if (preview) this.onSkullStatus?.('upgrading');
+      }
+      const full = await loadSkullContext(request.signal, 'full');
+      if (!display(full)) return;
+      this.skullFull = true;
+      this.onSkullStatus?.('ready');
+    })().catch(() => {
       if (this.disposed) return;
       this.skullFailed = true;
-      if (this.rig.motionRevision === motionRevision && this.state?.showSkull && skullContextAvailable(this.state)) this.setView(this.state.view);
-      this.onSkullStatus?.('error');
+      if (!this.skull && this.rig.motionRevision === motionRevision && this.state?.showSkull && skullContextAvailable(this.state)) this.setView(this.state.view);
+      this.onSkullStatus?.(this.skull ? 'preview' : 'error');
     }).finally(() => { this.skullRequest = null; });
   }
 
@@ -479,7 +496,7 @@ export class EyeEngine {
     } else if ((this.state?.showSkull && skullContextAvailable(this.state)) || (this.state?.explode ?? 0) > 0 || this.leftEye || optical || this.eye.parts.get('optic-nerve')?.group.visible || [...EXTRAOCULAR_IDS, ...ADNEXAL_IDS, ...ORBITAL_IDS].some(id => this.eye.parts.get(id)?.group.visible)) {
       const bounds = new THREE.Box3();
       for (const eye of this.eyes()) for (const part of eye.parts.values()) if (part.group.visible) bounds.union(this.boundsFor(part));
-      if (this.state?.showSkull && skullContextAvailable(this.state) && !this.skullFailed) bounds.union(SKULL_BOUNDS);
+      if (this.state?.showSkull && skullContextAvailable(this.state) && (!this.skullFailed || this.skull)) bounds.union(SKULL_BOUNDS);
       if (this.leftEye && this.diseaseEffects) bounds.union(new THREE.Box3().setFromObject(this.diseaseEffects));
       else if (optical) {
         bounds.expandByPoint(new THREE.Vector3(0, 0, 4));
@@ -1065,6 +1082,10 @@ export class EyeEngine {
       this.renderer.render(this.scene, this.camera);
       const ready = this.onReady; this.onReady = undefined;
       ready?.();
+      if (!this.detailRequested) {
+        this.detailRequested = true;
+        void prepareIrisTextures().then(() => this.invalidate()).catch(error => console.warn('Iris detail unavailable', error));
+      }
       if (this.animator.active || moved || flowing) this.invalidate();
     } catch (error) {
       const ready = this.onReady; this.onReady = undefined;

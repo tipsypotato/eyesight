@@ -87,6 +87,8 @@ export const messages = {
   skullReference: { zh: '头骨参照', en: 'Skull reference' },
   skullContextHint: { zh: '头骨仅作位置参照；剖切、分层分离、单独查看或显示光路时暂时隐藏。', en: 'The skull provides location context only; it is temporarily hidden during sectioning, layer separation, isolation or optical-path display.' },
   skullLoading: { zh: '正在加载头骨参照…', en: 'Loading skull reference…' },
+  skullUpgrading: { zh: '头骨细节加载中…', en: 'Loading skull detail…' },
+  skullPreview: { zh: '已显示简化头骨，精细版本暂不可用。', en: 'Simplified skull shown; detailed version is unavailable.' },
   skullUnavailable: { zh: '头骨参照暂不可用，眼球仍可正常操作。', en: 'Skull reference is unavailable; eye controls remain usable.' },
   controlHelp: { zh: '操作说明', en: 'Control help' },
   undoShort: { zh: '撤销', en: 'Undo' },

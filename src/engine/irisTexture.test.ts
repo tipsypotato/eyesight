@@ -1,8 +1,99 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
-import { createIrisTextures } from './irisTexture';
+
+const { readFileSync } = await vi.importActual<{ readFileSync(path: URL): Uint8Array<ArrayBuffer> }>('node:fs');
+const { gzipSync, gunzipSync } = await vi.importActual<{ gzipSync(data: Uint8Array): Uint8Array<ArrayBuffer>; gunzipSync(data: Uint8Array): Uint8Array<ArrayBuffer> }>('node:zlib');
+const asset = readFileSync(new URL('../../public/textures/iris-pixels.rgba.gz', import.meta.url));
+let createIrisTextures: typeof import('./irisTexture')['createIrisTextures'];
+let prepareIrisTextures: typeof import('./irisTexture')['prepareIrisTextures'];
+
+beforeEach(async () => {
+  vi.resetModules();
+  ({ createIrisTextures, prepareIrisTextures } = await import('./irisTexture'));
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(asset)));
+});
+afterEach(() => vi.unstubAllGlobals());
+
+describe('progressive iris textures', () => {
+  it.each(['gzip', 'http-decoded', 'http-decoded-without-native'] as const)('uses %s downloaded pixels instead of regenerating them', async encoding => {
+    const pixels = new Uint8Array(1_048_576);
+    pixels.fill(171, 0, 524_288); pixels.fill(63, 524_288);
+    for (let i = 3; i < pixels.length; i += 4) pixels[i] = 255;
+    if (encoding === 'http-decoded-without-native') vi.stubGlobal('DecompressionStream', undefined);
+    vi.stubGlobal('fetch', async () => new Response(encoding === 'gzip' ? gzipSync(pixels) : pixels, { headers: { 'Content-Encoding': 'gzip' } }));
+    await prepareIrisTextures();
+    const textures = createIrisTextures();
+    expect(Array.from(textures.color.image.data!.slice(0, 4))).toEqual([171, 171, 171, 255]);
+    expect(Array.from(textures.relief.image.data!.slice(0, 4))).toEqual([63, 63, 63, 255]);
+    Object.values(textures).forEach(texture => texture.dispose());
+  });
+
+  it('ships the exact original detailed pixels in the compressed asset', async () => {
+    const pixels = gunzipSync(asset);
+    expect(pixels).toHaveLength(1_048_576);
+    for (const [offset, expected] of [[0, '2c01317f50be6ec9d196aae41419fea65180c007610c638abfe0f8d9b2a3c76d'], [524_288, 'cc6ba941598e64cda0b3586dadc389bcd027d7e8668164c87dfb268bd67cb198']] as const) {
+      const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', Uint8Array.from(pixels.slice(offset, offset + 524_288))));
+      expect(Array.from(hash, byte => byte.toString(16).padStart(2, '0')).join('')).toBe(expected);
+    }
+  });
+
+  it('keeps usable textures while the download is pending, then upgrades those same textures', async () => {
+    let resolve!: (response: Response) => void;
+    const fetchAsset = vi.fn(() => new Promise<Response>(done => { resolve = done; }));
+    vi.stubGlobal('fetch', fetchAsset);
+    const first = createIrisTextures();
+    const version = first.color.version, pixels = first.color.image.data;
+    const loading = prepareIrisTextures();
+    const concurrent = prepareIrisTextures();
+    expect(first.color.image.width).toBe(512);
+    expect(first.color.image.height).toBe(256);
+    expect(new Set(first.relief.image.data!.filter((_value, i) => i % 4 !== 3)).size).toBe(1);
+    expect(first.color.image.data!.every((value, i) => i % 4 !== 3 || value === 255)).toBe(true);
+    resolve(new Response(asset));
+    await Promise.all([loading, concurrent]);
+    expect(fetchAsset).toHaveBeenCalledTimes(1);
+    expect(fetchAsset).toHaveBeenCalledWith(expect.stringMatching(/textures\/iris-pixels\.rgba\.gz$/));
+    expect(first.color.image.data).not.toBe(pixels);
+    expect(first.color.version).toBeGreaterThan(version);
+    expect(new Set(first.relief.image.data!.filter((_value, i) => i % 4 !== 3)).size).toBeGreaterThan(30);
+    const second = createIrisTextures();
+    expect(first.color.image.data).not.toBe(second.color.image.data);
+    expect(first.color.image.data!.every((value, i) => value === second.color.image.data![i])).toBe(true);
+    for (const texture of [...Object.values(first), ...Object.values(second)]) texture.dispose();
+    await prepareIrisTextures();
+    expect(fetchAsset).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not update disposed textures when the high detail pixels arrive', async () => {
+    let resolve!: (response: Response) => void;
+    vi.stubGlobal('fetch', () => new Promise<Response>(done => { resolve = done; }));
+    const textures = createIrisTextures(), data = textures.color.image.data, version = textures.color.version;
+    const loading = prepareIrisTextures();
+    textures.color.dispose();
+    resolve(new Response(asset)); await loading;
+    expect(textures.color.image.data).toBe(data);
+    expect(textures.color.version).toBe(version);
+    expect(new Set(textures.relief.image.data!.filter((_value, i) => i % 4 !== 3)).size).toBeGreaterThan(30);
+    textures.relief.dispose();
+  });
+
+  it.each(['http', 'network', 'gzip', 'size', 'unsupported'] as const)('restores the original detailed pixels on %s failure', async kind => {
+    if (kind === 'unsupported') vi.stubGlobal('DecompressionStream', undefined);
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      if (kind === 'network') throw new Error('offline');
+      if (kind === 'http') return new Response('Unavailable', { status: 503 });
+      return new Response(kind === 'unsupported' ? asset : kind === 'size' ? gzipSync(new Uint8Array(4)) : new Uint8Array([0x1f, 0x8b, 0, 0]));
+    }));
+    const textures = createIrisTextures();
+    await expect(prepareIrisTextures()).resolves.toBeUndefined();
+    const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', Uint8Array.from(textures.color.image.data!)));
+    expect(Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('')).toBe('2c01317f50be6ec9d196aae41419fea65180c007610c638abfe0f8d9b2a3c76d');
+    Object.values(textures).forEach(texture => texture.dispose());
+  });
+});
 
 describe('procedural iris textures', () => {
+  beforeEach(async () => { await prepareIrisTextures(); });
   it('preserves the original color and relief pixels after startup optimization', async () => {
     const textures = createIrisTextures();
     const hashes = {

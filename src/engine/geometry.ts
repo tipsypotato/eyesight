@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import type { EyeSide, StructureId } from '../anatomy/types';
 import { createIrisTextures } from './irisTexture';
 import { createFundusDetails } from './fundus';
@@ -344,6 +345,19 @@ export function buildEye(colors: Partial<Record<StructureId, string>> = {}, side
       const object = mesh('zonules', new THREE.CylinderGeometry(0.0027, 0.0027, start.distanceTo(end), 5), start.clone().add(end).multiplyScalar(0.5).toArray());
       object.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), end.sub(start).normalize());
     }
+  }
+
+  for (const id of ['ciliary-body', 'zonules'] as const) {
+    const group = parts.get(id)!.group;
+    const pieces = group.children as THREE.Mesh[];
+    const geometries = pieces.map(object => {
+      object.updateMatrix();
+      return object.geometry.applyMatrix4(object.matrix);
+    });
+    const geometry = mergeGeometries(geometries)!;
+    geometries.forEach(geometry => geometry.dispose());
+    group.clear();
+    mesh(id, geometry);
   }
 
   part('anterior-chamber', [-0.22, -0.31, 0.82], [0, 0, 0.84], 0.07);

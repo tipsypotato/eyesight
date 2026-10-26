@@ -10,6 +10,7 @@ import { CameraRig } from './camera';
 import { visibleSurface } from './visibility';
 import { opticsInputForPreset, traceOptics, type TraceOpticsResult } from './optics';
 import { loadSkullContext, SKULL_BOUNDS } from './skull';
+import * as irisTextures from './irisTexture';
 
 vi.mock('./skull', async original => ({
   ...await original<typeof import('./skull')>(),
@@ -41,7 +42,7 @@ vi.mock('three', async importOriginal => ({
   },
 }));
 
-function startupEngine(onReady = (_error?: unknown) => {}, onSkullStatus?: (status: 'loading' | 'ready' | 'error') => void) {
+function startupEngine(onReady = (_error?: unknown) => {}, onSkullStatus?: (status: 'loading' | 'upgrading' | 'preview' | 'ready' | 'error') => void) {
   const documentStub = Object.assign(new EventTarget(), { createElement: () => new EngineElementStub(), createElementNS: () => new EngineElementStub() });
   const media = Object.assign(new EventTarget(), { matches: true });
   vi.stubGlobal('document', documentStub);
@@ -1609,7 +1610,7 @@ it('repacks flat visibility and isolation changes while preserving selection cam
 it('loads passive skull context without blocking the eye, moving a chosen camera or joining eye interactions', async () => {
   const load = vi.mocked(loadSkullContext); load.mockClear();
   let resolve!: (group: THREE.Group) => void;
-  load.mockReturnValueOnce(new Promise(value => { resolve = value; }));
+  load.mockResolvedValueOnce(new THREE.Group()).mockReturnValueOnce(new Promise(value => { resolve = value; }));
   const ready = vi.fn(), status = vi.fn();
   const { engine, internal, cleanup } = startupEngine(ready, status);
   const store = createEyeStore();
@@ -1650,7 +1651,7 @@ it('loads passive skull context without blocking the eye, moving a chosen camera
     engine.setState(store.getState()); expect(group.visible).toBe(false);
     store.getState().toggleIsolate(); engine.setState(store.getState()); expect(group.visible).toBe(true);
     store.getState().setMode('optics'); engine.setState(store.getState()); expect(group.visible).toBe(false);
-    expect(load).toHaveBeenCalledTimes(1);
+    expect(load).toHaveBeenCalledTimes(2);
   } finally { cleanup(); }
   expect(disposeGeometry).toHaveBeenCalledTimes(1); expect(disposeMaterial).toHaveBeenCalledTimes(1);
 });
@@ -1670,7 +1671,7 @@ it('aborts the optional skull request and disposes late results after the viewpo
 });
 
 it('keeps the eye usable on skull failure and retries only when the reference is re-enabled', async () => {
-  const load = vi.mocked(loadSkullContext); load.mockClear(); load.mockRejectedValueOnce(new Error('offline'));
+  const load = vi.mocked(loadSkullContext); load.mockClear(); load.mockRejectedValueOnce(new Error('offline')).mockRejectedValueOnce(new Error('offline'));
   const status = vi.fn(), { engine, cleanup } = startupEngine(undefined, status), store = createEyeStore();
   try {
     engine.setState(store.getState());
@@ -1679,18 +1680,18 @@ it('keeps the eye usable on skull failure and retries only when the reference is
     const eyeCamera = engine.captureCamera();
     expect(new THREE.Vector3().fromArray(eyeCamera.position).distanceTo(new THREE.Vector3().fromArray(eyeCamera.target))).toBeLessThan(new THREE.Vector3().fromArray(headCamera.position).distanceTo(new THREE.Vector3().fromArray(headCamera.target)) / 2);
     store.getState().select('iris', true); engine.setState(store.getState());
-    expect(load).toHaveBeenCalledTimes(1);
+    expect(load).toHaveBeenCalledTimes(2);
     store.getState().setShowSkull(false); engine.setState(store.getState());
-    load.mockResolvedValueOnce(new THREE.Group());
+    load.mockResolvedValueOnce(new THREE.Group()).mockResolvedValueOnce(new THREE.Group());
     store.getState().setShowSkull(true); engine.setState(store.getState());
     await vi.waitFor(() => expect(status).toHaveBeenLastCalledWith('ready'));
-    expect(store.getState().selectedId).toBe('iris'); expect(load).toHaveBeenCalledTimes(2);
+    expect(store.getState().selectedId).toBe('iris'); expect(load).toHaveBeenCalledTimes(4);
   } finally { cleanup(); }
 });
 
 it.each(['auto-animation', 'zoom', 'orbit-start', 'workspace'] as const)('refits a failed skull only while its requested camera remains unchanged: %s', async action => {
   let reject!: (reason: Error) => void;
-  vi.mocked(loadSkullContext).mockReturnValueOnce(new Promise((_resolve, fail) => { reject = fail; }));
+  vi.mocked(loadSkullContext).mockReturnValueOnce(new Promise((_resolve, fail) => { reject = fail; })).mockRejectedValueOnce(new Error('offline'));
   const status = vi.fn(), { engine, cleanup } = startupEngine(undefined, status), store = createEyeStore();
   const internal = engine as unknown as { animator: Animator; rig: CameraRig };
   try {
@@ -1714,4 +1715,100 @@ it.each(['auto-animation', 'zoom', 'orbit-start', 'workspace'] as const)('refits
       expect(new THREE.Vector3().fromArray(result.position).distanceTo(new THREE.Vector3().fromArray(result.target))).toBeLessThan(new THREE.Vector3().fromArray(chosenCamera.position).distanceTo(new THREE.Vector3().fromArray(chosenCamera.target)) / 2);
     } else expect(result).toEqual(chosenCamera);
   } finally { cleanup(); }
+});
+
+it('shows a preview then replaces it without changing the camera, selection or hidden state', async () => {
+  const load = vi.mocked(loadSkullContext); load.mockClear();
+  const preview = new THREE.Group(), full = new THREE.Group();
+  const geometry = new THREE.BoxGeometry(), material = new THREE.MeshStandardMaterial();
+  preview.add(new THREE.Mesh(geometry, material));
+  const disposed = vi.fn(); geometry.addEventListener('dispose', disposed); material.addEventListener('dispose', disposed);
+  let resolve!: (group: THREE.Group) => void;
+  load.mockResolvedValueOnce(preview).mockReturnValueOnce(new Promise(value => { resolve = value; }));
+  const status = vi.fn(), { engine, internal, cleanup } = startupEngine(undefined, status), store = createEyeStore();
+  try {
+    engine.setState(store.getState()); internal.render(0);
+    await vi.waitFor(() => expect(status).toHaveBeenLastCalledWith('upgrading'));
+    expect(preview.parent).not.toBeNull(); expect(preview.visible).toBe(true);
+    expect(load.mock.calls.map(call => call[1])).toEqual(['preview', 'full']);
+    engine.zoom(-0.15);
+    store.getState().select('iris', true); store.getState().setClip({ enabled: true }); engine.setState(store.getState());
+    const camera = engine.captureCamera();
+    expect(preview.visible).toBe(false);
+    resolve(full); await vi.waitFor(() => expect(status).toHaveBeenLastCalledWith('ready'));
+    expect(preview.parent).toBeNull(); expect(disposed).toHaveBeenCalledTimes(2);
+    expect(full.parent).not.toBeNull(); expect(full.visible).toBe(false);
+    expect(engine.captureCamera()).toEqual(camera); expect(store.getState().selectedId).toBe('iris');
+    store.getState().setClip({ enabled: false }); engine.setState(store.getState());
+    expect(full.visible).toBe(true); expect(load).toHaveBeenCalledTimes(2);
+  } finally { cleanup(); }
+});
+
+it('retains the preview on refinement failure and retries only the full model on re-enable', async () => {
+  const load = vi.mocked(loadSkullContext); load.mockClear();
+  const preview = new THREE.Group(), full = new THREE.Group();
+  load.mockResolvedValueOnce(preview).mockRejectedValueOnce(new Error('full model offline'));
+  const status = vi.fn(), { engine, cleanup } = startupEngine(undefined, status), store = createEyeStore();
+  try {
+    engine.setState(store.getState()); const camera = engine.captureCamera();
+    await vi.waitFor(() => expect(status).toHaveBeenLastCalledWith('preview'));
+    expect(preview.parent).not.toBeNull(); expect(preview.visible).toBe(true);
+    expect(engine.captureCamera()).toEqual(camera);
+    engine.setView('oblique');
+    expect(engine.captureCamera()).toEqual(camera);
+    store.getState().select('iris', true); engine.setState(store.getState()); expect(load).toHaveBeenCalledTimes(2);
+    store.getState().setShowSkull(false); engine.setState(store.getState());
+    load.mockResolvedValueOnce(full);
+    store.getState().setShowSkull(true); engine.setState(store.getState());
+    await vi.waitFor(() => expect(status).toHaveBeenLastCalledWith('ready'));
+    expect(load.mock.calls.map(call => call[1])).toEqual(['preview', 'full', 'full']);
+    expect(full.visible).toBe(true); expect(preview.parent).toBeNull();
+  } finally { cleanup(); }
+});
+
+it('uses the full skull when the preview asset is unavailable', async () => {
+  const load = vi.mocked(loadSkullContext); load.mockClear();
+  const full = new THREE.Group();
+  load.mockRejectedValueOnce(new Error('preview offline')).mockResolvedValueOnce(full);
+  const status = vi.fn(), { engine, cleanup } = startupEngine(undefined, status);
+  try {
+    engine.setState(createEyeStore().getState());
+    await vi.waitFor(() => expect(status).toHaveBeenLastCalledWith('ready'));
+    expect(full.parent).not.toBeNull(); expect(full.visible).toBe(true);
+    expect(load.mock.calls.map(call => call[1])).toEqual(['preview', 'full']);
+  } finally { cleanup(); }
+});
+
+it('disposes both a mounted preview and a late full model after unmount', async () => {
+  const preview = new THREE.Group(), full = new THREE.Group(), disposed = vi.fn();
+  for (const group of [preview, full]) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial());
+    mesh.geometry.addEventListener('dispose', disposed); mesh.material.addEventListener('dispose', disposed); group.add(mesh);
+  }
+  let resolve!: (group: THREE.Group) => void;
+  const load = vi.mocked(loadSkullContext); load.mockResolvedValueOnce(preview).mockReturnValueOnce(new Promise(value => { resolve = value; }));
+  const status = vi.fn(), { engine, cleanup } = startupEngine(undefined, status);
+  engine.setState(createEyeStore().getState());
+  await vi.waitFor(() => expect(status).toHaveBeenLastCalledWith('upgrading'));
+  const signal = load.mock.calls.at(-1)![0];
+  cleanup(); expect(signal.aborted).toBe(true); expect(disposed).toHaveBeenCalledTimes(2);
+  resolve(full); await vi.waitFor(() => expect(disposed).toHaveBeenCalledTimes(4));
+  expect(full.parent).toBeNull(); expect(status).toHaveBeenLastCalledWith('upgrading');
+});
+
+it('starts texture refinement after the first frame without requiring a ready observer', async () => {
+  let finish!: () => void;
+  const prepare = vi.spyOn(irisTextures, 'prepareIrisTextures').mockReturnValue(new Promise(resolve => { finish = resolve; }));
+  const { engine, internal, cleanup } = startupEngine();
+  Object.assign(engine, { onReady: undefined });
+  try {
+    engine.setState(createEyeStore().getState());
+    expect(prepare).not.toHaveBeenCalled();
+    internal.render(0); expect(prepare).toHaveBeenCalledTimes(1);
+    internal.render(16); expect(prepare).toHaveBeenCalledTimes(1);
+    cleanup();
+    const schedule = vi.fn(); vi.stubGlobal('requestAnimationFrame', schedule);
+    finish(); await Promise.resolve(); await Promise.resolve();
+    expect(schedule).not.toHaveBeenCalled();
+  } finally { cleanup(); prepare.mockRestore(); vi.unstubAllGlobals(); }
 });
