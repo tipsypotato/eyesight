@@ -110,7 +110,7 @@ export const messages = {
   fact: { zh: '记住这一点', en: 'Keep in mind' }, sources: { zh: '参考来源', en: 'References' },
   focus: { zh: '聚焦结构', en: 'Focus structure' }, isolate: { zh: '单独查看', en: 'Isolate' }, showAll: { zh: '恢复整体', en: 'Show whole eye' },
   tissue: { zh: '组织结构', en: 'Tissue' }, region: { zh: '解剖区域', en: 'Anatomical region' }, space: { zh: '空间 / 开口', en: 'Space / opening' },
-  pickTitle: { zh: '每一个结构，都参与看见', en: 'Every structure has a part to play' },
+  pickTitle: { zh: '从一个结构开始', en: 'Start with a structure' },
   pickBody: { zh: '点击模型或结构列表中的结构，查看它的位置、作用与相邻关系。先从角膜开始，沿着光进入眼球的方向探索。', en: 'Select a structure in the model or the structure list to learn its location, role and relations to nearby structures. Start at the cornea and follow light into the eye.' },
   startExplore: { zh: '认识角膜', en: 'Meet the cornea' },
   normal: { zh: '正常聚焦', en: 'Normal focus' }, myopia: { zh: '轴性近视', en: 'Axial myopia' }, corrected: { zh: '凹透镜矫正', en: 'Minus-lens correction' },
