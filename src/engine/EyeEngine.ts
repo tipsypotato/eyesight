@@ -498,19 +498,22 @@ export class EyeEngine {
     if (this.state?.mode === 'disease' && this.state.disease?.id === 'cataract' && this.state.disease.view === 'lens-detail') {
       const sphere = this.boundsFor(this.eye.parts.get('lens')!).getBoundingSphere(new THREE.Sphere());
       this.rig.preset(view, sphere.radius / 0.72, sphere.center);
-    } else if ((this.state?.showSkull && skullContextAvailable(this.state)) || (this.state?.explode ?? 0) > 0 || this.leftEye || optical || this.eye.parts.get('optic-nerve')?.group.visible || [...EXTRAOCULAR_IDS, ...ADNEXAL_IDS, ...ORBITAL_IDS].some(id => this.eye.parts.get(id)?.group.visible)) {
+    } else if ((this.state?.showSkull && skullContextAvailable(this.state)) || (this.state?.explode ?? 0) > 0 || this.state?.isolateId || this.leftEye || optical || this.eye.parts.get('optic-nerve')?.group.visible || [...EXTRAOCULAR_IDS, ...ADNEXAL_IDS, ...ORBITAL_IDS].some(id => this.eye.parts.get(id)?.group.visible)) {
       const bounds = new THREE.Box3();
       for (const eye of this.eyes()) for (const part of eye.parts.values()) if (part.group.visible) bounds.union(this.boundsFor(part));
+      const center = this.eye.root.position.clone();
+      if (this.leftEye) center.add(this.leftEye.root.position).multiplyScalar(0.5);
+      if ((this.state?.explode ?? 0) > 0 || this.state?.isolateId) bounds.getCenter(center);
+      // Context enlarges the framing without moving the anatomical rotation center.
       if (this.state?.showSkull && skullContextAvailable(this.state) && (!this.skullFailed || this.skull)) bounds.union(SKULL_BOUNDS);
       if (this.leftEye && this.diseaseEffects) bounds.union(new THREE.Box3().setFromObject(this.diseaseEffects));
       else if (optical) {
         bounds.expandByPoint(new THREE.Vector3(0, 0, 4));
         bounds.expandByPoint(new THREE.Vector3(0, 0, -1.77));
       }
-      const sphere = bounds.getBoundingSphere(new THREE.Sphere());
-      this.rig.preset(view, Math.max(0.1, sphere.radius), sphere.center);
-    } else this.rig.preset(view, 1.38 + (this.state?.explode ?? 0) * 0.60,
-      new THREE.Vector3(0, 0, -0.08 + (this.state?.explode ?? 0) * 0.3));
+      const extent = bounds.isEmpty() ? new THREE.Vector3() : bounds.max.clone().sub(center).max(center.clone().sub(bounds.min));
+      this.rig.preset(view, Math.max(0.1, extent.length()), center);
+    } else this.rig.preset(view);
     this.notifyCamera();
     this.invalidate();
   }

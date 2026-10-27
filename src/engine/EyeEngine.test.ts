@@ -2,7 +2,7 @@ import { expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { createEyeStore } from '../state/store';
 import { EyeEngine } from './EyeEngine';
-import { ADNEXAL_IDS, ORBITAL_IDS, type CameraSnapshot, type SceneState } from '../anatomy/types';
+import { ADNEXAL_IDS, ORBITAL_IDS, SCENE_PRESETS, type CameraSnapshot, type SceneState } from '../anatomy/types';
 import { buildEye } from './geometry';
 import { SectionTool } from './section';
 import { Animator } from './animator';
@@ -1166,6 +1166,79 @@ function diseaseEngineFixture() {
   const sync = () => engine.setState(store.getState());
   return { engine, internal, store, sync, selected, media, raf, cancel, cleanup() { engine.dispose(); vi.unstubAllGlobals(); } };
 }
+
+it.each(SCENE_PRESETS)('orbits the globe center in the %s preset, independently of surrounding anatomy and rays', preset => {
+  const { engine, internal, store, sync, cleanup } = diseaseEngineFixture();
+  try {
+    store.getState().applyPreset(preset); sync();
+    for (const width of [900, 320]) {
+      internal.rig.setViewport(width, 600);
+      for (const view of ['oblique', 'front', 'side', 'back'] as const) {
+        store.getState().setView(view); sync(); internal.camera.updateMatrixWorld();
+        expect(internal.rig.controls.target.length()).toBeLessThan(1e-7);
+        if (store.getState().showSkull) {
+          for (const x of [SKULL_BOUNDS.min.x, SKULL_BOUNDS.max.x]) for (const y of [SKULL_BOUNDS.min.y, SKULL_BOUNDS.max.y]) for (const z of [SKULL_BOUNDS.min.z, SKULL_BOUNDS.max.z]) {
+            const point = new THREE.Vector3(x, y, z).project(internal.camera);
+            expect(Math.max(Math.abs(point.x), Math.abs(point.y), Math.abs(point.z))).toBeLessThan(1);
+          }
+        }
+        internal.rig.orbit(0.6, 0.2); engine.zoom(-0.1); internal.camera.updateMatrixWorld();
+        const globe = new THREE.Vector3().project(internal.camera);
+        expect(Math.abs(globe.x) + Math.abs(globe.y)).toBeLessThan(1e-7);
+      }
+    }
+    store.getState().setShowSkull(false); sync(); store.getState().resetCamera(); sync();
+    expect(internal.rig.controls.target.length()).toBeLessThan(1e-7);
+  } finally { cleanup(); }
+});
+
+it.each(['optics', 'tour', 'quiz', 'cataract', 'glaucoma', 'strabismus', 'amblyopia'] as const)('keeps the %s overview pivot at the globe or binocular midpoint', scenario => {
+  const { engine, internal, store, sync, cleanup } = diseaseEngineFixture();
+  try {
+    if (scenario === 'optics' || scenario === 'tour' || scenario === 'quiz') store.getState().setMode(scenario);
+    else store.getState().openDisease(scenario);
+    sync();
+    for (const view of ['oblique', 'front', 'side', 'back'] as const) {
+      store.getState().setView(view); sync();
+      expect(internal.rig.controls.target.length()).toBeLessThan(1e-7);
+    }
+    if (scenario === 'strabismus') {
+      store.getState().updateDisease({ targetDistance: 'near', alignment: 'custom', deviationDeg: -20 }); sync();
+      store.getState().resetCamera(); sync();
+      expect(internal.rig.controls.target.length()).toBeLessThan(1e-7);
+    }
+  } finally { cleanup(); }
+});
+
+it.each(['lens', 'optic-nerve'] as const)('keeps isolated %s at the rotation center when resetting or changing views', id => {
+  const { engine, internal, store, sync, cleanup } = diseaseEngineFixture();
+  try {
+    store.getState().select(id, true); store.getState().toggleIsolate(); sync();
+    engine.focus(id);
+    const center = internal.rig.controls.target.clone();
+    expect(center.length()).toBeGreaterThan(0.1);
+    for (const view of ['oblique', 'front', 'side', 'back'] as const) {
+      store.getState().setView(view); sync();
+      expect(internal.rig.controls.target.distanceTo(center)).toBeLessThan(1e-7);
+    }
+    store.getState().resetCamera(); sync();
+    expect(internal.rig.controls.target.distanceTo(center)).toBeLessThan(1e-7);
+  } finally { cleanup(); }
+});
+
+it.each([0.45, 0.85])('orbits the visible layout center at separation %s and restores the globe pivot on collapse', explode => {
+  const { engine, internal, store, sync, cleanup } = diseaseEngineFixture();
+  try {
+    store.getState().applyPreset('all'); store.getState().setExplode(explode); sync();
+    const bounds = new THREE.Box3();
+    for (const part of internal.eye.parts.values()) part.group.traverseVisible(object => {
+      if (object instanceof THREE.Mesh || object instanceof THREE.Line) bounds.expandByObject(object);
+    });
+    expect(internal.rig.controls.target.distanceTo(bounds.getCenter(new THREE.Vector3()))).toBeLessThan(1e-6);
+    store.getState().setExplode(0); sync();
+    expect(internal.rig.controls.target.length()).toBeLessThan(1e-7);
+  } finally { cleanup(); }
+});
 
 it('excludes hidden anatomy from optical and binocular camera fitting', () => {
   const { engine, internal, store, sync, cleanup } = diseaseEngineFixture();

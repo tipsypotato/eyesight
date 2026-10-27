@@ -324,7 +324,7 @@ describe('workspace camera lifecycle', () => {
       expect(camera.position.distanceTo(rig.controls.target)).toBeCloseTo(rig.distanceFor(0.5));
       animator.reducedMotion = true;
       rig.preset('front', 1);
-      expectVector(rig.controls.target, [0, 0, -0.08]);
+      expectVector(rig.controls.target, [0, 0, 0]);
       expect(camera.position.x).toBeCloseTo(0);
       expect(animator.active).toBe(false);
     } finally { rig.controls.dispose(); }

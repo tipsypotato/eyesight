@@ -143,7 +143,7 @@ export class CameraRig {
       this.camera.lookAt(this.controls.target);
     });
   }
-  preset(view: ViewPreset, radius = 1.38, center = new THREE.Vector3(0, 0, -0.08), duration = 0.4) {
+  preset(view: ViewPreset, radius = 1.38, center = new THREE.Vector3(), duration = 0.4) {
     this.focus(center, radius, DIRECTIONS[view], duration);
   }
   zoom(delta: number) {
