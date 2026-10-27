@@ -53,7 +53,7 @@ npm run preview
 
 ## 验证与技术
 
-2026-10-26 冷启动修复已验证：35 个测试文件、658 项通过，TypeScript 与生产构建通过；本机 Chrome 确认头骨首帧完整显示、精细升级、超时与失败降级正常。模拟 1.6 Mbps、150 ms 延迟，三次冷启动中位数由 4.23 秒降至 3.38 秒；测量方法、线上网络瓶颈和 390px 检查范围见[验证范围](docs/development-status-2026-10-22.md#验证范围)。修复尚未部署，真实手机、低端 GPU 和完整跨浏览器验收仍待验证。
+2026-10-27 旋转中心修复已合入 `main` 并发布到 GitHub Pages，同时包含此前冷启动和头骨首帧修复。合并后重新执行 35 个测试文件、679 项全部通过，TypeScript 与生产构建通过；[发布流水线成功](https://github.com/tipsypotato/eyesight/actions/runs/40502928238)。线上文件核对和验证限制见[发布记录](docs/development-status-2026-10-22.md#合并与线上发布)，冷启动测量与本机 Chrome 宽窄屏检查见[验证范围](docs/development-status-2026-10-22.md#验证范围)。真实手机、低端 GPU 和完整跨浏览器验收仍待验证。
 
 使用 React、TypeScript、Three.js、Zustand 和 Vite，无账户、后端或运行时翻译服务。眼部为程序几何；头骨为本地 CC0 GLB。修改虹膜像素算法后，使用 Node.js 26 执行 `node scripts/bake-iris-textures.mjs` 更新预生成资源。加载方式、资产体积和性能限制见功能清单的“启动与渐进加载”。
 
