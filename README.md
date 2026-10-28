@@ -1,12 +1,24 @@
+<div align="center">
+  <img src="public/favicon.svg" width="72" height="72" alt="eyesight 图标">
+
 # eyesight
 
-供医生进行眼球结构科普、常见眼病科普与互动演示的纯前端应用。医生可自由选择结构或疾病主题，指认位置、比较正常与变化；短导览与理解确认按需使用。
+**看见，如何发生。**
+
+交互式眼球解剖、光路与常见眼病科普，让医生边操作、边讲解。
+
+[在线体验](https://tipsypotato.github.io/eyesight/) · [功能亮点](#功能亮点) · [快速开始](#快速开始) · [功能进展与待办](docs/development-status-2026-10-22.md)
+
+</div>
 
 ![eyesight 交互预览](preview.png)
 
-[在线演示](https://tipsypotato.github.io/eyesight/) · [功能说明与待办](docs/development-status-2026-10-22.md) · [维护约定](AGENTS.md) · [第三方许可](THIRD_PARTY_NOTICES.md)
+eyesight 是一个纯前端 3D 科普工具。医生可直接选择结构或疾病主题，指认位置、调整模型、比较正常与变化；患者和公众通过可视化理解讲解。无需账户或后端，支持中英文与桌面、手机布局。
 
-## 当前功能
+> [!IMPORTANT]
+> 本项目用于科普示意。几何、光学和疾病效果未经临床标定，不提供诊断、处方或疗效预测；医学内容仍待专家审核。
+
+## 功能亮点
 
 | 工作区 | 主要能力 |
 | --- | --- |
@@ -16,46 +28,43 @@
 | 理解确认 | 共 29 道结构、导览及眼病题，独立会话、解释与错题回顾 |
 | 常见眼病 | 白内障、青光眼、斜视、弱视；正常/变化切换、机制说明与可选题目 |
 
-每次打开页面均展示全部结构与头骨；中英文、导览、题目及疾病记录保存在当前浏览器。手机默认单指滚页，进入“操作模型”后旋转、缩放与拖动剖切框。初始画面优先展示低精头骨并完成整体取景，精细头骨和虹膜随后补齐；头骨预览最多额外等待 3 秒，失败或超时后仍可操作眼球。
+每次打开页面进入全部结构与头骨总览。眼部模型由程序生成，头骨使用随项目提供的 CC0 资产；先显示简化头骨，再补齐精细模型与虹膜纹理，加载失败时仍可操作眼球。
 
-视网膜微观层级、场景链接/PNG 导出/展示模式、结构图鉴和眼部外形资产仍为可选待办。动态肌肉、眨眼、完整泪器和精细眶部网络尚未实现；具体边界及待验证项见[功能清单](docs/development-status-2026-10-22.md#待实现及待验证清单)。
+## 如何使用
 
-## 本地运行
+1. 打开[在线体验](https://tipsypotato.github.io/eyesight/)，在“解剖探索”中搜索或点击结构，查看位置、作用与来源；通过观察预设、剖切和分层展开查看内部。
+2. 切换“基础光路”调整参数、保存对照，或进入“常见眼病”比较正常与变化。短导览和理解确认题可按需使用，无需按课程顺序完成。
+3. 桌面拖动旋转、滚轮缩放；手机默认上下滑动浏览页面，点击“操作模型”后旋转、双指缩放和拖动剖切框。右上角可切换中英文或打开 GitHub 仓库。
 
-需要 Node.js 22.12+（22.x）、24.x 或 26+，以及 npm；已验证环境为 Node.js 26.5.0、npm 11.17.0。
+> [!NOTE]
+> 语言、导览、题目及疾病记录只保存在当前浏览器，没有跨设备同步。刷新会回到全部结构总览并保留进度；清除浏览器存储后没有服务端备份。
 
-本机项目目录为 `/Users/lifeng/Code/github/eyesight`：
+## 快速开始
+
+需要 Git、npm，以及 Node.js 22.12+（22.x）、24.x 或 26+。项目当前本地验证使用 Node.js 26.5.0、npm 11.17.0，CI 使用 Node.js 26；浏览器需启用 JavaScript 并支持 WebGL。
 
 ```sh
-cd /Users/lifeng/Code/github/eyesight
+git clone https://github.com/tipsypotato/eyesight.git
+cd eyesight
 npm ci
 npm run dev
 ```
 
-开发服务仅绑定本机，默认地址为 `http://127.0.0.1:5173`；以终端输出为准。
+打开终端输出的地址，默认为 [http://127.0.0.1:5173](http://127.0.0.1:5173)。开发服务只绑定本机，无需配置 API Key 或环境变量。
 
-```sh
-npm test -- --maxWorkers=1
-npm run typecheck
-npm run build
-npm run preview
-```
+## 本地开发
 
-生产文件输出到 `dist/`，须通过 HTTP 服务访问，不能直接双击 `index.html`。生产预览默认地址为 `http://127.0.0.1:4173`。
+| 命令 | 用途 |
+| --- | --- |
+| `npm run dev` | 启动开发服务，支持热更新 |
+| `npm test -- --maxWorkers=1` | 运行全部 Vitest 测试，与 CI 一致 |
+| `npm run typecheck` | 检查 TypeScript 类型 |
+| `npm run build` | 类型检查并构建到 `dist/` |
+| `npm run preview` | 预览已有构建，默认地址为 `http://127.0.0.1:4173` |
 
-若头骨不可用且模块请求返回 `504 Outdated Optimize Dep`，停止开发服务，运行 `npm run dev -- --force` 后刷新。临时 Vite 检查必须使用独立缓存，见 [AGENTS.md](AGENTS.md)；无需清空浏览器记录。
+技术栈为 React、TypeScript、Three.js、Zustand、Vite 和 Vitest。内容与翻译均随应用提供，无运行时翻译服务。
 
-## 在线演示与发布
-
-推送到 `main` 后，[GitHub Actions](https://github.com/tipsypotato/eyesight/actions/workflows/pages.yml) 使用 Node.js 26 安装锁定依赖，执行测试、类型检查与构建，然后发布 `dist/`；检查失败不会更新站点。也可在 Actions 选择 `main` 手动运行。仓库 Settings → Pages 的 Source 使用 **GitHub Actions**，部署配置参考 [GitHub Pages 官方文档](https://docs.github.com/en/pages/getting-started-with-github-pages/configuring-a-publishing-source-for-your-github-pages-site)。
-
-应用使用相对资源路径兼容 `/eyesight/`。线上与本地浏览器记录各自独立。线上版本以 Actions 成功部署的提交为准；回滚时将对应 `git revert` 提交到 `main` 并推送，经检查后重新发布。
-
-## 验证与技术
-
-2026-10-27 旋转中心修复已合入 `main` 并发布到 GitHub Pages，同时包含此前冷启动和头骨首帧修复。合并后重新执行 35 个测试文件、679 项全部通过，TypeScript 与生产构建通过；[发布流水线成功](https://github.com/tipsypotato/eyesight/actions/runs/40502928238)。线上文件核对和验证限制见[发布记录](docs/development-status-2026-10-22.md#合并与线上发布)，冷启动测量与本机 Chrome 宽窄屏检查见[验证范围](docs/development-status-2026-10-22.md#验证范围)。真实手机、低端 GPU 和完整跨浏览器验收仍待验证。
-
-使用 React、TypeScript、Three.js、Zustand 和 Vite，无账户、后端或运行时翻译服务。眼部为程序几何；头骨为本地 CC0 GLB。修改虹膜像素算法后，使用 Node.js 26 执行 `node scripts/bake-iris-textures.mjs` 更新预生成资源。加载方式、资产体积和性能限制见功能清单的“启动与渐进加载”。
+主要目录：
 
 | 目录 | 职责 |
 | --- | --- |
@@ -66,6 +75,26 @@ npm run preview
 | `public/`、`scripts/` | 静态资产与虹膜资源生成脚本 |
 | `docs/` | 功能说明、待实现及待验证清单 |
 
-这是科普示意，几何、光学及疾病效果未经临床标定，不输出诊断、处方或疗效预测。中英文经独立 LLM 对照审校，医学内容仍待专家审核。记录只存在当前浏览器，清除存储后没有服务端备份。
+修改虹膜像素算法后，使用 Node.js 26 执行 `node scripts/bake-iris-textures.mjs` 更新预生成资源。每轮功能迭代同步更新[功能清单](docs/development-status-2026-10-22.md)并提交本地 Git；具体规则见 [AGENTS.md](AGENTS.md)。
 
-作者：tipsypotato。代码采用 [MIT](LICENSE)；第三方许可与来源见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。后续每轮功能迭代同步更新功能清单并提交本地 Git；推送与部署按用户明确要求执行。
+## 部署
+
+先运行 `npm run build`，再将 `dist/` 交给静态 HTTP 服务。资源使用相对路径，支持 GitHub Pages 的 `/eyesight/` 子路径；不能直接双击 `dist/index.html` 运行。
+
+仓库已有 [GitHub Pages 工作流](.github/workflows/pages.yml)：推送到 `main` 或在 Actions 选择 `main` 手动运行后，安装锁定依赖、执行测试和构建（含类型检查），成功后发布 `dist/`。仓库 Settings → Pages → Source 需选择 **GitHub Actions**；检查失败不会更新站点。
+
+线上版本以 [Actions](https://github.com/tipsypotato/eyesight/actions/workflows/pages.yml) 成功部署的提交为准。本地与线上记录各自独立；需要回滚时，将对应 `git revert` 提交推送至 `main`，通过工作流重新发布。
+
+## 常见问题
+
+- **头骨暂不可用或只显示简化版？** 眼球仍可操作。精细模型加载失败会保留简化参照，可关闭再开启“头骨参照”重试。各阶段与资源说明见[启动与渐进加载](docs/development-status-2026-10-22.md#启动与渐进加载)。
+- **开发时出现 `504 Outdated Optimize Dep`？** 停止开发服务，运行 `npm run dev -- --force`，再刷新页面。另启临时 Vite 服务时必须使用独立 `cacheDir`，无需清空浏览器记录。
+- **手机拖动时页面在滚动？** 这是默认浏览方式；点击“操作模型”进入旋转和缩放，退出后恢复滚页。
+
+## 当前边界与后续计划
+
+视网膜微观层级、场景链接、PNG 导出、展示模式和结构图鉴仍为可选待办；动态肌肉、眨眼、完整泪器和精细眶部网络尚未实现。详见[待实现及待验证清单](docs/development-status-2026-10-22.md#待实现及待验证清单)。
+
+实际测试、构建、浏览器检查与发布记录集中在[验证范围](docs/development-status-2026-10-22.md#验证范围)。真实手机、低端 GPU、完整跨浏览器与读屏验收仍待完成；中英文的 LLM 对照审校不等于医学专家审核。
+
+作者：tipsypotato · 代码采用 [MIT](LICENSE) · [第三方许可与来源](THIRD_PARTY_NOTICES.md)

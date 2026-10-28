@@ -27,6 +27,7 @@ export const messages = {
   storageRecovered: { zh: '部分本地记录无法读取，已保留有效内容并恢复可用场景。', en: 'Some local records could not be read. Valid content was kept and a usable scene restored.' },
   dismissNotice: { zh: '知道了', en: 'Dismiss' },
   workspaces: { zh: '演示工作区', en: 'Demo workspaces' },
+  githubRepository: { zh: 'GitHub 仓库（新标签页打开）', en: 'GitHub repository (opens in a new tab)' },
   workspacePanel: { zh: '操作面板', en: 'Control panel' },
   parameters: { zh: '参数', en: 'Parameters' }, explanation: { zh: '说明', en: 'Explanation' },
   panelSize: { zh: '内容显示', en: 'Content display' },

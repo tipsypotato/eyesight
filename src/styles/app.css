@@ -21,6 +21,8 @@ button,select,.search{border-color:#809187}
 button.active,button.selected{border-color:#486e58}
 button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible,[tabindex]:focus-visible{outline:3px solid #355b29;outline-offset:2px}
 .header nav button,.language-switch button{min-width:44px}
+.header nav{min-width:0;overflow-x:auto;scrollbar-width:thin}.header nav button{flex:none}
+.header-actions{display:flex;align-items:center;gap:8px;flex:none}.github-link{display:grid;place-items:center;width:44px;height:44px;flex:none;border-radius:7px;text-decoration:none}.github-link:hover{background:var(--accent)}
 .structure-name{min-width:0}.layer-dot{flex:0 0 44px}.layer-dot span{border-color:#486e58}.layer-dot.on span{background:#486e58}.layer-dot.ghost span{background:linear-gradient(90deg,#486e58 50%,transparent 50%)}
 .search{padding:0 7px}.search input{font-size:13px}.search .clear-search{min-height:44px;min-width:44px}
 input[type=range]{height:44px;accent-color:#315f49}.check{min-height:44px;padding-right:8px}.check input{width:18px;height:18px}
