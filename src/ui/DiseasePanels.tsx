@@ -79,7 +79,7 @@ function CataractControls({ draft: d, engine, normal, lang }: { draft: Chapter<'
 
 export function VisualField({ defect, lang }: { defect: boolean; lang: Lang }) {
   const hatch = useId();
-  return <figure className="disease-preview"><figcaption>{T.field[lang]}</figcaption><svg viewBox="0 0 260 175" role="img" aria-label={T[defect ? 'defect' : 'early'][lang]} data-field-defect={defect}>
+  return <figure className="disease-preview"><figcaption>{T.field[lang]}</figcaption><svg viewBox="0 0 260 175" role="img" aria-label={T[defect ? 'defect' : 'fieldReference'][lang]} data-field-defect={defect}>
     <defs><pattern id={hatch} width="7" height="7" patternUnits="userSpaceOnUse"><path d="M0 7L7 0" stroke="#926b2e" strokeWidth="2"/></pattern></defs>
     <ellipse cx="130" cy="85" rx="112" ry="69" fill="#edf2e8" stroke="#718366"/><path d="M130 19v132M20 85h220" stroke="#b7c2af" strokeDasharray="3 5"/>
     {defect && <path d="M60 47Q90 23 124 39L119 59Q90 53 76 69Z" fill={`url(#${hatch})`} stroke="#926b2e"/>}
@@ -94,7 +94,7 @@ function GlaucomaControls({ draft: d, normal, lang }: { draft: Chapter<'glaucoma
   const restricted = scenario === 'outflow-risk' || scenario === 'established-damage';
   return <>
     <Choices label={messages.view[lang]} value={d.view} items={[{ value: 'outflow', label: T.outflow[lang] }, { value: 'nerve', label: T.nerve[lang] }]} onChange={view => s.updateDisease({ view })}/>
-    {d.step > 0 && <Choices label={T.scenario[lang]} value={d.scenario} items={([{ value: 'normal', label: T.scenarioNormal[lang] }, { value: 'outflow-risk', label: T.scenarioRisk[lang] }, { value: 'established-damage', label: T.scenarioDamage[lang] }, { value: 'normal-tension', label: T.scenarioTension[lang] }] as const).map(item => item)} onChange={scenario => { s.setDiseaseNormal(false); s.updateDisease({ scenario }); }}/>}
+    {d.step > 0 && <Choices label={T.scenario[lang]} value={scenario} items={([{ value: 'normal', label: T.scenarioNormal[lang] }, { value: 'outflow-risk', label: T.scenarioRisk[lang] }, { value: 'established-damage', label: T.scenarioDamage[lang] }, { value: 'normal-tension', label: T.scenarioTension[lang] }] as const).map(item => item)} onChange={scenario => { s.setDiseaseNormal(false); s.updateDisease({ scenario }); }}/>}
     {d.view === 'outflow' && <div className="disease-flow"><h3>{T.flow[lang]}</h3><p className="disease-route">{T.flowRoute[lang]}</p><p className="micro">{T.flowNote[lang]}</p><button aria-pressed={d.flowPlaying} onClick={() => s.updateDisease({ flowPlaying: !d.flowPlaying })}>{messages[d.flowPlaying ? 'pause' : 'play'][lang]}</button></div>}
     {scenario === 'outflow-risk' && <p>{T.riskOnly[lang]}</p>}
     {scenario === 'normal-tension' && <p>{T.normalTension[lang]}</p>}
@@ -102,7 +102,7 @@ function GlaucomaControls({ draft: d, normal, lang }: { draft: Chapter<'glaucoma
     {d.view === 'nerve' && <p className="micro">{T.structureNote[lang]}</p>}
     {d.step === 2 && <>
       <p>{T.early[lang]}</p>
-      {damaged && <Choices label={T.field[lang]} value={d.visualField} items={[{ value: 'early', label: T.early[lang] }, { value: 'defect', label: T.defect[lang] }]} onChange={visualField => s.updateDisease({ visualField })}/>}
+      {damaged && <Choices label={T.field[lang]} value={d.visualField} items={[{ value: 'early', label: T.fieldReference[lang] }, { value: 'defect', label: T.defect[lang] }]} onChange={visualField => s.updateDisease({ visualField })}/>}
       <VisualField defect={damaged && d.visualField === 'defect'} lang={lang}/>
     </>}
   </>;
@@ -145,20 +145,22 @@ export function AmblyopiaDiagram({ draft: d, normal, lang }: { draft: Chapter<'a
       {side === 'right' && !improved && d.causeCase === 'deprivation' && <rect width="120" height="76" rx="8" fill="#e8e0ce" opacity=".7"/>}
     </svg></div>)}</div>
     <svg viewBox="0 0 260 55" className="disease-neural-path" aria-hidden="true"><path d="M60 0Q60 24 130 40M200 0Q200 24 130 40" fill="none" stroke="#865b94" strokeWidth="3" strokeDasharray="5 5"/><path d="M124 35l6 12 6-12" fill="#865b94"/></svg>
-    <div className="disease-processing" data-development-outcome={normal ? 'reference' : 'retained'}><strong>{T.processing[lang]}</strong><p>{T[normal ? 'normalInput' : 'developmentResult'][lang]}</p>{!normal && <p>{T.outcomeBody[lang]}</p>}</div>
+    <div className="disease-processing" data-development-outcome={normal ? 'reference' : 'retained'}><strong>{T.processing[lang]}</strong><p>{T[normal ? 'normalInput' : improved ? 'recoveryAssessment' : 'developmentResult'][lang]}</p>{!normal && <p>{T[improved ? 'recoveryBody' : 'outcomeBody'][lang]}</p>}</div>
     <p className="micro">{T.neuralLegend[lang]}</p><p className="micro">{T.amblyopiaLimit[lang]}</p>
   </figure>;
 }
 function AmblyopiaControls({ draft: d, normal, lang }: { draft: Chapter<'amblyopia'>; normal: boolean; lang: Lang }) {
   const s = useStore(eyeStore); const current = d.caseDrafts[d.causeCase];
   const updateCase = (patch: Partial<typeof current>) => s.updateDisease({ caseDrafts: { ...d.caseDrafts, [d.causeCase]: { ...current, ...patch } } });
-  const cardText: Localized[] = [T[`${d.causeCase}Body`], T.inputBody, T.outcomeBody];
+  const cardText: Localized[] = [T[`${d.causeCase}Body`], T.inputBody, T[current.inputImproved ? 'recoveryBody' : 'outcomeBody']];
   return <>
     {d.step > 0 && <>
       <Choices label={T.cause[lang]} value={d.causeCase} items={AMBLYOPIA_CASES.map(value => ({ value, label: T[value][lang] }))} onChange={causeCase => { s.setDiseaseNormal(false); s.updateDisease({ causeCase }); }}/>
-      <div className="disease-mechanism-cards" role="group" aria-label={DISEASE_STEPS[1][lang]}>{[T.mechanismCause, T.mechanismInput, T.mechanismOutcome].map((card, index) => <button key={index} aria-pressed={current.card === index} onClick={() => updateCase({ card: index as 0 | 1 | 2 })}>{index + 1}. {card[lang]}</button>)}</div>
-      <p className="disease-key-point">{cardText[current.card][lang]}</p>
-      {d.step === 2 && <label className="check"><input type="checkbox" checked={current.inputImproved} onChange={event => { s.setDiseaseNormal(false); updateCase({ inputImproved: event.target.checked }); }}/>{T[d.causeCase === 'anisometropia' ? 'improveOptics' : d.causeCase === 'strabismic' ? 'improveAlignment' : 'improveDeprivation'][lang]}</label>}
+      {!normal && <>
+        <div className="disease-mechanism-cards" role="group" aria-label={DISEASE_STEPS[1][lang]}>{[T.mechanismCause, T.mechanismInput, T[current.inputImproved ? 'recoveryAssessment' : 'mechanismOutcome']].map((card, index) => <button key={index} aria-pressed={current.card === index} onClick={() => updateCase({ card: index as 0 | 1 | 2 })}>{index + 1}. {card[lang]}</button>)}</div>
+        <p className="disease-key-point">{cardText[current.card][lang]}</p>
+        {d.step === 2 && <label className="check"><input type="checkbox" checked={current.inputImproved} onChange={event => { s.setDiseaseNormal(false); updateCase({ inputImproved: event.target.checked }); }}/>{T[d.causeCase === 'anisometropia' ? 'improveOptics' : d.causeCase === 'strabismic' ? 'improveAlignment' : 'improveDeprivation'][lang]}</label>}
+      </>}
     </>}
     <AmblyopiaDiagram draft={d} normal={normal} lang={lang}/>
   </>;

@@ -1,6 +1,6 @@
 # eyesight 功能进展与后续开发清单
 
-更新日期：2026-10-28。eyesight 是供医生进行眼球结构科普、常见眼病科普与互动演示的纯前端工具。医生是直接操作者，患者及公众是主要讲解受众。
+更新日期：2026-10-30。eyesight 是供医生进行眼球结构科普、常见眼病科普与互动演示的纯前端工具。医生是直接操作者，患者及公众是主要讲解受众。
 
 本文集中说明当前功能、操作方式、示意边界与待办。运行、构建和发布方法见 [README](../README.md)，维护与提交规则见 [AGENTS.md](../AGENTS.md)。
 
@@ -60,7 +60,7 @@
 
 自由剖切支持矢状、水平、冠状三轴、位置滑块、拖动平面框及翻转保留侧。切面固定在眼球坐标中，旋转镜头不会改变保留侧；可与分层展开组合。通用观察工作区保留最近 20 条场景撤销，一次连续调节记为一次操作，答案与语言不随撤销倒退。
 
-关联观察包括调节、房水相关结构、眼底地标三组。未选中的关联成员保留次级轮廓与标签，选中成员使用材质高亮与名称引线，支持联合取景、切换成员和返回原场景；完整房水流出机制在青光眼章节展示。
+关联观察包括调节、房水相关结构、眼底地标三组。未选中的关联成员保留次级轮廓与标签，选中成员使用材质高亮与名称引线，支持联合取景、切换成员和返回原场景；房水流出机制的文字说明与局部三维示意见青光眼章节。
 
 ### 控件与界面
 
@@ -161,32 +161,37 @@
 
 ### 白内障
 
+- 定义为晶状体混浊，说明常见年龄相关性白内障的蛋白改变、聚集与散射机制；区分眼球表面覆盖物、单纯失焦与晶状体混浊。
 - 成人右眼前段场景，保留角膜、虹膜、睫状体和悬韧带的邻近关系；可切换晶状体局部与眼球内位置。
 - 混浊强度为 0—1 的显示参数，只改变晶状体与核区外观，不改变角膜、瞳孔开口、眼轴或晶状体几何。
 - 本地对比图展示雾感与对比度下降，点光源场景展示光晕。正常参考保持清晰，变化预览使用当前混浊参数。
-- 本章固定屈光参数以单独说明透光与散射；现实白内障可能伴随屈光变化，该部分未模拟。配套 3 题帮助区分晶状体混浊、角膜病变与单纯失焦。
+- 功能说明包括模糊、对比敏感度下降、眩光、光晕与颜色变淡，并说明表现随混浊位置与程度变化。本章使用均匀混浊、固定屈光参数，未模拟各类型或伴随屈光变化。配套 3 题帮助区分晶状体混浊、角膜病变与单纯失焦。
 
 ### 青光眼
 
+- 定义为一组视神经损害疾病，说明视网膜神经节细胞及轴突丢失、神经纤维层和视盘改变，以及眼压作为可干预风险因素的含义；本章侧重开角型相关机制，不模拟闭角机制。
 - 房角区域及小梁网提供结构资料与搜索；提供房水流出、眼底与视神经两种观察位。
-- 青绿色箭头沿睫状突、后房、瞳孔、前房、房角小梁网排列，可播放或暂停；静态箭头在减少动画时仍保留。
+- 青绿色箭头沿睫状突、后房、瞳孔、前房、房角小梁网排列，可播放或暂停；静态箭头在减少动画时仍保留。文字补全 Schlemm 管、集液管和巩膜表层静脉，并说明葡萄膜巩膜途径；下游通道未建立三维模型。
 - 四个独立情景为正常参考、流出受限风险、已有损害、正常眼压损害；它们不是病程阶段，也不计算眼压或损伤百分比。
-- 神经纤维的连续/中断差异与可能的局部视野缺损分别表达。改善流出保留已有损害和缺损；正常眼压情景也可单独显示损害。
-- 始终保留早期可能无明显自觉症状的说明；视野图用局部斜线区域举例，不以闭合黑边模拟所有人的视野。配套 4 题区分风险、诊断与损害。
+- 以较少的完整连续路径示意神经纤维丢失，避免以断续线暗示纤维被切断；线条数不是轴突计数或损伤比例，也未模拟视盘凹陷与纤维层厚度。改善流出保留已有损害和缺损；正常眼压情景也可单独显示损害。切到正常参考时，情景按钮同步显示参考状态，变化参数仍保留。
+- “未标注缺损的参考图”与自觉症状说明分开，明确早期开角型青光眼可在本人察觉前已有视野损害。视野图用局部斜线区域举例，不表示患者必然看到黑块，也不构成病程或检查结果。配套 4 题区分风险、诊断与损害，解析与新文案一致。
 
 ### 斜视与双眼
 
+- 定义为双眼眼位不一致，说明双眼单视、立体视觉及眼球运动控制、屈光和机械限制等相关因素，避免笼统归因为眼外肌无力。
 - 左右眼为独立几何与材质实例，左眼地标按鼻颞关系镜像构建并处理三角绕序；点击、高亮、标签及方位标区分 OD/OS。
 - 双眼共同指向近/远目标，正常看近时会聚；不能以两条方向线不平行直接判断内斜。
-- 内斜、外斜及自定偏差作用于指定眼侧；额外水平偏差范围为 −20° 至 +20°，正值鼻侧、负值颞侧，仅为几何示意。
+- 内斜、外斜及自定偏差作用于指定眼侧；额外水平偏差范围为 −20° 至 +20°，正值鼻侧、负值颞侧，仅为几何示意，不涵盖垂直等其他类型。
 - 可分别讲解眼位、成人可能复视、儿童可能抑制，明确这些体验并非每位患者必然出现。提供进入弱视机制的链接及 3 道配套题。
 
 ### 弱视
 
+- 定义为发育期异常视觉经验导致的一眼或双眼最佳矫正视力降低，不能单用眼部结构异常解释；风险因素本身不等于已确诊弱视。
 - 用成人双眼几何与“输入 → 视觉处理”图说明儿童视觉发育机制；不把成人模型称为儿童眼球。
-- 三类原因分别为屈光参差、斜视相关、视觉输入受限。每类独立保留原因/异常输入/发育结果卡片位置和输入改善开关。
-- 屈光参差复用正常与轴性近视基准；改善输入通过镜片与共享追迹表达，保持原眼轴。斜视案例改善眼位，输入受限案例解除示意混浊。
-- 所有输入改善均保留已经形成的发育结果，避免暗示视功能即时恢复。默认仅演示右眼输入差异，同时说明弱视也可能影响双眼；配套 4 题。
+- 三类案例为屈光参差、斜视相关、形觉剥夺，每类独立保留原因/异常输入/发育结果卡片位置和输入改善开关。正常参考下隐藏异常机制卡片与改善开关，切回变化示意恢复原设置。
+- 屈光参差复用正常与轴性近视基准，文案说明远视、散光差异也可能致病；改善输入通过镜片与共享追迹表达，保持原眼轴。斜视案例改善眼位，形觉剥夺案例解除示意混浊。
+- 改善输入后，视觉处理框及第三机制卡同步改为“视觉恢复需随访评估”，说明适当干预可使视力改善，屈光矫正本身可使部分患儿获益；不将清晰输入当作已即时恢复，也不暗示永久不可改善。仅改变输入示意，不计算视力、治疗时间或预后。
+- 默认仅演示右眼输入差异；文字补充双眼高度未矫正屈光不正可致双眼弱视，未增加双眼病变模型。4 道配套题同步定义、形觉剥夺和恢复评估的表述。
 
 ## 短导览与理解确认
 
@@ -253,9 +258,9 @@
 | 眼眶与内容物 | [NCBI · Orbit](https://www.ncbi.nlm.nih.gov/books/NBK539843/)、[NCBI · Orbit Bones](https://www.ncbi.nlm.nih.gov/books/NBK531490/)、[Anatomy of the Orbit · 显微解剖研究](https://pmc.ncbi.nlm.nih.gov/articles/PMC7561454/)、[Surgical Orbital Anatomy](https://pmc.ncbi.nlm.nih.gov/articles/PMC6486368/)；神经节、动静脉及泪腺的具体来源见各结构资料 |
 | 头骨位置参照 | [OpenStax · The Skull](https://openstax.org/books/anatomy-and-physiology-2e/pages/7-2-the-skull)用于头骨与眼眶空间关系依据；艺术资产来自 [Khronos · ScatteringSkull](https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/ScatteringSkull)，不代表经过医学标定 |
 | 白内障 | [NEI · Cataracts](https://www.nei.nih.gov/eye-health-information/eye-conditions-and-diseases/cataracts) |
-| 青光眼与房水 | [NEI · Glaucoma](https://www.nei.nih.gov/eye-health-information/eye-conditions-and-diseases/glaucoma)、[NEI · Eye Pressure](https://www.nei.nih.gov/eye-health-information/eye-conditions-and-diseases/glaucoma/glaucoma-and-eye-pressure)、[NCBI · Aqueous Humor Circulation](https://www.ncbi.nlm.nih.gov/books/NBK553209/)、[Webvision · Aqueous Outflow](https://www.ncbi.nlm.nih.gov/books/NBK543075/figure/diseases_glaucoma.F7A/) |
+| 青光眼与房水 | [NEI · Glaucoma](https://www.nei.nih.gov/eye-health-information/eye-conditions-and-diseases/glaucoma)、[NEI · Eye Pressure](https://www.nei.nih.gov/eye-health-information/eye-conditions-and-diseases/glaucoma/glaucoma-and-eye-pressure)、[AAO · Primary Open-Angle Glaucoma PPP](https://www.aaojournal.org/article/S0161-6420%2825%2900815-2/abstract)、[NCBI · Aqueous Humor Circulation](https://www.ncbi.nlm.nih.gov/books/NBK553209/)、[Webvision · Aqueous Outflow](https://www.ncbi.nlm.nih.gov/books/NBK543075/figure/diseases_glaucoma.F7A/) |
 | 斜视 | [AAPOS · Strabismus](https://aapos.org/glossary/strabismus)、[AAPOS · Adult Strabismus](https://aapos.org/patient/patient-resources/adult-strabismus-new)、[AAPOS · Convergence Insufficiency](https://aapos.org/glossary/convergence-insufficiency) |
-| 弱视 | [NEI · Amblyopia](https://www.nei.nih.gov/eye-health-information/eye-conditions-and-diseases/amblyopia-lazy-eye)、[AAPOS · Amblyopia](https://aapos.org/glossary/amblyopia) |
+| 弱视 | [AAO · Amblyopia PPP (2023)](https://pmc.ncbi.nlm.nih.gov/articles/PMC10701408/)、[NEI · Amblyopia](https://www.nei.nih.gov/eye-health-information/eye-conditions-and-diseases/amblyopia-lazy-eye)、[AAPOS · Amblyopia](https://aapos.org/glossary/amblyopia) |
 
 各结构和眼病界面提供对应来源卡。部分 NCBI/PMC 全文页面曾受验证页限制，来源核对不等于全部原文逐页医学审核。眼部模型与图示由代码生成；医学链接不表示复制其图片或模型。头骨使用经简化和坐标变换的外部 CC0 资产，授权及出处见 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。
 
@@ -265,6 +270,16 @@
 - 模型不输出诊断、风险评分、疾病分期、验光处方、用药/遮盖时长或手术操作建议；软件重置不表示临床恢复。
 
 ## 验证范围
+
+### 眼病描述与机制展示修订
+
+2026-10-30 依据 NEI、AAPOS 与 AAO 的资料修订四章中英文定义、机制、功能影响和模型边界，补全房水流出文字路线，修正青光眼纤维与视野参考展示、弱视输入改善后的恢复表述，并同步相关题目解析和来源卡。
+
+- 回归覆盖纤维连续性与减少、视野标签、正常参考状态、三类弱视输入改善，以及第三机制卡与恢复说明同步。新增或调整的用例先确认旧行为失败，再实现修正；最终全量 35 个测试文件、685 项通过，生产构建含 TypeScript 检查通过，保留既有引擎包超过 500 kB 的构建提示。
+- 本机 Chrome 检查生产构建的 1440px、390px 中英文四组视口，覆盖四章各四环节共 64 个状态，以及青光眼四种情景、改善流出与正常/变化切换、弱视三类输入改善与第三卡同步。实际渲染中确认神经纤维连续且数量减少，未记录页面脚本、控制台错误或失败资源请求，未发现页面横向溢出；390px 为模拟视口，不是真机验收。
+- 独立 LLM 对照审校覆盖四章正文、界面提示及 14 道眼病题；已修正视网膜神经纤维层术语、屈光参差条件限定和弱视第三卡的状态不一致。保留 `llm-checked`，医学专家审核仍为 `pending`；来源核对不等于临床审核。
+- 未改变题目 ID、选项 ID、答案键、题库兼容版本或本地存储结构；不要求清空既有学习记录。四个章节及示意参数继续复用现有状态和几何。
+- 本轮未增加疾病类型、临床分期、儿童几何或疗效计算；未做真机、完整跨浏览器或读屏验收，未推送或部署。既有功能待办保留在文末清单。
 
 ### 英文 README
 

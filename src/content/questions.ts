@@ -275,19 +275,19 @@ export const QUESTIONS: Question[] = [
     "kind": "concept",
     "target": "trabecular-meshwork",
     "prompt": {
-      "zh": "本例房水的小梁网流出路线，顺序是哪一项？",
-      "en": "Which sequence describes the illustrated trabecular outflow route?"
+      "zh": "房水经小梁网流出，主要经过哪些结构？",
+      "en": "Which structures form the main trabecular outflow pathway?"
     },
     "options": [
       {
         "id": "aqueous-route",
         "label": {
-          "zh": "后房 → 瞳孔 → 前房 → 房角小梁网",
-          "en": "Posterior chamber → pupil → anterior chamber → trabecular meshwork at the angle"
+          "zh": "后房 → 瞳孔 → 前房 → 小梁网 → Schlemm 管 → 集液管与巩膜表层静脉",
+          "en": "Posterior chamber → pupil → anterior chamber → trabecular meshwork → Schlemm’s canal → collector channels and episcleral veins"
         },
         "feedback": {
-          "zh": "睫状突产生房水，房水依次通过这些位置；小梁网路线并非唯一流出途径。",
-          "en": "Aqueous humor produced by the ciliary processes passes through these sites. The trabecular route is not the only outflow pathway."
+          "zh": "房水由睫状突产生，经这条主要途径回流至静脉系统；另有葡萄膜巩膜途径。三维箭头仅画到小梁网，不表示完整流出通道在此结束。",
+          "en": "Aqueous humor is produced by the ciliary processes and returns to the venous system through this main pathway; a uveoscleral pathway also exists. The 3D arrows stop at the meshwork, but the drainage pathway continues beyond it."
         }
       },
       {
@@ -340,8 +340,8 @@ export const QUESTIONS: Question[] = [
           "en": "Elevated pressure increases risk but alone does not establish glaucoma damage"
         },
         "feedback": {
-          "zh": "风险因素与已发生的视神经损害不同；本例流出风险不会自动生成损害。",
-          "en": "A risk factor is distinct from established optic nerve damage; this example does not automatically generate damage from outflow risk."
+          "zh": "眼压是可干预的风险因素；判断青光眼还需评估视神经、神经纤维层和视野等。风险情景不代表已确诊损害。",
+          "en": "Eye pressure is a modifiable risk factor. Evaluation for glaucoma also considers the optic nerve, nerve-fiber layer and visual field. The risk scenario does not represent diagnosed damage."
         }
       },
       {
@@ -362,13 +362,14 @@ export const QUESTIONS: Question[] = [
           "en": "Eye pressure has no relation to glaucoma"
         },
         "feedback": {
-          "zh": "眼压是重要风险关系，降低眼压可帮助保护视功能；但它并非单独诊断标准。",
+          "zh": "眼压是重要风险因素，降低眼压可帮助保护视功能；但它并非单独诊断标准。",
           "en": "Pressure is an important risk factor, and lowering it can help protect vision, but it is not a diagnosis on its own."
         }
       }
     ],
     "correctOptionId": "risk-not-diagnosis",
     "sources": [
+      "M17",
       "M03",
       "M04"
     ],
@@ -416,8 +417,8 @@ export const QUESTIONS: Question[] = [
           "en": "A subjectively normal field is enough to exclude it"
         },
         "feedback": {
-          "zh": "青光眼早期可能没有明显自觉症状，主观感觉正常也不能单独排除。",
-          "en": "Early glaucoma may have no noticeable symptoms, so a normal subjective experience alone cannot exclude it."
+          "zh": "早期开角型青光眼可已有本人未察觉的视野损害，主观感觉正常不能单独排除。",
+          "en": "Early open-angle glaucoma can involve field loss that a person has not noticed; a normal subjective experience alone cannot rule it out."
         }
       }
     ],
@@ -444,8 +445,8 @@ export const QUESTIONS: Question[] = [
       {
         "id": "damage-retained",
         "label": {
-          "zh": "风险机制可改变，但已有损害不会自动恢复",
-          "en": "The risk mechanism can change, but existing damage does not automatically recover"
+          "zh": "降低眼压有助于减缓进展，不能逆转既有的青光眼性视功能丧失",
+          "en": "Lowering pressure helps slow progression but cannot reverse established glaucomatous vision loss"
         },
         "feedback": {
           "zh": "本例改善流出后保留神经及视野损害；软件重置只是重新演示。",
@@ -459,8 +460,8 @@ export const QUESTIONS: Question[] = [
           "en": "The nerve regenerates immediately and the entire field returns"
         },
         "feedback": {
-          "zh": "降低眼压可帮助保护视功能，但不能直接逆转既有损失；本例不承诺恢复。",
-          "en": "Lowering pressure can help protect vision but does not directly reverse established loss; the example promises no recovery."
+          "zh": "降低眼压有助于保护剩余视功能，不能使丢失的神经纤维再生或恢复已丧失的视野。",
+          "en": "Lowering pressure helps protect remaining vision; it does not regenerate lost nerve fibers or restore established field loss."
         }
       },
       {
@@ -660,12 +661,12 @@ export const QUESTIONS: Question[] = [
       {
         "id": "multiple-input-causes",
         "label": {
-          "zh": "屈光状态差异、斜视或视觉输入受限",
-          "en": "Refractive differences, strabismus or restricted visual input"
+          "zh": "屈光参差、斜视或形觉剥夺等异常视觉经验",
+          "en": "Abnormal visual experience such as anisometropia, strabismus or form deprivation"
         },
         "feedback": {
-          "zh": "三者以不同方式影响输入的清晰度或一致性；弱视描述相关的视觉发育结果。",
-          "en": "These affect input clarity or consistency in different ways; amblyopia describes the related developmental outcome."
+          "zh": "这些因素可干扰视觉发育；双眼高度未矫正屈光不正也可致双眼弱视。风险因素本身不能确诊，弱视需结合最佳矫正视力与眼部检查评估。",
+          "en": "These factors can disrupt visual development; high uncorrected refractive error in both eyes can also cause bilateral amblyopia. Risk factors alone do not establish the diagnosis, which requires assessment of best-corrected acuity and the eyes."
         }
       },
       {
@@ -693,6 +694,7 @@ export const QUESTIONS: Question[] = [
     ],
     "correctOptionId": "multiple-input-causes",
     "sources": [
+      "M16",
       "M05",
       "M12"
     ],
@@ -747,6 +749,7 @@ export const QUESTIONS: Question[] = [
     ],
     "correctOptionId": "appearance-insufficient",
     "sources": [
+      "M16",
       "M05",
       "M12"
     ],
@@ -761,19 +764,19 @@ export const QUESTIONS: Question[] = [
     "kind": "concept",
     "target": null,
     "prompt": {
-      "zh": "打开本例“改善输入”后，视觉处理框为什么仍保留发育结果？",
-      "en": "Why does the processing box retain the developmental outcome after “improve input” is switched on?"
+      "zh": "改善成像、眼位或解除遮挡后，能否认定弱视已恢复？",
+      "en": "Does a clearer retinal image, realignment or removal of an obstruction establish recovery from amblyopia?"
     },
     "options": [
       {
         "id": "input-outcome-distinct",
         "label": {
-          "zh": "改善输入不等于已形成的视觉发育问题瞬间消失",
-          "en": "Improving input does not instantly erase an established visual-development problem"
+          "zh": "不能仅据此认定；视力可以改善，但恢复情况需要随访评估",
+          "en": "Not on that basis alone; acuity can improve, but recovery needs reassessment"
         },
         "feedback": {
-          "zh": "这个开关仅改变输入示意，不是疗效开关；已形成的问题需专业评估。",
-          "en": "The switch changes only the input illustration, not treatment success; an established problem needs professional assessment."
+          "zh": "弱视并不等于永久不可改善。适当屈光矫正本身可使部分患儿视力逐步提高，是否需其他治疗取决于评估；模型不模拟个体疗效或恢复时间。",
+          "en": "Amblyopia is not necessarily permanently unchangeable. Appropriate optical correction alone can gradually improve acuity in some children; assessment determines whether further treatment is needed. The model does not predict individual outcomes or recovery time."
         }
       },
       {
@@ -790,17 +793,18 @@ export const QUESTIONS: Question[] = [
       {
         "id": "input-never-matters",
         "label": {
-          "zh": "因为改善输入对视觉发育从来没有意义",
-          "en": "Because improved input is never relevant to visual development"
+          "zh": "不能，因为改善输入永远不可能帮助弱视改善",
+          "en": "No, because better input can never help amblyopia improve"
         },
         "feedback": {
-          "zh": "输入对发育有意义；这里强调的是改善输入不等于自动、即时恢复已有问题。",
-          "en": "Input matters to development; the distinction is that better input does not automatically and immediately reverse an established problem."
+          "zh": "改善视觉输入是弱视干预的重要基础，不能将尚未证明恢复误解为无法改善。恢复需结合后续视力变化评估。",
+          "en": "Improving visual input is an important foundation of amblyopia treatment. Recovery not yet established does not mean improvement is impossible; follow-up acuity measurements help assess the response."
         }
       }
     ],
     "correctOptionId": "input-outcome-distinct",
     "sources": [
+      "M16",
       "M05",
       "M12"
     ],
@@ -822,8 +826,8 @@ export const QUESTIONS: Question[] = [
       {
         "id": "function-versus-alignment",
         "label": {
-          "zh": "弱视涉及视觉发育与视功能；斜视描述眼位不一致",
-          "en": "Amblyopia concerns visual development and function; strabismus describes misalignment"
+          "zh": "弱视涉及发育期形成的最佳矫正视力降低；斜视描述眼位不一致",
+          "en": "Amblyopia involves reduced best-corrected acuity arising during development; strabismus describes misalignment"
         },
         "feedback": {
           "zh": "两者可能关联，也可分别存在。不能用眼位外观代替对视觉功能的了解。",
@@ -855,6 +859,7 @@ export const QUESTIONS: Question[] = [
     ],
     "correctOptionId": "function-versus-alignment",
     "sources": [
+      "M16",
       "M05",
       "M06",
       "M12"

@@ -69,6 +69,33 @@ describe('optional disease explanation workspace', () => {
     html = renderToStaticMarkup(<DiseasePanel engine={engine}/>);
     expect(html).toContain('data-field-defect="false"'); expect(html).toContain(escaped(T.riskOnly.zh));
   });
+  it('selects the displayed normal glaucoma scenario while preserving the stored damage scenario', () => {
+    store.getState().setLanguage('en'); store.getState().openDisease('glaucoma'); store.getState().setDiseaseStep(2);
+    store.getState().updateDisease({ scenario: 'established-damage' }); store.getState().setDiseaseNormal(true);
+    const html = renderToStaticMarkup(<DiseasePanel engine={engine}/>);
+    const start = html.indexOf(`role="group" aria-label="${escaped(T.scenario.en)}"`);
+    const choices = html.slice(start, html.indexOf('</div>', start));
+    expect(choices).toContain(`aria-pressed="true">${T.scenarioNormal.en}</button>`);
+    expect(store.getState().disease).toMatchObject({ scenario: 'established-damage' });
+  });
+  it('keeps abnormal amblyopia mechanism cards out of the normal-reference view', () => {
+    store.getState().setLanguage('en'); store.getState().openDisease('amblyopia'); store.getState().setDiseaseStep(2);
+    store.getState().updateDisease({ causeCase: 'deprivation' }); store.getState().setDiseaseNormal(true);
+    const reference = renderToStaticMarkup(<DiseasePanel engine={engine}/>);
+    expect(reference).not.toContain('class="disease-mechanism-cards"');
+    expect(reference).not.toContain(escaped(T.deprivationBody.en));
+    store.getState().setDiseaseNormal(false);
+    expect(renderToStaticMarkup(<DiseasePanel engine={engine}/>)).toContain(escaped(T.deprivationBody.en));
+  });
+  it('updates the selected outcome card along with the recovery explanation when input improves', () => {
+    store.getState().setLanguage('en'); store.getState().openDisease('amblyopia'); store.getState().setDiseaseStep(2);
+    const draft = store.getState().disease as Extract<DiseaseDraft, { id: 'amblyopia' }>;
+    store.getState().updateDisease({ caseDrafts: { ...draft.caseDrafts, anisometropia: { card: 2, inputImproved: true } } });
+    const html = renderToStaticMarkup(<DiseasePanel engine={engine}/>);
+    expect(html).not.toContain(escaped(T.outcomeBody.en));
+    expect(html).toContain(`aria-pressed="true">3. ${T.recoveryAssessment.en}</button>`);
+    expect(html).toContain(`<p class="disease-key-point">${escaped(T.recoveryBody.en)}</p>`);
+  });
 });
 
 describe('separate mechanism illustrations', () => {
@@ -103,7 +130,12 @@ describe('separate mechanism illustrations', () => {
     expect(html).toContain('<pattern'); expect(html).toContain('data-field-defect="true"');
     expect(html).toContain(escaped(T.fieldNote.en)); expect(html).not.toContain('radialGradient');
   });
-  it('retains developmental outcomes after all three cause-specific input improvements', () => {
+  it.each(['zh', 'en'] as const)('does not label an unmarked field as an absence of symptoms in %s', lang => {
+    const html = renderToStaticMarkup(<VisualField defect={false} lang={lang}/>);
+    expect(html).not.toContain(`aria-label="${escaped(T.early[lang])}"`);
+    expect(html).toContain(lang === 'zh' ? '未标注缺损的参考图' : 'Reference without a marked defect');
+  });
+  it('separates better input from recovery assessment for all three amblyopia causes', () => {
     for (const causeCase of ['anisometropia', 'strabismic', 'deprivation'] as const) {
       const draft = createDiseaseDraft('amblyopia') as Extract<DiseaseDraft, {id:'amblyopia'}>;
       draft.causeCase = causeCase;
@@ -111,7 +143,10 @@ describe('separate mechanism illustrations', () => {
       draft.caseDrafts[causeCase].inputImproved = true;
       const after = renderToStaticMarkup(<AmblyopiaDiagram draft={draft} normal={false} lang="en"/>);
       expect(before).toContain(`data-input="${causeCase}"`); expect(after).toContain('data-input="improved"');
-      for (const html of [before, after]) { expect(html).toContain('data-development-outcome="retained"'); expect(html).toContain(escaped(T.outcomeBody.en)); }
+      for (const html of [before, after]) expect(html).toContain('data-development-outcome="retained"');
+      expect(before).toContain(escaped(T.outcomeBody.en));
+      expect(after).toContain('Recovery needs reassessment');
+      expect(after).not.toContain(escaped(T.outcomeBody.en));
       if (causeCase === 'anisometropia') {
         expect(before).toContain('data-axial-increment="1"'); expect(after).toContain('data-axial-increment="1"');
         const beforeBlur = Number(before.match(/stdDeviation="([^\"]+)"/)![1]), afterBlur = Number(after.match(/stdDeviation="([^\"]+)"/)![1]);

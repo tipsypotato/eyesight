@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import * as THREE from 'three';
 import { buildEye } from './geometry';
-import { applyLensClouding, aqueousRoute, glaucomaAppearance, binocularInputs, orientEye } from './disease';
+import { applyLensClouding, aqueousRoute, createNerveDamage, glaucomaAppearance, binocularInputs, orientEye } from './disease';
 import type { DiseaseDraft } from '../modes/disease';
 
 const glaucoma = (scenario: 'normal'|'outflow-risk'|'established-damage'|'normal-tension', outflowRelieved = false) => ({ id: 'glaucoma', step: 1, scenario, outflowRelieved, view: 'outflow', visualField: 'early', flowPlaying: false } as const);
@@ -42,6 +42,20 @@ describe('disease rendering invariants', () => {
     const pupil = aqueousRoute[2].point;
     expect(Math.hypot(pupil.x, pupil.y)).toBeLessThan(0.215);
     expect(pupil.z).toBeCloseTo(0.677);
+  });
+
+  it('illustrates glaucomatous fiber loss with fewer intact paths, not severed dashed fibers', () => {
+    const reference = createNerveDamage(false), damaged = createNerveDamage(true);
+    try {
+      expect(damaged.children.length).toBeGreaterThan(0);
+      expect(damaged.children.length).toBeLessThan(reference.children.length);
+      for (const fiber of damaged.children as THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>[]) {
+        expect(fiber.material).not.toBeInstanceOf(THREE.LineDashedMaterial);
+        expect(reference.children.some(source => (source as THREE.Line).geometry.attributes.position.array.every((value, i) => value === fiber.geometry.attributes.position.array[i]))).toBe(true);
+      }
+    } finally {
+      for (const group of [reference, damaged]) for (const fiber of group.children as THREE.Line<THREE.BufferGeometry, THREE.LineBasicMaterial>[]) { fiber.geometry.dispose(); fiber.material.dispose(); }
+    }
   });
 
   it('mirrors left-eye landmarks, face winding and normals without a negative root scale', () => {

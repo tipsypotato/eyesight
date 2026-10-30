@@ -56,13 +56,14 @@ export function createAqueousFlow(restricted: boolean) {
 
 export function createNerveDamage(damaged = true) {
   const group = new THREE.Group(); group.name = damaged ? 'nerve-damage' : 'nerve-fibers';
-  // shortcut: a local dashed fiber interruption is qualitative; replace only with a clinically reviewed nerve model.
+  // shortcut: fewer continuous paths illustrate fiber loss, not axon counts or clinical staging.
   for (let i = 0; i < 5; i++) {
+    if (damaged && i % 2 === 0) continue;
     const surface = (x: number, y: number) => new THREE.Vector3(x, y, -Math.sqrt(0.906 ** 2 - x * x - y * y));
     const points = new THREE.CatmullRomCurve3([surface(0.03 + i * 0.055, 0.27), surface(0.1 + i * 0.03, 0.16), surface(0.30, 0.035)]).getPoints(24);
-    const material = damaged ? new THREE.LineDashedMaterial({ color: '#98516d', dashSize: 0.025, gapSize: 0.045, depthTest: false }) : new THREE.LineBasicMaterial({ color: '#9c8a61', depthTest: false });
+    const material = new THREE.LineBasicMaterial({ color: '#9c8a61', depthTest: false });
     const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(points), material);
-    line.computeLineDistances(); line.renderOrder = 15; group.add(line);
+    line.renderOrder = 15; group.add(line);
   }
   return group;
 }
