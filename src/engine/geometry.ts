@@ -56,12 +56,34 @@ function shell(outer: number, inner: number, front: number) {
   return profile(points);
 }
 
-function truncatedSphere(radius: number, front: number) {
-  const points: [number, number][] = [[0, front]];
-  const start = Math.acos(front / radius);
-  for (let i = 0; i <= 48; i++) {
+const LENS_RADIUS = 0.435, LENS_CENTER_Z = 0.455, LENS_POSTERIOR_DEPTH = 0.185;
+const VITREOUS_RADIUS = 0.900, VITREOUS_RIM = 0.75, CILIARY_OUTER_RADIUS = 0.736;
+
+function vitreousFrontZ(radius: number, accommodation = 0) {
+  // Follow the posterior envelope of the lens, zonules and ciliary body, with a small display clearance.
+  const clearance = 0.004;
+  if (radius > CILIARY_OUTER_RADIUS) {
+    return THREE.MathUtils.lerp(0.48 - clearance, Math.sqrt(VITREOUS_RADIUS ** 2 - radius ** 2),
+      THREE.MathUtils.smoothstep(radius, CILIARY_OUTER_RADIUS, VITREOUS_RIM));
+  }
+  const t = THREE.MathUtils.clamp((radius - 0.423) / (0.607 - 0.423), 0, 1);
+  let z = 0.415 + 0.075 * t - 0.02 * accommodation * Math.sin(Math.PI * t);
+  if (radius <= LENS_RADIUS) z = Math.min(z, LENS_CENTER_Z - LENS_POSTERIOR_DEPTH * (1 + 0.25 * accommodation) * Math.sqrt(1 - (radius / LENS_RADIUS) ** 2));
+  if (Math.abs(radius - 0.609) <= 0.065) z = Math.min(z, 0.493 - 0.044 * Math.sqrt(1 - ((radius - 0.609) / 0.065) ** 2));
+  if (Math.abs(radius - 0.666) <= 0.070) z = Math.min(z, 0.48 - Math.sqrt(0.070 ** 2 - (radius - 0.666) ** 2));
+  return z - clearance;
+}
+
+function vitreousSurface() {
+  const points: [number, number][] = [];
+  for (let i = 0; i <= 96; i++) {
+    const radius = VITREOUS_RIM * i / 96;
+    points.push([radius, vitreousFrontZ(radius)]);
+  }
+  const start = Math.asin(VITREOUS_RIM / VITREOUS_RADIUS);
+  for (let i = 1; i <= 48; i++) {
     const angle = start + (Math.PI - start) * i / 48;
-    points.push([Math.sin(angle) * radius, Math.cos(angle) * radius]);
+    points.push([i === 48 ? 0 : Math.sin(angle) * VITREOUS_RADIUS, Math.cos(angle) * VITREOUS_RADIUS]);
   }
   return profile(points);
 }
@@ -89,7 +111,7 @@ function lensSurface(radius: number, anterior: number, posterior: number) {
   const points: [number, number][] = [];
   for (let i = 0; i <= 80; i++) {
     const angle = i / 80 * Math.PI;
-    points.push([radius * Math.sin(angle), 0.455 + (angle < Math.PI / 2 ? anterior : posterior) * Math.cos(angle)]);
+    points.push([radius * Math.sin(angle), LENS_CENTER_Z + (angle < Math.PI / 2 ? anterior : posterior) * Math.cos(angle)]);
   }
   return profile(points);
 }
@@ -155,7 +177,9 @@ export function setPosteriorStretch(root: THREE.Group, factor: number) {
     const inverse = object.matrix.clone().invert();
     for (let i = 0; i < position.count; i++) {
       vertex.fromArray(original, i * 3).applyMatrix4(object.matrix);
-      if (vertex.z < 0) vertex.z *= factor;
+      // Preserve the accommodated anterior vitreous when only axial length changes.
+      if (vertex.z >= 0) continue;
+      vertex.z *= factor;
       vertex.applyMatrix4(inverse);
       position.setXYZ(i, vertex.x, vertex.y, vertex.z);
     }
@@ -171,12 +195,12 @@ export function setOpticalGeometry(root: THREE.Group, { pupilRadius, accommodati
   if (!Number.isFinite(pupilRadius) || pupilRadius <= 0 || pupilRadius >= 0.63
     || !Number.isFinite(accommodation) || accommodation < 0 || accommodation > 1) throw new RangeError('Invalid optical geometry');
   const vertex = new THREE.Vector3();
-  for (const id of ['iris', 'pupil', 'lens', 'ciliary-body', 'zonules']) {
+  for (const id of ['iris', 'pupil', 'lens', 'ciliary-body', 'zonules', 'vitreous']) {
     const group = root.getObjectByName(id);
     if (!group) continue;
     if (id === 'pupil') group.userData.hitRadius = pupilRadius;
     group.traverse(object => {
-      if (!(object instanceof THREE.Mesh || object instanceof THREE.Line)) return;
+      if (!(object instanceof THREE.Mesh || object instanceof THREE.Line) || id === 'vitreous' && !(object instanceof THREE.Mesh)) return;
       const geometry = object.geometry, position = geometry.getAttribute('position');
       if (!geometry.userData.originalPositions) geometry.userData.originalPositions = new Float32Array(position.array);
       const original = geometry.userData.originalPositions as Float32Array;
@@ -185,6 +209,7 @@ export function setOpticalGeometry(root: THREE.Group, { pupilRadius, accommodati
       const relaxed = id === 'iris' || id === 'pupil' ? pupilRadius === BASE_PUPIL_RADIUS : accommodation === 0;
       for (let i = 0; i < position.count; i++) {
         vertex.fromArray(original, i * 3);
+        if (id === 'vitreous' && (vertex.z <= 0 || Math.hypot(vertex.x, vertex.y) >= VITREOUS_RIM - 1e-6)) continue;
         if (!relaxed) {
           vertex.applyMatrix4(object.matrix);
           const radius = Math.hypot(vertex.x, vertex.y);
@@ -193,7 +218,11 @@ export function setOpticalGeometry(root: THREE.Group, { pupilRadius, accommodati
           else if (id === 'pupil') targetRadius *= pupilRadius / BASE_PUPIL_RADIUS;
           else if (id === 'lens') {
             targetRadius *= 1 - 0.06 * accommodation;
-            vertex.z = 0.455 + (vertex.z - 0.455) * (1 + 0.25 * accommodation);
+            vertex.z = LENS_CENTER_Z + (vertex.z - LENS_CENTER_Z) * (1 + 0.25 * accommodation);
+          } else if (id === 'vitreous') {
+            const attachment = THREE.MathUtils.smoothstep(radius, CILIARY_OUTER_RADIUS, VITREOUS_RIM);
+            targetRadius *= 1 - 0.06 * accommodation * (1 - attachment);
+            vertex.z = vitreousFrontZ(radius, accommodation);
           } else {
             targetRadius *= 1 - 0.06 * accommodation;
             // shortcut: a slight sag indicates reduced zonular tension; use biomechanics for calibrated motion.
@@ -313,7 +342,7 @@ export function buildEye(colors: Partial<Record<StructureId, string>> = {}, side
   parts.get('pupil')!.group.add(new THREE.LineLoop(new THREE.BufferGeometry().setFromPoints(pupilPoints), pupilMaterial));
 
   part('lens', [-0.17, -0.12, 0.46], [0, 0, 0.35], 0.27);
-  const capsule = mesh('lens', lensSurface(0.435, 0.145, 0.185));
+  const capsule = mesh('lens', lensSurface(LENS_RADIUS, 0.145, LENS_POSTERIOR_DEPTH));
   capsule.name = 'lens-capsule';
   capsule.material.color.set('#e4ead8');
   capsule.material.roughness = 0.10;
@@ -371,7 +400,7 @@ export function buildEye(colors: Partial<Record<StructureId, string>> = {}, side
   const trabecular = mesh('trabecular-meshwork', new THREE.TorusGeometry(0.67, 0.012, 6, 96), [0, 0, 0.715]);
   trabecular.name = 'trabecular-ring';
   part('vitreous', [-0.34, -0.32, -0.28], [0, -0.16, -0.10], 0.055);
-  mesh('vitreous', truncatedSphere(0.900, 0.275));
+  mesh('vitreous', vitreousSurface());
 
   const fundusZ = (x: number, y: number) => -Math.sqrt(Math.max(0.05, 0.906 ** 2 - x * x - y * y));
   const fundus = createFundusDetails();
