@@ -57,35 +57,50 @@ function shell(outer: number, inner: number, front: number) {
 }
 
 const LENS_RADIUS = 0.435, LENS_CENTER_Z = 0.455, LENS_POSTERIOR_DEPTH = 0.185;
-const VITREOUS_RADIUS = 0.900, VITREOUS_RIM = 0.75, CILIARY_OUTER_RADIUS = 0.736;
+const VITREOUS_RADIUS = 0.900, VITREOUS_RIM = 0.83;
 
-function vitreousFrontZ(radius: number, accommodation = 0) {
-  // Follow the posterior envelope of the lens, zonules and ciliary body, with a small display clearance.
-  const clearance = 0.004;
-  if (radius > CILIARY_OUTER_RADIUS) {
-    return THREE.MathUtils.lerp(0.48 - clearance, Math.sqrt(VITREOUS_RADIUS ** 2 - radius ** 2),
-      THREE.MathUtils.smoothstep(radius, CILIARY_OUTER_RADIUS, VITREOUS_RIM));
-  }
-  const t = THREE.MathUtils.clamp((radius - 0.423) / (0.607 - 0.423), 0, 1);
-  let z = 0.415 + 0.075 * t - 0.02 * accommodation * Math.sin(Math.PI * t);
-  if (radius <= LENS_RADIUS) z = Math.min(z, LENS_CENTER_Z - LENS_POSTERIOR_DEPTH * (1 + 0.25 * accommodation) * Math.sqrt(1 - (radius / LENS_RADIUS) ** 2));
-  if (Math.abs(radius - 0.609) <= 0.065) z = Math.min(z, 0.493 - 0.044 * Math.sqrt(1 - ((radius - 0.609) / 0.065) ** 2));
-  if (Math.abs(radius - 0.666) <= 0.070) z = Math.min(z, 0.48 - Math.sqrt(0.070 ** 2 - (radius - 0.666) ** 2));
-  return z - clearance;
-}
-
-function vitreousSurface() {
+function vitreousProfile(accommodation = 0, inset = 0): [number, number][] {
+  const scale = 1 - 0.06 * accommodation;
+  const depth = LENS_POSTERIOR_DEPTH * (1 + 0.25 * accommodation);
+  const fossaAngle = Math.asin(0.36 / LENS_RADIUS);
   const points: [number, number][] = [];
-  for (let i = 0; i <= 96; i++) {
-    const radius = VITREOUS_RIM * i / 96;
-    points.push([radius, vitreousFrontZ(radius)]);
+  for (let i = 0; i <= 32; i++) {
+    const angle = fossaAngle * i / 32;
+    points.push([LENS_RADIUS * Math.sin(angle) * scale, LENS_CENTER_Z - depth * Math.cos(angle) - 0.004]);
+  }
+  // The anterior cortex is a free, continuous gel surface with a central lens fossa,
+  // not a cast of the zonules and ciliary processes (PMC11693895, Figs. 1 and 2A).
+  const edge = points[points.length - 1];
+  const slope = depth * Math.tan(fossaAngle) / LENS_RADIUS;
+  const rimZ = Math.sqrt(VITREOUS_RADIUS ** 2 - VITREOUS_RIM ** 2);
+  const curves = [
+    new THREE.CubicBezierCurve(new THREE.Vector2(...edge), new THREE.Vector2(0.41 * scale, edge[1] + 0.05 * slope),
+      new THREE.Vector2(0.48 * scale, 0.397), new THREE.Vector2(0.57 * scale, 0.397)),
+    new THREE.CubicBezierCurve(new THREE.Vector2(0.57 * scale, 0.397), new THREE.Vector2(0.70 * scale, 0.397),
+      new THREE.Vector2(0.80, rimZ + 0.03 * VITREOUS_RIM / rimZ), new THREE.Vector2(VITREOUS_RIM, rimZ)),
+  ];
+  for (const curve of curves) for (let i = 1; i <= 32; i++) {
+    const point = curve.getPoint(i / 32);
+    points.push([point.x, point.y]);
   }
   const start = Math.asin(VITREOUS_RIM / VITREOUS_RADIUS);
   for (let i = 1; i <= 48; i++) {
     const angle = start + (Math.PI - start) * i / 48;
     points.push([i === 48 ? 0 : Math.sin(angle) * VITREOUS_RADIUS, Math.cos(angle) * VITREOUS_RADIUS]);
   }
-  return profile(points);
+  // The offset distinguishes the faint core from its denser cortex; it is a display
+  // thickness, not a calibrated membrane or a rigid capsule.
+  return points.map(([r, z], i): [number, number] => {
+    const before = points[Math.max(0, i - 1)], after = points[Math.min(points.length - 1, i + 1)];
+    const dr = after[0] - before[0], dz = after[1] - before[1], length = Math.hypot(dr, dz);
+    return [i === 0 || i === points.length - 1 ? 0 : r + inset * dz / length, z - inset * dr / length];
+  }).reverse();
+}
+
+function vitreousSurface(inset = 0) {
+  const geometry = profile(vitreousProfile(0, inset));
+  geometry.userData.vitreousInset = inset;
+  return geometry;
 }
 
 function cornealShell() {
@@ -207,9 +222,10 @@ export function setOpticalGeometry(root: THREE.Group, { pupilRadius, accommodati
       object.updateMatrix();
       const inverse = object.matrix.clone().invert();
       const relaxed = id === 'iris' || id === 'pupil' ? pupilRadius === BASE_PUPIL_RADIUS : accommodation === 0;
+      const vitreousPoints = id === 'vitreous' && !relaxed ? vitreousProfile(accommodation, geometry.userData.vitreousInset) : undefined;
       for (let i = 0; i < position.count; i++) {
         vertex.fromArray(original, i * 3);
-        if (id === 'vitreous' && (vertex.z <= 0 || Math.hypot(vertex.x, vertex.y) >= VITREOUS_RIM - 1e-6)) continue;
+        if (id === 'vitreous' && vertex.z <= 0) continue;
         if (!relaxed) {
           vertex.applyMatrix4(object.matrix);
           const radius = Math.hypot(vertex.x, vertex.y);
@@ -220,9 +236,8 @@ export function setOpticalGeometry(root: THREE.Group, { pupilRadius, accommodati
             targetRadius *= 1 - 0.06 * accommodation;
             vertex.z = LENS_CENTER_Z + (vertex.z - LENS_CENTER_Z) * (1 + 0.25 * accommodation);
           } else if (id === 'vitreous') {
-            const attachment = THREE.MathUtils.smoothstep(radius, CILIARY_OUTER_RADIUS, VITREOUS_RIM);
-            targetRadius *= 1 - 0.06 * accommodation * (1 - attachment);
-            vertex.z = vitreousFrontZ(radius, accommodation);
+            // LatheGeometry stores one complete profile per azimuth sector.
+            [targetRadius, vertex.z] = vitreousPoints![i % vitreousPoints!.length];
           } else {
             targetRadius *= 1 - 0.06 * accommodation;
             // shortcut: a slight sag indicates reduced zonular tension; use biomechanics for calibrated motion.
@@ -399,8 +414,16 @@ export function buildEye(colors: Partial<Record<StructureId, string>> = {}, side
   part('trabecular-meshwork', [-0.67, 0, 0.715], [0, 0, 0.66], 0.82);
   const trabecular = mesh('trabecular-meshwork', new THREE.TorusGeometry(0.67, 0.012, 6, 96), [0, 0, 0.715]);
   trabecular.name = 'trabecular-ring';
-  part('vitreous', [-0.34, -0.32, -0.28], [0, -0.16, -0.10], 0.055);
-  mesh('vitreous', vitreousSurface());
+  part('vitreous', [-0.34, -0.32, -0.28], [0, -0.16, -0.10], 0.18);
+  const cortex = mesh('vitreous', vitreousSurface());
+  cortex.name = 'vitreous-cortex';
+  cortex.material.roughness = 0.38;
+  cortex.material.clearcoat = 0.18;
+  const core = mesh('vitreous', vitreousSurface(0.008));
+  core.name = 'vitreous-core';
+  core.material = cortex.material.clone();
+  core.material.opacity = core.material.userData.baseOpacity = 0.035;
+  core.material.clearcoat = 0;
 
   const fundusZ = (x: number, y: number) => -Math.sqrt(Math.max(0.05, 0.906 ** 2 - x * x - y * y));
   const fundus = createFundusDetails();

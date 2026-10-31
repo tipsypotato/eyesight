@@ -95,7 +95,7 @@ describe('adult right-eye geometry', () => {
     eye.dispose();
   });
 
-  it.each(['right', 'left'] as const)('fills the %s vitreous cavity up to the posterior lens, zonules and ciliary body', side => {
+  it.each(['right', 'left'] as const)('keeps a smooth anterior cortex, lens fossa and retrozonular space in the %s eye', side => {
     const eye = buildEye({}, side);
     try {
       const vitreous = eye.parts.get('vitreous')!.group;
@@ -116,9 +116,13 @@ describe('adult right-eye geometry', () => {
           const posteriorLens = new THREE.Raycaster(new THREE.Vector3(x, 0, -1.2), new THREE.Vector3(0, 0, 1)).intersectObject(capsule)[0].point.z;
           const gap = posteriorLens - frontAt(sampleRadius);
           expect(gap, `lens clearance at ${radius}, accommodation ${accommodation}`).toBeGreaterThanOrEqual(0);
-          expect(gap).toBeLessThan(0.012);
+          if (radius <= 0.3) expect(gap).toBeLessThan(0.012);
+          else expect(gap).toBeLessThan(0.08);
         }
         expect(frontAt(0.5 * scale)).toBeGreaterThan(frontAt(0) + 0.12);
+        // One rounded peripheral shoulder, without an imprint of the ciliary ring.
+        expect(frontAt(0.67 * scale)).toBeGreaterThan(frontAt(0.50 * scale) + 0.002);
+        expect(frontAt(0.67 * scale)).toBeGreaterThan(frontAt(0.80) + 0.005);
         for (const [id, radius] of [['zonules', 0.48], ['zonules', 0.53], ['ciliary-body', 0.61], ['ciliary-body', 0.666], ['ciliary-body', 0.71]] as const) {
           // Follow an actual posterior zonular fiber, including its slight angular offset.
           const t = (radius - 0.423) / (0.607 - 0.423);
@@ -128,7 +132,8 @@ describe('adult right-eye geometry', () => {
           expect(hits.length, id).toBeGreaterThan(0);
           const gap = hits[0].point.z - frontAt(x * scale, y * scale);
           expect(gap, `${id} clearance at ${radius}, accommodation ${accommodation}`).toBeGreaterThanOrEqual(0);
-          expect(gap).toBeLessThan(0.025);
+          if (id === 'zonules') expect(gap).toBeGreaterThan(0.025);
+          expect(gap).toBeLessThan(0.12);
         }
         const surface = (vitreous.children[0] as THREE.Mesh).geometry.getAttribute('position');
         for (let i = 0; i < surface.count; i++) {
@@ -138,10 +143,10 @@ describe('adult right-eye geometry', () => {
     } finally { eye.dispose(); }
   });
 
-  it('keeps vitreous accommodation independent of posterior stretch and restores the original surface', () => {
+  it.each(['vitreous-cortex', 'vitreous-core'])('keeps %s accommodation independent of posterior stretch and restores its original surface', name => {
     const eye = buildEye();
     try {
-      const geometry = (eye.parts.get('vitreous')!.group.children[0] as THREE.Mesh).geometry;
+      const geometry = (eye.parts.get('vitreous')!.group.getObjectByName(name) as THREE.Mesh).geometry;
       const snapshot = () => Array.from(geometry.getAttribute('position').array);
       const original = snapshot();
       setOpticalGeometry(eye.root, { pupilRadius: 0.215, accommodation: 1 });

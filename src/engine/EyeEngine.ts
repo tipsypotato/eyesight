@@ -377,9 +377,10 @@ export class EyeEngine {
       const hovered = state.mode !== 'quiz' && !(state.mode === 'disease' && state.disease?.step === 3 && !state.quizRevealed) && (!this.leftEye || side === this.hoveredSide) && this.hoveredId === id && state.layers[id] === 'on';
       const highlight = selected ? 0.48 : hovered ? 0.18 : 0;
       const accent = selected ? SELECTED_COLOR : HOVER_COLOR;
-      const outlineSpace = id === 'anterior-chamber' || id === 'posterior-chamber' || (id === 'vitreous' && state.presetId === 'chambers');
+      const outlineSpace = id === 'anterior-chamber' || id === 'posterior-chamber';
+      const showContour = outlineSpace || (id === 'vitreous' && state.presetId === 'chambers');
       let contour = part.group.getObjectByName('space-contour') as THREE.LineSegments | undefined;
-      if (outlineSpace && !contour) {
+      if (showContour && !contour) {
         const material = new THREE.LineBasicMaterial({ color: STRUCTURES.find(item => item.id === id)!.color, transparent: true, opacity: 0.75, depthWrite: false });
         material.userData.baseColor = material.color.clone();
         material.userData.baseOpacity = 0.75;
@@ -388,7 +389,7 @@ export class EyeEngine {
         contour.userData.structureId = id;
         part.group.add(contour);
       }
-      if (contour) contour.visible = outlineSpace;
+      if (contour) contour.visible = showContour;
       part.group.traverse(object => {
         if (!(object instanceof THREE.Mesh || object instanceof THREE.Line) || object.userData.cap) return;
         for (const material of this.materials(object)) {
@@ -396,7 +397,12 @@ export class EyeEngine {
           material.opacity = state.layers[id] === 'ghost' ? Math.min(baseOpacity, 0.10)
             : selected ? Math.max(baseOpacity, 0.62) : hovered ? Math.max(baseOpacity, 0.32) : baseOpacity;
           if (this.skull?.visible && id.includes('orbital-') && !selected && !hovered) material.opacity = Math.min(material.opacity, 0.18);
-          if (outlineSpace) material.opacity = object instanceof THREE.Mesh ? 0 : state.layers[id] === 'ghost' ? 0.38 : selected ? 0.95 : 0.75;
+          if (outlineSpace && object instanceof THREE.Mesh) material.opacity = 0;
+          if (object === contour) material.opacity = state.layers[id] === 'ghost' ? 0.38 : selected ? 0.95 : 0.75;
+          if (id === 'vitreous' && object instanceof THREE.Mesh) {
+            material.opacity = state.layers[id] === 'ghost' ? baseOpacity * 0.4
+              : object.name === 'vitreous-core' ? baseOpacity : selected ? 0.36 : hovered ? 0.26 : baseOpacity;
+          }
           // shortcut: approximate occlusion inside a closed globe; photometric rendering needs tissue-aware shadows.
           if (enclosed && !selected && ['lens', 'anterior-chamber', 'posterior-chamber', 'vitreous'].includes(id)) material.opacity *= 0.18;
           const transparent = material.opacity < 0.999;

@@ -817,7 +817,7 @@ it('ends a captured section gesture when leaving its scene and hides the guide i
   } finally { eye.dispose(); }
 });
 
-it('shows chambers as boundaries and restores tissue appearance and positions after combined operations', () => {
+it('keeps the vitreous cortex visible beside chamber boundaries and restores appearance after combined operations', () => {
   const { eye, store, sync } = pointerFixture();
   const snapshot = () => [...eye.parts.values()].map(part => ({
     id: part.id, position: part.group.position.toArray(),
@@ -832,9 +832,22 @@ it('shows chambers as boundaries and restores tissue appearance and positions af
       const part = eye.parts.get(id)!;
       const mesh = part.group.children.find(child => child instanceof THREE.Mesh) as THREE.Mesh<THREE.BufferGeometry, THREE.Material>;
       const boundary = part.group.children.find(child => child instanceof THREE.LineSegments) as THREE.LineSegments;
-      expect(mesh.material.opacity).toBe(0);
+      if (id === 'vitreous') {
+        expect(mesh.material.opacity).toBeGreaterThan(0);
+        const core = part.group.getObjectByName('vitreous-core') as THREE.Mesh<THREE.BufferGeometry, THREE.Material>;
+        expect(core.material.opacity).toBeGreaterThan(0);
+        expect(core.material.opacity).toBeLessThan(mesh.material.opacity);
+      } else expect(mesh.material.opacity).toBe(0);
       expect(boundary?.geometry.getAttribute('position').count).toBeGreaterThan(6);
     }
+    store.getState().select('vitreous', true); sync();
+    const vitreous = eye.parts.get('vitreous')!.group;
+    const cortex = vitreous.getObjectByName('vitreous-cortex') as THREE.Mesh<THREE.BufferGeometry, THREE.Material>;
+    const core = vitreous.getObjectByName('vitreous-core') as THREE.Mesh<THREE.BufferGeometry, THREE.Material>;
+    expect(cortex.material.opacity).toBeGreaterThan(0.1);
+    expect(core.material.opacity).toBeLessThan(0.1);
+    expect(cortex.material.clippingPlanes).toHaveLength(1);
+    expect(core.material.clippingPlanes).toHaveLength(1);
     store.getState().applyPreset('wall-cut'); sync();
     const before = snapshot();
     store.getState().setExplode(0.7); store.getState().select('lens', true); store.getState().toggleIsolate(); sync();

@@ -9,6 +9,7 @@ const retinalAnatomy = { title: 'Webvision · Simple Anatomy of the Retina', url
 const neuroAnatomy = { title: 'UTHealth · Gross Anatomy of the Eye', url: 'https://nba.uth.tmc.edu/neuroanatomy/L8/Lab08p01_index.html' };
 
 const aqueousAnatomy = { title: 'NCBI Webvision · What is glaucoma? · Anterior chamber angle', url: 'https://www.ncbi.nlm.nih.gov/books/NBK543075/figure/diseases_glaucoma.F7A/' };
+const anteriorVitreous = { title: 'Heliyon · Research progress in Berger’s space · Figs. 1–2', url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC11693895/' };
 const extraocularAnatomy = { title: 'NCBI StatPearls · Eye Extraocular Muscles', url: 'https://www.ncbi.nlm.nih.gov/sites/books/NBK519565/' };
 const extraocularActions = { title: 'NCBI StatPearls · Extraocular muscle actions and innervation', url: 'https://www.ncbi.nlm.nih.gov/sites/books/NBK573075/table/article-133080.table1/?report=objectonly' };
 const superiorObliqueAnatomy = { title: 'NCBI StatPearls · Eye Superior Oblique Muscle', url: 'https://www.ncbi.nlm.nih.gov/sites/books/NBK537152/' };
@@ -125,11 +126,11 @@ export const STRUCTURES: Structure[] = [
   },
   {
     id: 'vitreous', name: { zh: '玻璃体', en: 'Vitreous body' }, latin: 'Corpus vitreum', group: 'inside', color: '#b6cbd0', kind: 'tissue',
-    summary: { zh: '填充玻璃体腔的透明凝胶。', en: 'The transparent gel filling the vitreous chamber.' },
+    summary: { zh: '外周具有较致密皮质的透明凝胶体。', en: 'A transparent gel body with a denser outer cortex.' },
     function: { zh: '形成透光的内部介质，并提供机械支撑。', en: 'Provides a clear internal optical medium and mechanical support.' },
     position: { zh: '晶状体后方、视网膜内侧的大部分空间。', en: 'Occupies most of the space behind the lens and inside the retina.' },
-    fact: { zh: '玻璃体呈凝胶状，房水则更接近水样液体。', en: 'The vitreous is gel-like, while aqueous humor is watery.' },
-    sources: [aboutEye, grossAnatomy],
+    fact: { zh: '前部皮质形成容纳晶状体的凹窝；玻璃体呈凝胶状，房水则是水样液体。', en: 'The anterior cortex forms a fossa for the lens; the vitreous is gel-like, while aqueous humor is watery.' },
+    sources: [aboutEye, grossAnatomy, anteriorVitreous],
   },
   {
     id: 'choroid', name: { zh: '脉络膜', en: 'Choroid' }, latin: 'Choroidea', group: 'wall', color: '#825f59', kind: 'tissue',
